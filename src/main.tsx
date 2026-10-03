@@ -825,31 +825,29 @@ function App() {
             </div>
           </div>
 
-          <button className="primary-action" onClick={importMedia} disabled={busy !== "idle"}>
-            {busy === "import" ? <Loader2 className="spin" size={18} /> : <FileVideo size={18} />}
-            Import recording
-          </button>
-          <button 
-            className="secondary-action" 
-            onClick={() => setYoutubeModalOpen(true)} 
-            disabled={busy !== "idle" || !environment?.hasYtdlp}
-            title={!environment?.hasYtdlp ? "Please install yt-dlp to use this feature" : "Download a video from YouTube"}
-            style={{ width: "100%", padding: "0.75rem", borderRadius: "10px", marginTop: "0.5rem", display: "flex", gap: "0.5rem", alignItems: "center", justifyContent: "center", border: "1px solid var(--border)", background: "transparent", color: "var(--foreground)", cursor: "pointer", fontSize: "0.95rem" }}
-          >
-            <Youtube size={18} />
-            Import from YouTube
-          </button>
-
-          {/* Folder Settings Button */}
-          <button
-            className="secondary-action"
-            onClick={() => setShowFolderSettings(true)}
-            style={{ width: "100%", padding: "0.65rem 0.75rem", borderRadius: "10px", marginTop: "0.5rem", display: "flex", gap: "0.5rem", alignItems: "center", justifyContent: "center", border: "1px solid var(--border)", background: "transparent", color: "var(--foreground)", cursor: "pointer", fontSize: "0.92rem" }}
-            title="Choose where YouTube videos and clips are saved"
-          >
-            <FolderOpen size={16} />
-            File Locations
-          </button>
+          <div className="sidebar-actions">
+            <button className="primary-action" onClick={importMedia} disabled={busy !== "idle"}>
+              {busy === "import" ? <Loader2 className="spin" size={16} /> : <FileVideo size={16} />}
+              Import Recording
+            </button>
+            <button 
+              className="secondary-action" 
+              onClick={() => setYoutubeModalOpen(true)} 
+              disabled={busy !== "idle" || !environment?.hasYtdlp}
+              title={!environment?.hasYtdlp ? "Please install yt-dlp to use this feature" : "Download a video from YouTube"}
+            >
+              <Youtube size={16} />
+              Import from YouTube
+            </button>
+            <button
+              className="secondary-action"
+              onClick={() => setShowFolderSettings(true)}
+              title="Choose where YouTube videos and clips are saved"
+            >
+              <FolderOpen size={16} />
+              File Locations
+            </button>
+          </div>
 
           <section className="project-list" aria-label="Projects">
             <button
@@ -1114,8 +1112,8 @@ function App() {
                       <p>{detail.candidates.length ? `${selectedCount} selected` : "No candidates"}</p>
                     </div>
                     <div className="button-pair" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--bg-base, #16161e)', border: '1px solid var(--border)', borderRadius: '8px', padding: '5px 10px' }}>
-                        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Format:</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '4px 10px' }}>
+                        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>Format:</span>
                         <select
                           value={reframeMode}
                           onChange={(e) => {
@@ -1123,11 +1121,11 @@ function App() {
                             setReframeMode(val);
                             localStorage.setItem("clipon_reframe_mode", val);
                           }}
-                          style={{ background: 'transparent', color: 'var(--foreground)', border: 'none', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer', outline: 'none' }}
+                          style={{ background: 'transparent', color: 'var(--text-primary)', border: 'none', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer', outline: 'none', padding: 0 }}
                         >
-                          <option value="vertical_blur" style={{ background: '#1c1c24', color: '#fff' }}>📱 9:16 Smart Blur (Shorts/Reels)</option>
-                          <option value="vertical_crop" style={{ background: '#1c1c24', color: '#fff' }}>✂️ 9:16 Center Crop</option>
-                          <option value="original" style={{ background: '#1c1c24', color: '#fff' }}>🖥️ 16:9 Original</option>
+                          <option value="vertical_blur" style={{ background: '#0f1118', color: '#fff' }}>📱 9:16 Smart Blur (Shorts/Reels)</option>
+                          <option value="vertical_crop" style={{ background: '#0f1118', color: '#fff' }}>✂️ 9:16 Center Crop</option>
+                          <option value="original" style={{ background: '#0f1118', color: '#fff' }}>🖥️ 16:9 Original</option>
                         </select>
                       </div>
                       <button onClick={cutSelected} disabled={busy !== "idle" || selectedCount === 0 || !environment?.hasFfmpeg}>
@@ -1545,10 +1543,10 @@ function App() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "16px", padding: "2rem", width: "min(520px, 90vw)", display: "flex", flexDirection: "column", gap: "1.5rem" }}
+            style={{ background: "#0e111a", border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "18px", padding: "1.75rem", width: "min(520px, 92vw)", display: "flex", flexDirection: "column", gap: "1.25rem", boxShadow: "0 24px 70px -10px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.08)" }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-              <div style={{ background: "rgba(99,102,241,0.15)", borderRadius: "10px", padding: "0.5rem", display: "flex" }}>
+              <div style={{ background: "rgba(16, 185, 129, 0.15)", borderRadius: "10px", padding: "0.5rem", display: "flex" }}>
                 <Settings size={20} color="var(--accent-primary)" />
               </div>
               <div>
@@ -1571,7 +1569,7 @@ function App() {
                   value={youtubeSaveDir}
                   onChange={(e) => setYoutubeSaveDir(e.target.value)}
                   placeholder={defaultFolders?.youtubeSaveDir || "~/Downloads/ClipOn"}
-                  style={{ flex: 1, padding: "0.55rem 0.75rem", borderRadius: "8px", border: "1px solid var(--border)", background: "var(--bg-base)", color: "var(--foreground)", fontSize: "0.85rem" }}
+                  style={{ flex: 1, padding: "0.55rem 0.75rem", borderRadius: "8px", border: "1px solid var(--border-color)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: "0.85rem" }}
                 />
                 <button
                   className="icon-button"
@@ -1598,7 +1596,7 @@ function App() {
                   value={clipsSaveDir}
                   onChange={(e) => setClipsSaveDir(e.target.value)}
                   placeholder={defaultFolders?.clipsOutputDir || "~/Documents/ClipOn"}
-                  style={{ flex: 1, padding: "0.55rem 0.75rem", borderRadius: "8px", border: "1px solid var(--border)", background: "var(--bg-base)", color: "var(--foreground)", fontSize: "0.85rem" }}
+                  style={{ flex: 1, padding: "0.55rem 0.75rem", borderRadius: "8px", border: "1px solid var(--border-color)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: "0.85rem" }}
                 />
                 <button
                   className="icon-button"
@@ -1622,7 +1620,7 @@ function App() {
               </button>
               <button
                 className="primary-action"
-                style={{ flex: 1, justifyContent: "center", gap: "0.4rem", fontSize: "0.85rem", background: "rgba(99,102,241,0.12)", borderColor: "rgba(99,102,241,0.3)" }}
+                style={{ flex: 1, justifyContent: "center", gap: "0.4rem", fontSize: "0.85rem", background: "rgba(255, 255, 255, 0.04)", border: "1px solid var(--border-color)", color: "var(--text-primary)" }}
                 onClick={() => openFolder(clipsSaveDir || defaultFolders?.clipsOutputDir || "")}
               >
                 <FolderOpen size={14} /> Open Clips Folder
@@ -1651,7 +1649,7 @@ function App() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "16px", padding: "1.75rem", width: "min(560px, 92vw)", maxHeight: "90vh", overflowY: "auto", display: "flex", flexDirection: "column", gap: "1.25rem" }}
+            style={{ background: "#0e111a", border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "18px", padding: "1.75rem", width: "min(560px, 92vw)", maxHeight: "90vh", overflowY: "auto", display: "flex", flexDirection: "column", gap: "1.25rem", boxShadow: "0 24px 70px -10px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.08)" }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
@@ -1693,7 +1691,7 @@ function App() {
                           <div
                             key={i}
                             onClick={() => copyToClipboard(title, `title-${i}`)}
-                            style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.6rem 0.8rem", background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: "8px", cursor: "pointer", fontSize: "0.85rem", transition: "all 0.15s ease" }}
+                            style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.65rem 0.85rem", background: "rgba(255, 255, 255, 0.02)", border: "1px solid var(--border-color)", borderRadius: "8px", cursor: "pointer", fontSize: "0.85rem", transition: "all 0.15s ease" }}
                           >
                             <span style={{ fontWeight: 500 }}>{title}</span>
                             <span style={{ fontSize: "0.75rem", color: copiedToast === `title-${i}` ? "var(--accent-primary)" : "var(--text-muted)", display: "flex", alignItems: "center", gap: "4px" }}>
@@ -1715,7 +1713,7 @@ function App() {
                           {copiedToast === "hashtags" ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy All Tags</>}
                         </button>
                       </div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", padding: "0.6rem", background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: "8px" }}>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", padding: "0.65rem", background: "rgba(255, 255, 255, 0.02)", border: "1px solid var(--border-color)", borderRadius: "8px" }}>
                         {kit.hashtags.map((tag, i) => (
                           <span
                             key={i}
@@ -1740,7 +1738,7 @@ function App() {
                           {copiedToast === "desc" ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy Caption</>}
                         </button>
                       </div>
-                      <div style={{ padding: "0.75rem", background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: "8px", fontSize: "0.83rem", lineHeight: 1.5, color: "var(--foreground)" }}>
+                      <div style={{ padding: "0.75rem", background: "rgba(255, 255, 255, 0.02)", border: "1px solid var(--border-color)", borderRadius: "8px", fontSize: "0.83rem", lineHeight: 1.5, color: "var(--text-primary)" }}>
                         {kit.description}
                         <div style={{ marginTop: "0.5rem", color: "var(--accent-primary)", fontSize: "0.8rem" }}>{kit.callToAction}</div>
                       </div>
