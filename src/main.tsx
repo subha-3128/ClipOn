@@ -1262,24 +1262,25 @@ function App() {
           ) : (
             <div className="home-dashboard">
               <header className="home-header">
-                <div>
+                <div className="home-header-info">
                   <h2>All Projects</h2>
                   <p>Select a project below or import a new media file to get started.</p>
                 </div>
-                <button className="primary-action compact" onClick={importMedia} disabled={busy !== "idle"}>
-                  {busy === "import" ? <Loader2 className="spin" size={18} /> : <FileVideo size={18} />}
-                  Import recording
-                </button>
-                <button 
-                  className="secondary-action compact" 
-                  onClick={() => setYoutubeModalOpen(true)} 
-                  disabled={busy !== "idle" || !environment?.hasYtdlp}
-                  title={!environment?.hasYtdlp ? "Please install yt-dlp to use this feature" : "Download a video from YouTube"}
-                  style={{ display: "flex", gap: "0.5rem", alignItems: "center", padding: "0.5rem 1rem", borderRadius: "8px", border: "1px solid var(--border)", background: "transparent", color: "var(--foreground)", cursor: "pointer", fontSize: "0.95rem", marginLeft: "1rem" }}
-                >
-                  <Youtube size={18} />
-                  Import from YouTube
-                </button>
+                <div className="home-header-actions">
+                  <button className="btn-minimal-primary" onClick={importMedia} disabled={busy !== "idle"}>
+                    {busy === "import" ? <Loader2 className="spin" size={15} /> : <FileVideo size={15} />}
+                    Import Recording
+                  </button>
+                  <button 
+                    className="btn-minimal-secondary" 
+                    onClick={() => setYoutubeModalOpen(true)} 
+                    disabled={busy !== "idle" || !environment?.hasYtdlp}
+                    title={!environment?.hasYtdlp ? "Please install yt-dlp to use this feature" : "Download a video from YouTube"}
+                  >
+                    <Youtube size={15} />
+                    Import from YouTube
+                  </button>
+                </div>
               </header>
 
               {projects.length > 0 ? (
