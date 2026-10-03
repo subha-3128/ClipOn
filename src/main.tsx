@@ -1,37 +1,47 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import {
-  AudioLines,
-  BadgeCheck,
-  Captions,
-  Check,
-  ChevronRight,
   Clapperboard,
-  Download,
   FileVideo,
-  Loader2,
-  Play,
-  RefreshCw,
-  Scissors,
-  SlidersHorizontal,
-  Sparkles,
-  Wand2,
-  Copy,
-  Database,
-  Cloud,
   Youtube,
-  AlertTriangle,
+  Sparkles,
+  Scissors,
   FolderOpen,
   Settings,
+  SlidersHorizontal,
+  RefreshCw,
+  Play,
+  Check,
+  Copy,
+  Download,
+  Loader2,
+  ChevronRight,
+  Search,
   X,
-  Share2,
+  AlertTriangle,
+  BadgeCheck,
+  AudioLines,
+  Captions,
+  Cpu,
+  Layers,
+  Trash2,
+  Edit3,
+  ArrowLeft,
+  Database,
+  Cloud,
+  ExternalLink,
+  Sliders,
+  Filter,
+  CheckSquare,
+  Square
 } from "lucide-react";
 import "./styles.css";
 
-type EnvironmentStatus = {
+// ===== TypeScript Types =====
+export type EnvironmentStatus = {
   dataDir: string;
   hasFfmpeg: boolean;
   hasFfprobe: boolean;
@@ -56,7 +66,7 @@ type EnvironmentStatus = {
   openrouterKey?: string;
 };
 
-type Project = {
+export type Project = {
   id: string;
   name: string | null;
   sourcePath: string;
@@ -68,7 +78,7 @@ type Project = {
   updatedAt: string;
 };
 
-type Transcript = {
+export type Transcript = {
   id: string;
   projectId: string;
   engine: string;
@@ -77,8 +87,7 @@ type Transcript = {
   createdAt: string;
 };
 
-
-type SocialKit = {
+export type SocialKit = {
   candidateId: string;
   titles: string[];
   description: string;
@@ -86,7 +95,7 @@ type SocialKit = {
   callToAction: string;
 };
 
-type Candidate = {
+export type Candidate = {
   id: string;
   projectId: string;
   startSec: number;
@@ -98,7 +107,7 @@ type Candidate = {
   selected: boolean;
 };
 
-type Clip = {
+export type Clip = {
   id: string;
   candidateId: string;
   status: string;
@@ -108,26 +117,28 @@ type Clip = {
   renderLog: string | null;
 };
 
-type ProjectDetail = {
+export type ProjectDetail = {
   project: Project;
   transcript: Transcript | null;
   candidates: Candidate[];
   clips: Clip[];
 };
 
-type NormalizedTranscript = {
+export type NormalizedTranscriptSegment = {
+  start: number;
+  end: number;
+  speaker: string | null;
+  text: string;
+};
+
+export type NormalizedTranscript = {
   language: string;
   duration: number;
   speakers: string[];
-  segments: Array<{
-    start: number;
-    end: number;
-    speaker: string | null;
-    text: string;
-  }>;
+  segments: NormalizedTranscriptSegment[];
 };
 
-type BusyState =
+export type BusyState =
   | "idle"
   | "import"
   | "transcribe"
@@ -136,14 +147,59 @@ type BusyState =
   | "clipCount"
   | "cut";
 
+export type ReframeMode = "vertical_blur" | "vertical_crop" | "original";
+export type SettingsTab = "ai" | "storage" | "export" | "system";
+
+// ===== Utility Helpers =====
+function fileName(path: string): string {
+  return path.split(/[\\/]/).pop() ?? path;
+}
+
+function formatTime(seconds: number): string {
+  if (isNaN(seconds) || seconds < 0) return "0:00";
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+}
+
+function formatDate(dateStr: string): string {
+  try {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  } catch {
+    return dateStr;
+  }
+}
+
+// ===== Toast Notification Component =====
+function Toast({ message, onClose }: { message: string | null; onClose: () => void }) {
+  useEffect(() => {
+    if (!message) return;
+    const timer = setTimeout(onClose, 2400);
+    return () => clearTimeout(timer);
+  }, [message, onClose]);
+
+  if (!message) return null;
+  return (
+    <div className="toast-notification">
+      <Check size={15} />
+      <span>{message}</span>
+    </div>
+  );
+}
+
+// ===== Main App Component =====
 function App() {
   const [environment, setEnvironment] = useState<EnvironmentStatus | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [busy, setBusy] = useState<BusyState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  // Modals state
   const [showSettings, setShowSettings] = useState(false);
-  const [renderingCandidateId, setRenderingCandidateId] = useState<string | null>(null);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("ai");
   const [showStyleModal, setShowStyleModal] = useState(false);
   const [selectedStyle, setSelectedStyle] = useState("modern-box");
   const [mediaPathToImport, setMediaPathToImport] = useState<string | null>(null);
@@ -153,68 +209,135 @@ function App() {
   const [youtubeStatus, setYoutubeStatus] = useState<"idle" | "checking" | "warning" | "downloading">("idle");
   const [youtubeWarningLicense, setYoutubeWarningLicense] = useState<string | null>(null);
 
-  // Persistence logic from localStorage
+  // Candidate cut & social kit state
+  const [renderingCandidateId, setRenderingCandidateId] = useState<string | null>(null);
+  const [socialKitModalCandidate, setSocialKitModalCandidate] = useState<Candidate | null>(null);
+  const [socialKitData, setSocialKitData] = useState<Record<string, SocialKit>>({});
+  const [socialKitLoading, setSocialKitLoading] = useState<string | null>(null);
+
+  // Ollama model download state
+  const [downloadingModelName, setDownloadingModelName] = useState<string | null>(null);
+  const [modelDownloadStatus, setModelDownloadStatus] = useState("");
+  const [modelDownloadProgress, setModelDownloadProgress] = useState(0);
+
+  // Settings & persistence
   const [isOnboarded, setIsOnboarded] = useState<boolean | null>(null);
   const [transcriptionEngine, setTranscriptionEngine] = useState<"deepgram" | "local">(() => {
     return ((localStorage.getItem("clipon_transcription_engine") || localStorage.getItem("autoshorts_transcription_engine")) as "deepgram" | "local") || "local";
   });
   const [llmEngine, setLlmEngine] = useState<"claude" | "deepseek" | "local" | "gemini" | "openai" | "openrouter" | "groq">(() => {
-    return ((localStorage.getItem("clipon_llm_engine") || localStorage.getItem("autoshorts_llm_engine")) as "claude" | "deepseek" | "local" | "gemini" | "openai" | "openrouter" | "groq") || "local";
+    return ((localStorage.getItem("clipon_llm_engine") || localStorage.getItem("autoshorts_llm_engine")) as any) || "local";
   });
   const [localLlmModel, setLocalLlmModel] = useState(() => {
     return (localStorage.getItem("clipon_local_llm_model") || localStorage.getItem("autoshorts_local_llm_model")) || "llama3.2";
   });
-  const [deepgramKey, setDeepgramKey] = useState(() => {
-    return (localStorage.getItem("clipon_deepgram_key") || localStorage.getItem("autoshorts_deepgram_key")) || "";
-  });
-  const [anthropicKey, setAnthropicKey] = useState(() => {
-    return (localStorage.getItem("clipon_anthropic_key") || localStorage.getItem("autoshorts_anthropic_key")) || "";
-  });
-  const [deepseekKey, setDeepseekKey] = useState(() => {
-    return (localStorage.getItem("clipon_deepseek_key") || localStorage.getItem("autoshorts_deepseek_key")) || "";
-  });
-  const [deepseekModel, setDeepseekModel] = useState(() => {
-    return (localStorage.getItem("clipon_deepseek_model") || localStorage.getItem("autoshorts_deepseek_model")) || "";
-  });
-  const [geminiKey, setGeminiKey] = useState(() => {
-    return (localStorage.getItem("clipon_gemini_key") || localStorage.getItem("autoshorts_gemini_key")) || "";
-  });
-  const [openaiKey, setOpenaiKey] = useState(() => {
-    return (localStorage.getItem("clipon_openai_key") || localStorage.getItem("autoshorts_openai_key")) || "";
-  });
-  const [openrouterKey, setOpenrouterKey] = useState(() => {
-    return (localStorage.getItem("clipon_openrouter_key") || localStorage.getItem("autoshorts_openrouter_key")) || "";
-  });
-  const [groqKey, setGroqKey] = useState(() => {
-    return (localStorage.getItem("clipon_groq_key") || localStorage.getItem("autoshorts_groq_key")) || "";
-  });
-  const [openrouterModel, setOpenrouterModel] = useState(() => {
-    return (localStorage.getItem("clipon_openrouter_model") || localStorage.getItem("autoshorts_openrouter_model")) || "";
+  const [deepgramKey, setDeepgramKey] = useState(() => (localStorage.getItem("clipon_deepgram_key") || localStorage.getItem("autoshorts_deepgram_key")) || "");
+  const [anthropicKey, setAnthropicKey] = useState(() => (localStorage.getItem("clipon_anthropic_key") || localStorage.getItem("autoshorts_anthropic_key")) || "");
+  const [deepseekKey, setDeepseekKey] = useState(() => (localStorage.getItem("clipon_deepseek_key") || localStorage.getItem("autoshorts_deepseek_key")) || "");
+  const [deepseekModel, setDeepseekModel] = useState(() => (localStorage.getItem("clipon_deepseek_model") || localStorage.getItem("autoshorts_deepseek_model")) || "");
+  const [geminiKey, setGeminiKey] = useState(() => (localStorage.getItem("clipon_gemini_key") || localStorage.getItem("autoshorts_gemini_key")) || "");
+  const [openaiKey, setOpenaiKey] = useState(() => (localStorage.getItem("clipon_openai_key") || localStorage.getItem("autoshorts_openai_key")) || "");
+  const [openrouterKey, setOpenrouterKey] = useState(() => (localStorage.getItem("clipon_openrouter_key") || localStorage.getItem("autoshorts_openrouter_key")) || "");
+  const [openrouterModel, setOpenrouterModel] = useState(() => (localStorage.getItem("clipon_openrouter_model") || localStorage.getItem("autoshorts_openrouter_model")) || "");
+  const [groqKey, setGroqKey] = useState(() => (localStorage.getItem("clipon_groq_key") || localStorage.getItem("autoshorts_groq_key")) || "");
+
+  // Folder paths
+  const [youtubeSaveDir, setYoutubeSaveDir] = useState(() => (localStorage.getItem("clipon_youtube_dir") || localStorage.getItem("autoshorts_youtube_dir")) || "");
+  const [clipsSaveDir, setClipsSaveDir] = useState(() => (localStorage.getItem("clipon_clips_dir") || localStorage.getItem("autoshorts_clips_dir")) || "");
+  const [defaultFolders, setDefaultFolders] = useState<{ youtubeSaveDir: string; clipsOutputDir: string } | null>(null);
+
+  // Reframe Mode
+  const [reframeMode, setReframeMode] = useState<ReframeMode>(() => {
+    return ((localStorage.getItem("clipon_reframe_mode") || localStorage.getItem("autoshorts_reframe_mode")) as ReframeMode) || "vertical_blur";
   });
 
-  // Folder path settings
-  const [youtubeSaveDir, setYoutubeSaveDir] = useState(() =>
-    (localStorage.getItem("clipon_youtube_dir") || localStorage.getItem("autoshorts_youtube_dir")) || ""
-  );
-  const [clipsSaveDir, setClipsSaveDir] = useState(() =>
-    (localStorage.getItem("clipon_clips_dir") || localStorage.getItem("autoshorts_clips_dir")) || ""
-  );
-  const [defaultFolders, setDefaultFolders] = useState<{youtubeSaveDir: string; clipsOutputDir: string} | null>(null);
-  const [showFolderSettings, setShowFolderSettings] = useState(false);
+  // UI Filters
+  const [projectSearch, setProjectSearch] = useState("");
+  const [transcriptSearch, setTranscriptSearch] = useState("");
+  const [momentTab, setMomentTab] = useState<"all" | "selected" | "ready">("all");
 
-  // Video Reframe Mode & Social Kit
-  const [reframeMode, setReframeMode] = useState<"vertical_blur" | "vertical_crop" | "original">(() => {
-    return ((localStorage.getItem("clipon_reframe_mode") || localStorage.getItem("autoshorts_reframe_mode")) as any) || "vertical_blur";
-  });
-  const [socialKitModalCandidate, setSocialKitModalCandidate] = useState<Candidate | null>(null);
-  const [socialKitData, setSocialKitData] = useState<Record<string, SocialKit>>({});
-  const [socialKitLoading, setSocialKitLoading] = useState<string | null>(null);
-  const [copiedToast, setCopiedToast] = useState<string | null>(null);
+  const showToast = (msg: string) => setToast(msg);
 
-  const [downloadingModelName, setDownloadingModelName] = useState<string | null>(null);
-  const [modelDownloadStatus, setModelDownloadStatus] = useState("");
-  const [modelDownloadProgress, setModelDownloadProgress] = useState(0);
+  // Sync state with LocalStorage
+  useEffect(() => { localStorage.setItem("clipon_transcription_engine", transcriptionEngine); }, [transcriptionEngine]);
+  useEffect(() => { localStorage.setItem("clipon_llm_engine", llmEngine); }, [llmEngine]);
+  useEffect(() => { localStorage.setItem("clipon_local_llm_model", localLlmModel); }, [localLlmModel]);
+  useEffect(() => { localStorage.setItem("clipon_deepgram_key", deepgramKey); }, [deepgramKey]);
+  useEffect(() => { localStorage.setItem("clipon_anthropic_key", anthropicKey); }, [anthropicKey]);
+  useEffect(() => { localStorage.setItem("clipon_deepseek_key", deepseekKey); }, [deepseekKey]);
+  useEffect(() => { localStorage.setItem("clipon_deepseek_model", deepseekModel); }, [deepseekModel]);
+  useEffect(() => { localStorage.setItem("clipon_gemini_key", geminiKey); }, [geminiKey]);
+  useEffect(() => { localStorage.setItem("clipon_openai_key", openaiKey); }, [openaiKey]);
+  useEffect(() => { localStorage.setItem("clipon_openrouter_key", openrouterKey); }, [openrouterKey]);
+  useEffect(() => { localStorage.setItem("clipon_openrouter_model", openrouterModel); }, [openrouterModel]);
+  useEffect(() => { localStorage.setItem("clipon_groq_key", groqKey); }, [groqKey]);
+  useEffect(() => { localStorage.setItem("clipon_youtube_dir", youtubeSaveDir); }, [youtubeSaveDir]);
+  useEffect(() => { localStorage.setItem("clipon_clips_dir", clipsSaveDir); }, [clipsSaveDir]);
+  useEffect(() => { localStorage.setItem("clipon_reframe_mode", reframeMode); }, [reframeMode]);
 
+  // Initial load
+  useEffect(() => {
+    void refresh();
+    const onboardedVal = localStorage.getItem("clipon_onboarded") || localStorage.getItem("autoshorts_onboarded");
+    setIsOnboarded(onboardedVal === "true");
+
+    // Load default folders
+    invoke<{ youtube_download_dir: string; clips_output_dir: string }>("get_default_folders")
+      .then((dirs) => setDefaultFolders({ youtubeSaveDir: dirs.youtube_download_dir, clipsOutputDir: dirs.clips_output_dir }))
+      .catch(() => {});
+  }, []);
+
+  // Listen for Escape key to close modals
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowSettings(false);
+        setYoutubeModalOpen(false);
+        setShowStyleModal(false);
+        setSocialKitModalCandidate(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // Refresh data from Rust backend
+  async function refresh(nextProjectId?: string) {
+    setError(null);
+    try {
+      const [env, projectList] = await Promise.all([
+        invoke<EnvironmentStatus>("environment_status"),
+        invoke<Project[]>("list_projects"),
+      ]);
+      setEnvironment(env);
+      setProjects(projectList);
+
+      if (env.hasDeepgramKey && !localStorage.getItem("clipon_transcription_engine")) {
+        setTranscriptionEngine("deepgram");
+      }
+      if (env.deepgramKey && !localStorage.getItem("clipon_deepgram_key")) {
+        setDeepgramKey(env.deepgramKey);
+      }
+      if (env.geminiKey && !localStorage.getItem("clipon_gemini_key")) {
+        setGeminiKey(env.geminiKey);
+      }
+      if (env.deepseekKey && !localStorage.getItem("clipon_deepseek_key")) {
+        setDeepseekKey(env.deepseekKey);
+      }
+
+      if (nextProjectId) {
+        const nextDetail = await invoke<ProjectDetail>("get_project_detail", { projectId: nextProjectId });
+        setDetail(nextDetail);
+      } else if (detail) {
+        const nextDetail = await invoke<ProjectDetail>("get_project_detail", { projectId: detail.project.id });
+        setDetail(nextDetail);
+      }
+    } catch (err) {
+      console.error("Refresh error:", err);
+    }
+  }
+
+  // Derived transcript & clips
   const transcript = useMemo(() => {
     if (!detail?.transcript) return null;
     try {
@@ -224,26 +347,23 @@ function App() {
     }
   }, [detail?.transcript]);
 
-  const selectedCount = detail?.candidates.filter((candidate) => candidate.selected).length ?? 0;
   const clipByCandidate = useMemo(() => {
     return new Map(detail?.clips.map((clip) => [clip.candidateId, clip]) ?? []);
   }, [detail?.clips]);
-  const selectedCandidates = detail?.candidates.filter((candidate) => candidate.selected) ?? [];
-  const selectedCutCount = selectedCandidates.filter((candidate) => {
-    const clip = clipByCandidate.get(candidate.id);
+
+  const selectedCount = detail?.candidates.filter((c) => c.selected).length ?? 0;
+  const cutCount = detail?.candidates.filter((c) => {
+    const clip = clipByCandidate.get(c.id);
     return clip?.status === "done" && Boolean(clip.outputPath);
-  }).length;
-  const selectedCaptionsCount = selectedCandidates.filter((candidate) => {
-    const clip = clipByCandidate.get(candidate.id);
-    return clip?.status === "done" && Boolean(clip.captionAssPath);
-  }).length;
-  const canUseCloudKey = environment?.hasDeepgramKey || deepgramKey.trim().length > 0;
-  const canUseClaude = environment?.hasAnthropicKey || anthropicKey.trim().length > 0;
-  const canUseDeepseek = environment?.hasDeepseekKey || deepseekKey.trim().length > 0;
-  const canUseGemini = environment?.hasGeminiKey || geminiKey.trim().length > 0;
-  const canUseOpenai = environment?.hasOpenaiKey || openaiKey.trim().length > 0;
-  const canUseOpenrouter = environment?.hasOpenrouterKey || openrouterKey.trim().length > 0;
-  const canUseGroq = environment?.hasGroqKey || groqKey.trim().length > 0;
+  }).length ?? 0;
+
+  const canUseCloudKey = Boolean(environment?.hasDeepgramKey || deepgramKey.trim().length > 0);
+  const canUseClaude = Boolean(environment?.hasAnthropicKey || anthropicKey.trim().length > 0);
+  const canUseDeepseek = Boolean(environment?.hasDeepseekKey || deepseekKey.trim().length > 0);
+  const canUseGemini = Boolean(environment?.hasGeminiKey || geminiKey.trim().length > 0);
+  const canUseOpenai = Boolean(environment?.hasOpenaiKey || openaiKey.trim().length > 0);
+  const canUseOpenrouter = Boolean(environment?.hasOpenrouterKey || openrouterKey.trim().length > 0);
+  const canUseGroq = Boolean(environment?.hasGroqKey || groqKey.trim().length > 0);
 
   const canTranscribe = transcriptionEngine === "local"
     ? Boolean(environment?.hasLocalWhisperModel)
@@ -251,86 +371,57 @@ function App() {
 
   const canUseActiveLlm = llmEngine === "local"
     ? Boolean(environment?.hasOllama)
-    : llmEngine === "claude"
-      ? canUseClaude
-      : llmEngine === "deepseek"
-        ? canUseDeepseek
-        : llmEngine === "gemini"
-          ? canUseGemini
-          : llmEngine === "openai"
-            ? canUseOpenai
-            : llmEngine === "openrouter"
-              ? canUseOpenrouter
-              : llmEngine === "groq"
-                ? canUseGroq
-                : false;
+    : llmEngine === "claude" ? canUseClaude
+    : llmEngine === "deepseek" ? canUseDeepseek
+    : llmEngine === "gemini" ? canUseGemini
+    : llmEngine === "openai" ? canUseOpenai
+    : llmEngine === "openrouter" ? canUseOpenrouter
+    : llmEngine === "groq" ? canUseGroq : false;
 
-  useEffect(() => {
-    void refresh();
-    const value = (localStorage.getItem("clipon_onboarded") || localStorage.getItem("autoshorts_onboarded"));
-    if (value === "true") {
-      setIsOnboarded(true);
-    } else {
-      setIsOnboarded(false);
+  async function run(action: BusyState, task: () => Promise<void>) {
+    setBusy(action);
+    setError(null);
+    try {
+      await task();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy("idle");
     }
-  }, []);
+  }
 
-  useEffect(() => {
-    localStorage.setItem("clipon_transcription_engine", transcriptionEngine);
-  }, [transcriptionEngine]);
+  // Open directory in native macOS Finder
+  async function openFolder(path: string) {
+    try {
+      await invoke("open_folder", { path });
+    } catch (err) {
+      setError(String(err));
+    }
+  }
 
-  useEffect(() => {
-    localStorage.setItem("clipon_llm_engine", llmEngine);
-  }, [llmEngine]);
+  // Pick folder using native dialog
+  async function browseFolder(
+    currentVal: string,
+    setter: (val: string) => void,
+    storageKey: string
+  ) {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        defaultPath: currentVal || undefined,
+      });
+      if (typeof selected === "string" && selected.trim()) {
+        setter(selected.trim());
+        localStorage.setItem(storageKey, selected.trim());
+        showToast("Storage location updated");
+      }
+    } catch (err) {
+      console.error("Failed to select folder:", err);
+    }
+  }
 
-  useEffect(() => {
-    localStorage.setItem("clipon_local_llm_model", localLlmModel);
-  }, [localLlmModel]);
-
-  useEffect(() => {
-    localStorage.setItem("clipon_deepgram_key", deepgramKey);
-  }, [deepgramKey]);
-
-  useEffect(() => {
-    localStorage.setItem("clipon_anthropic_key", anthropicKey);
-  }, [anthropicKey]);
-
-  useEffect(() => {
-    localStorage.setItem("clipon_deepseek_key", deepseekKey);
-  }, [deepseekKey]);
-
-  useEffect(() => {
-    localStorage.setItem("clipon_deepseek_model", deepseekModel);
-  }, [deepseekModel]);
-
-  useEffect(() => {
-    localStorage.setItem("clipon_gemini_key", geminiKey);
-  }, [geminiKey]);
-
-  useEffect(() => {
-    localStorage.setItem("clipon_openai_key", openaiKey);
-  }, [openaiKey]);
-
-  useEffect(() => {
-    localStorage.setItem("clipon_openrouter_key", openrouterKey);
-  }, [openrouterKey]);
-
-  useEffect(() => {
-    localStorage.setItem("clipon_groq_key", groqKey);
-  }, [groqKey]);
-
-  useEffect(() => {
-    localStorage.setItem("clipon_openrouter_model", openrouterModel);
-  }, [openrouterModel]);
-
-  useEffect(() => {
-    localStorage.setItem("clipon_youtube_dir", youtubeSaveDir);
-  }, [youtubeSaveDir]);
-
-  useEffect(() => {
-    localStorage.setItem("clipon_clips_dir", clipsSaveDir);
-  }, [clipsSaveDir]);
-
+  // Pull Ollama model
   const pullModelDirectly = async (modelName: string) => {
     setDownloadingModelName(modelName);
     setModelDownloadProgress(0);
@@ -353,115 +444,34 @@ function App() {
       unlisten();
       setModelDownloadStatus("Download complete!");
       setModelDownloadProgress(100);
-      setTimeout(() => setDownloadingModelName(null), 500);
+      showToast(`Model ${modelName} downloaded!`);
+      setTimeout(() => setDownloadingModelName(null), 600);
     } catch (err) {
       alert("Failed to download model: " + String(err));
       setDownloadingModelName(null);
     }
   };
 
-  async function refresh(nextProjectId?: string) {
-    setError(null);
-    const [env, projectList] = await Promise.all([
-      invoke<EnvironmentStatus>("environment_status"),
-      invoke<Project[]>("list_projects"),
-    ]);
-    setEnvironment(env);
-    setProjects(projectList);
-
-    if (env.hasDeepgramKey) {
-      const storedEngine = (localStorage.getItem("clipon_transcription_engine") || localStorage.getItem("autoshorts_transcription_engine"));
-      if (!storedEngine || storedEngine === "local") {
-        setTranscriptionEngine("deepgram");
-      }
-      if (env.deepgramKey && !(localStorage.getItem("clipon_deepgram_key") || localStorage.getItem("autoshorts_deepgram_key"))) {
-        setDeepgramKey(env.deepgramKey);
-      }
-    }
-
-    const storedLlm = (localStorage.getItem("clipon_llm_engine") || localStorage.getItem("autoshorts_llm_engine"));
-    if (!storedLlm || storedLlm === "local") {
-      if (env.llmProvider === "gemini" || env.hasGeminiKey) {
-        setLlmEngine("gemini");
-      } else if (env.llmProvider === "deepseek" || env.hasDeepseekKey) {
-        setLlmEngine("deepseek");
-      } else if (env.hasGroqKey) {
-        setLlmEngine("groq");
-      } else if (env.hasAnthropicKey) {
-        setLlmEngine("claude");
-      }
-    }
-
-    if (env.geminiKey && !(localStorage.getItem("clipon_gemini_key") || localStorage.getItem("autoshorts_gemini_key"))) {
-      setGeminiKey(env.geminiKey);
-    }
-    if (env.deepseekKey && !(localStorage.getItem("clipon_deepseek_key") || localStorage.getItem("autoshorts_deepseek_key"))) {
-      setDeepseekKey(env.deepseekKey);
-    }
-
-    if (env.hasDeepgramKey && (env.hasGeminiKey || env.hasDeepseekKey || env.hasAnthropicKey || env.hasGroqKey)) {
-      setIsOnboarded(true);
-      localStorage.setItem("clipon_onboarded", "true");
-    }
-
-    if (nextProjectId) {
-      const nextDetail = await invoke<ProjectDetail>("get_project_detail", { projectId: nextProjectId });
-      setDetail(nextDetail);
-    } else {
-      setDetail(null);
-    }
-  }
-
-  // Load default folder paths from Rust
-  useEffect(() => {
-    invoke<{youtube_download_dir: string; clips_output_dir: string}>("get_default_folders")
-      .then((dirs) => setDefaultFolders({ youtubeSaveDir: dirs.youtube_download_dir, clipsOutputDir: dirs.clips_output_dir }))
-      .catch(() => {});
-  }, []);
-
-  async function openFolder(path: string) {
-    try {
-      await invoke("open_folder", { path });
-    } catch (err) {
-      setError(String(err));
-    }
-  }
-
-  async function run(action: BusyState, task: () => Promise<void>) {
-    setBusy(action);
-    setError(null);
-    try {
-      await task();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy("idle");
-    }
-  }
-
+  // Import local media
   async function importMedia() {
     const selected = await open({
       multiple: false,
-      filters: [
-        {
-          name: "Media",
-          extensions: ["mp4", "mov", "mp3", "wav", "m4a"],
-        },
-      ],
+      filters: [{ name: "Media", extensions: ["mp4", "mov", "mp3", "wav", "m4a"] }],
     });
     if (typeof selected !== "string") return;
     setMediaPathToImport(selected);
     setShowStyleModal(true);
   }
 
+  // YouTube import flow
   async function handleYoutubeImport() {
     if (!youtubeUrl) return;
     setYoutubeStatus("checking");
     setError(null);
     try {
-      const result = await invoke<{isSafe: boolean; license: string | null}>("check_youtube_copyright", { url: youtubeUrl });
+      const result = await invoke<{ isSafe: boolean; license: string | null }>("check_youtube_copyright", { url: youtubeUrl });
       if (!result.isSafe) {
-        setYoutubeWarningLicense(result.license || "Unknown / Not specified");
+        setYoutubeWarningLicense(result.license || "Standard YouTube License");
         setYoutubeStatus("warning");
         return;
       }
@@ -476,7 +486,10 @@ function App() {
     setYoutubeStatus("downloading");
     setError(null);
     try {
-      const downloadedPath = await invoke<string>("download_youtube_video", { url: youtubeUrl, outputDir: youtubeSaveDir.trim() || null });
+      const downloadedPath = await invoke<string>("download_youtube_video", {
+        url: youtubeUrl,
+        outputDir: youtubeSaveDir.trim() || null,
+      });
       setYoutubeModalOpen(false);
       setYoutubeUrl("");
       setYoutubeStatus("idle");
@@ -503,6 +516,7 @@ function App() {
       });
       newProjectId = project.id;
       await refresh(project.id);
+      showToast("Media imported successfully!");
     });
 
     if (newProjectId) {
@@ -510,57 +524,21 @@ function App() {
     }
   }
 
+  // Automated pipeline
   async function runAutoPipeline(projectId: string) {
     setError(null);
     const env = await invoke<EnvironmentStatus>("environment_status");
 
-    if (transcriptionEngine === "local") {
-      if (!env.hasLocalWhisperModel) {
-        setError("Import successful. Local Whisper GGML model (ggml-base.bin) is missing in your models directory. Please add it to start transcription.");
-        return;
-      }
-    } else {
-      const hasDG = env.hasDeepgramKey || deepgramKey.trim().length > 0;
-      if (!hasDG) {
-        setError("Import successful. Deepgram key is missing. Please add it to start transcription.");
-        return;
-      }
+    if (transcriptionEngine === "local" && !env.hasLocalWhisperModel) {
+      setError("Import complete. Local Whisper is missing. Add model or switch to Cloud in Settings.");
+      return;
+    }
+    if (transcriptionEngine === "deepgram" && !canUseCloudKey) {
+      setError("Import complete. Deepgram API Key is missing. Add it in Settings to transcribe.");
+      return;
     }
 
-    if (llmEngine === "local") {
-      if (!env.hasOllama) {
-        setError("Import successful. Local Ollama server is not running at http://localhost:11434. Please start it to find viral moments.");
-        return;
-      }
-    } else {
-      const activeKey =
-        llmEngine === "claude" ? anthropicKey :
-          llmEngine === "deepseek" ? deepseekKey :
-            llmEngine === "gemini" ? geminiKey :
-              llmEngine === "openai" ? openaiKey :
-                llmEngine === "openrouter" ? openrouterKey :
-                  llmEngine === "groq" ? groqKey : "";
-      const hasActiveKey =
-        llmEngine === "claude" ? (env.hasAnthropicKey || activeKey.trim().length > 0) :
-          llmEngine === "deepseek" ? (env.hasDeepseekKey || activeKey.trim().length > 0) :
-            llmEngine === "gemini" ? (env.hasGeminiKey || activeKey.trim().length > 0) :
-              llmEngine === "openai" ? (env.hasOpenaiKey || activeKey.trim().length > 0) :
-                llmEngine === "openrouter" ? (env.hasOpenrouterKey || activeKey.trim().length > 0) :
-                  llmEngine === "groq" ? (env.hasGroqKey || activeKey.trim().length > 0) : false;
-      if (!hasActiveKey) {
-        const engineName =
-          llmEngine === "claude" ? "Claude" :
-            llmEngine === "deepseek" ? "DeepSeek" :
-              llmEngine === "gemini" ? "Gemini" :
-                llmEngine === "openai" ? "OpenAI" :
-                  llmEngine === "openrouter" ? "OpenRouter" :
-                    llmEngine === "groq" ? "Groq" : "LLM";
-        setError(`Transcription complete. ${engineName} API Key is missing. Please add it in settings to analyze viral moments.`);
-        return;
-      }
-    }
-
-    // 1. Transcription
+    // 1. Transcribe
     try {
       setBusy("transcribe");
       await invoke<Transcript>("transcribe_project", {
@@ -569,22 +547,24 @@ function App() {
         apiKey: transcriptionEngine === "deepgram" ? (deepgramKey.trim() || null) : null,
       });
       await refresh(projectId);
+      showToast("Transcription complete!");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setBusy("idle");
       return;
     }
 
-    // 2. LLM Moments
+    // 2. Moments detection
     try {
       setBusy("moments");
       const activeKey =
         llmEngine === "claude" ? anthropicKey.trim() :
-          llmEngine === "deepseek" ? deepseekKey.trim() :
-            llmEngine === "gemini" ? geminiKey.trim() :
-              llmEngine === "openai" ? openaiKey.trim() :
-                llmEngine === "openrouter" ? openrouterKey.trim() :
-                  llmEngine === "groq" ? groqKey.trim() : "";
+        llmEngine === "deepseek" ? deepseekKey.trim() :
+        llmEngine === "gemini" ? geminiKey.trim() :
+        llmEngine === "openai" ? openaiKey.trim() :
+        llmEngine === "openrouter" ? openrouterKey.trim() :
+        llmEngine === "groq" ? groqKey.trim() : "";
+
       await invoke<Candidate[]>("generate_candidates", {
         projectId,
         apiKey: activeKey || null,
@@ -593,22 +573,20 @@ function App() {
         allowDemo: false,
       });
       await refresh(projectId);
+      showToast("Viral moments detected!");
     } catch (err) {
-      const errMsg = String(err);
-      if (llmEngine === "local" && (errMsg.includes("not found") || errMsg.includes("404"))) {
-        if (window.confirm(`Ollama model "${localLlmModel}" is not downloaded. Would you like to download it now?`)) {
-          setTimeout(() => {
-            void pullModelDirectly(localLlmModel).then(() => {
-              void refresh(projectId);
-            });
-          }, 100);
-          return;
-        }
-      }
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy("idle");
     }
+  }
+
+  // Project management
+  async function selectProject(projectId: string) {
+    await run("idle", async () => {
+      const nextDetail = await invoke<ProjectDetail>("get_project_detail", { projectId });
+      setDetail(nextDetail);
+    });
   }
 
   async function renameProject(projectId: string) {
@@ -623,6 +601,7 @@ function App() {
     try {
       await invoke("rename_project", { projectId, name: trimmed });
       await refresh(detail?.project.id);
+      showToast("Project renamed");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -632,24 +611,19 @@ function App() {
     const project = projects.find((p) => p.id === projectId);
     if (!project) return;
     const name = project.name || fileName(project.sourcePath);
-    if (!window.confirm(`Are you sure you want to delete the project "${name}"?`)) return;
+    if (!window.confirm(`Delete project "${name}"? This cannot be undone.`)) return;
 
     try {
       await invoke("delete_project", { projectId });
-      const nextActiveId = detail?.project.id === projectId ? null : detail?.project.id;
-      await refresh(nextActiveId ?? undefined);
+      if (detail?.project.id === projectId) setDetail(null);
+      await refresh();
+      showToast("Project deleted");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }
 
-  async function selectProject(projectId: string) {
-    await run("idle", async () => {
-      const nextDetail = await invoke<ProjectDetail>("get_project_detail", { projectId });
-      setDetail(nextDetail);
-    });
-  }
-
+  // Manual actions in project workspace
   async function transcribe() {
     if (!detail) return;
     await run("transcribe", async () => {
@@ -659,42 +633,30 @@ function App() {
         apiKey: transcriptionEngine === "deepgram" ? (deepgramKey.trim() || null) : null,
       });
       await refresh(detail.project.id);
+      showToast("Transcription finished");
     });
   }
 
-  async function moments(allowDemo: boolean) {
+  async function moments() {
     if (!detail) return;
     await run("moments", async () => {
       const activeKey =
         llmEngine === "claude" ? anthropicKey.trim() :
-          llmEngine === "deepseek" ? deepseekKey.trim() :
-            llmEngine === "gemini" ? geminiKey.trim() :
-              llmEngine === "openai" ? openaiKey.trim() :
-                llmEngine === "openrouter" ? openrouterKey.trim() :
-                  llmEngine === "groq" ? groqKey.trim() : "";
-      try {
-        await invoke<Candidate[]>("generate_candidates", {
-          projectId: detail.project.id,
-          apiKey: activeKey || null,
-          provider: llmEngine,
-          modelName: llmEngine === "local" ? localLlmModel.trim() : (llmEngine === "deepseek" ? (deepseekModel.trim() || null) : (llmEngine === "openrouter" ? (openrouterModel.trim() || null) : null)),
-          allowDemo,
-        });
-        await refresh(detail.project.id);
-      } catch (err) {
-        const errMsg = String(err);
-        if (llmEngine === "local" && (errMsg.includes("not found") || errMsg.includes("404"))) {
-          if (window.confirm(`Ollama model "${localLlmModel}" is not downloaded. Would you like to download it now?`)) {
-            setTimeout(() => {
-              void pullModelDirectly(localLlmModel).then(() => {
-                void refresh(detail.project.id);
-              });
-            }, 100);
-            return;
-          }
-        }
-        throw err;
-      }
+        llmEngine === "deepseek" ? deepseekKey.trim() :
+        llmEngine === "gemini" ? geminiKey.trim() :
+        llmEngine === "openai" ? openaiKey.trim() :
+        llmEngine === "openrouter" ? openrouterKey.trim() :
+        llmEngine === "groq" ? groqKey.trim() : "";
+
+      await invoke<Candidate[]>("generate_candidates", {
+        projectId: detail.project.id,
+        apiKey: activeKey || null,
+        provider: llmEngine,
+        modelName: llmEngine === "local" ? localLlmModel.trim() : (llmEngine === "deepseek" ? (deepseekModel.trim() || null) : (llmEngine === "openrouter" ? (openrouterModel.trim() || null) : null)),
+        allowDemo: false,
+      });
+      await refresh(detail.project.id);
+      showToast("Viral moments detected");
     });
   }
 
@@ -707,6 +669,70 @@ function App() {
       });
       setDetail({ ...detail, candidates });
     });
+  }
+
+  async function toggleCandidate(candidateId: string) {
+    if (!detail) return;
+    const target = detail.candidates.find((c) => c.id === candidateId);
+    if (!target) return;
+    const newSelected = !target.selected;
+
+    const newCandidates = detail.candidates.map((c) => c.id === candidateId ? { ...c, selected: newSelected } : c);
+    setDetail({ ...detail, candidates: newCandidates });
+
+    const newCount = newCandidates.filter((c) => c.selected).length;
+    await updateClipCount(newCount);
+  }
+
+  async function selectBatch(type: "top3" | "top5" | "all" | "none") {
+    if (!detail) return;
+    const total = detail.candidates.length;
+    let count = 0;
+    if (type === "top3") count = Math.min(3, total);
+    else if (type === "top5") count = Math.min(5, total);
+    else if (type === "all") count = total;
+    else if (type === "none") count = 0;
+
+    await updateClipCount(count);
+  }
+
+  async function cutCandidate(candidateId: string) {
+    if (!detail) return;
+    setRenderingCandidateId(candidateId);
+    setBusy("cut");
+    setError(null);
+    try {
+      await invoke<string>("render_flat_clip_for_candidate", { candidateId, reframeMode });
+      showToast("Clip rendered successfully!");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRenderingCandidateId(null);
+      setBusy("idle");
+      await refresh(detail.project.id);
+    }
+  }
+
+  async function cutSelected() {
+    if (!detail) return;
+    const selected = detail.candidates.filter((c) => c.selected);
+    if (selected.length === 0) return;
+
+    setBusy("cut");
+    setError(null);
+    try {
+      for (const candidate of selected) {
+        setRenderingCandidateId(candidate.id);
+        await invoke<string>("render_flat_clip_for_candidate", { candidateId: candidate.id, reframeMode });
+      }
+      showToast(`Finished rendering ${selected.length} clips!`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRenderingCandidateId(null);
+      setBusy("idle");
+      await refresh(detail.project.id);
+    }
   }
 
   async function handleOpenSocialKit(candidate: Candidate) {
@@ -729,6 +755,7 @@ function App() {
     try {
       const kit = await invoke<SocialKit>("generate_social_kit_for_candidate", { candidateId });
       setSocialKitData((prev) => ({ ...prev, [candidateId]: kit }));
+      showToast("Social kit regenerated");
     } catch (err) {
       console.error("Failed to regenerate social kit:", err);
     } finally {
@@ -736,50 +763,41 @@ function App() {
     }
   }
 
-  function copyToClipboard(text: string, label: string) {
-    navigator.clipboard.writeText(text);
-    setCopiedToast(label);
-    setTimeout(() => setCopiedToast(null), 2000);
-  }
+  // Filtered projects
+  const filteredProjects = useMemo(() => {
+    if (!projectSearch.trim()) return projects;
+    const query = projectSearch.toLowerCase();
+    return projects.filter((p) => {
+      const name = p.name || fileName(p.sourcePath);
+      return name.toLowerCase().includes(query) || p.sourcePath.toLowerCase().includes(query);
+    });
+  }, [projects, projectSearch]);
 
-  async function cutCandidate(candidateId: string) {
-    if (!detail) return;
-    setRenderingCandidateId(candidateId);
-    setBusy("cut");
-    setError(null);
-    try {
-      await invoke<string>("render_flat_clip_for_candidate", { candidateId, reframeMode });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setRenderingCandidateId(null);
-      setBusy("idle");
-      await refresh(detail.project.id);
-    }
-  }
+  // Filtered transcript
+  const filteredSegments = useMemo(() => {
+    if (!transcript?.segments) return [];
+    if (!transcriptSearch.trim()) return transcript.segments;
+    const query = transcriptSearch.toLowerCase();
+    return transcript.segments.filter((s) => s.text.toLowerCase().includes(query));
+  }, [transcript, transcriptSearch]);
 
-  async function cutSelected() {
-    if (!detail) return;
-    setBusy("cut");
-    setError(null);
-    try {
-      for (const candidate of selectedCandidates) {
-        setRenderingCandidateId(candidate.id);
-        await invoke<string>("render_flat_clip_for_candidate", { candidateId: candidate.id, reframeMode });
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setRenderingCandidateId(null);
-      setBusy("idle");
-      await refresh(detail.project.id);
+  // Filtered candidates
+  const filteredCandidates = useMemo(() => {
+    if (!detail?.candidates) return [];
+    if (momentTab === "selected") return detail.candidates.filter((c) => c.selected);
+    if (momentTab === "ready") {
+      return detail.candidates.filter((c) => {
+        const clip = clipByCandidate.get(c.id);
+        return clip?.status === "done" && Boolean(clip.outputPath);
+      });
     }
-  }
+    return detail.candidates;
+  }, [detail?.candidates, momentTab, clipByCandidate]);
 
   if (isOnboarded === null) {
     return (
-      <div className="onboarding-loading" style={{ display: 'grid', placeItems: 'center', height: '100vh', background: 'var(--bg-base)' }}>
-        <Loader2 className="spin" size={32} color="var(--accent-primary)" />
+      <div className="center-loader-screen">
+        <Loader2 className="spin" size={32} />
       </div>
     );
   }
@@ -806,460 +824,444 @@ function App() {
   }
 
   return (
-    <>
     <div className="app-shell-container">
+      <Toast message={toast} onClose={() => setToast(null)} />
+
+      {/* Main Layout */}
       <main className="app-shell">
+        {/* Left Sidebar */}
         <aside className="sidebar">
-          <div
-            className="brand-row"
-            onClick={() => setDetail(null)}
-            style={{ cursor: "pointer" }}
-            title="Go to Home Dashboard"
-          >
+          {/* Brand mark */}
+          <div className="brand-row" onClick={() => setDetail(null)} title="Go to All Projects">
             <div className="brand-mark">
-              <Clapperboard size={20} />
+              <Clapperboard size={18} />
             </div>
             <div>
-              <h1>ClipOn</h1>
-              <p>Long recording in. Short clips out.</p>
+              <div className="brand-title">
+                <span>ClipOn</span>
+                <span className="brand-badge">v0.1.3</span>
+              </div>
+              <p className="brand-subtitle">Long recording in. Short clips out.</p>
             </div>
           </div>
 
+          {/* Quick Actions */}
           <div className="sidebar-actions">
-            <button className="primary-action" onClick={importMedia} disabled={busy !== "idle"}>
-              {busy === "import" ? <Loader2 className="spin" size={16} /> : <FileVideo size={16} />}
+            <button className="sidebar-action-btn primary" onClick={importMedia} disabled={busy !== "idle"}>
+              {busy === "import" ? <Loader2 className="spin" size={15} /> : <FileVideo size={15} />}
               Import Recording
             </button>
-            <button 
-              className="secondary-action" 
-              onClick={() => setYoutubeModalOpen(true)} 
-              disabled={busy !== "idle" || !environment?.hasYtdlp}
-              title={!environment?.hasYtdlp ? "Please install yt-dlp to use this feature" : "Download a video from YouTube"}
-            >
-              <Youtube size={16} />
-              Import from YouTube
-            </button>
             <button
-              className="secondary-action"
-              onClick={() => setShowFolderSettings(true)}
-              title="Choose where YouTube videos and clips are saved"
+              className="sidebar-action-btn secondary"
+              onClick={() => setYoutubeModalOpen(true)}
+              disabled={busy !== "idle" || !environment?.hasYtdlp}
+              title={!environment?.hasYtdlp ? "yt-dlp required" : "Import from YouTube"}
             >
-              <FolderOpen size={16} />
-              File Locations
+              <Youtube size={15} />
+              Import YouTube
             </button>
+          </div>
+
+          {/* Project List Navigation */}
+          <div className="sidebar-section-header">
+            <span>Projects ({projects.length})</span>
           </div>
 
           <section className="project-list" aria-label="Projects">
             <button
-              className={`project-row ${!detail ? "active" : ""}`}
+              className={`project-nav-item ${!detail ? "active" : ""}`}
               onClick={() => setDetail(null)}
             >
-              <Clapperboard size={15} />
+              <Layers size={14} />
               <span>All Projects</span>
-              <ChevronRight size={14} />
+              <ChevronRight size={13} className="nav-arrow" />
             </button>
 
             {projects.map((project) => (
               <button
                 key={project.id}
-                className={`project-row ${detail?.project.id === project.id ? "active" : ""}`}
+                className={`project-nav-item ${detail?.project.id === project.id ? "active" : ""}`}
                 onClick={() => void selectProject(project.id)}
               >
-                <FileVideo size={15} />
-                <span>{project.name || fileName(project.sourcePath)}</span>
-                <ChevronRight size={14} />
+                <FileVideo size={14} />
+                <span className="truncate">{project.name || fileName(project.sourcePath)}</span>
+                <ChevronRight size={13} className="nav-arrow" />
               </button>
             ))}
           </section>
+
+          {/* Sidebar Footer with Settings */}
+          <div className="sidebar-footer">
+            <button
+              className="sidebar-action-btn settings-btn"
+              onClick={() => setShowSettings(true)}
+              title="Global Studio Settings"
+            >
+              <Settings size={15} />
+              <span>Settings</span>
+            </button>
+          </div>
         </aside>
 
+        {/* Workspace / Content Area */}
         <section className="workspace">
           {detail ? (
-            <>
-              <header className="topbar">
-                <div className="project-info">
-                  <div className="eyebrow">{detail.project.status}</div>
-                  <h2>{detail.project.name || fileName(detail.project.sourcePath)}</h2>
-                </div>
-                <div className="topbar-actions">
-                  <button
-                    className={`icon-button settings-toggle ${showSettings ? "active" : ""}`}
-                    onClick={() => setShowSettings(!showSettings)}
-                    title="API Settings"
-                  >
-                    <SlidersHorizontal size={16} />
-                    <span>API Settings</span>
+            <div className="project-workspace">
+              {/* Studio Topbar */}
+              <header className="workspace-topbar">
+                <div className="topbar-left">
+                  <button className="back-btn" onClick={() => setDetail(null)} title="Back to All Projects">
+                    <ArrowLeft size={16} />
+                    <span>Projects</span>
                   </button>
-                  <button className="icon-button" onClick={() => void refresh(detail.project.id)} title="Refresh">
-                    <RefreshCw size={18} />
+                  <span className="breadcrumb-slash">/</span>
+                  <div className="topbar-title-group">
+                    <h2
+                      className="project-editable-title"
+                      onClick={() => void renameProject(detail.project.id)}
+                      title="Click to rename project"
+                    >
+                      {detail.project.name || fileName(detail.project.sourcePath)}
+                      <Edit3 size={13} className="title-edit-icon" />
+                    </h2>
+                    <div className="project-meta-pills">
+                      <span className="meta-pill">
+                        {detail.project.sourceDuration ? formatTime(detail.project.sourceDuration) : "Probing..."}
+                      </span>
+                      <span className="meta-pill">{detail.project.captionStyle || "Modern Box"}</span>
+                      <span className="meta-pill status-pill">{detail.project.status}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="topbar-right">
+                  <button
+                    className="topbar-action-btn"
+                    onClick={() => openFolder(clipsSaveDir || defaultFolders?.clipsOutputDir || "")}
+                    title="Open Output Clips in Finder"
+                  >
+                    <FolderOpen size={15} />
+                    <span>Clips Folder</span>
+                  </button>
+                  <button
+                    className="topbar-action-btn"
+                    onClick={() => setShowSettings(true)}
+                    title="Studio Settings"
+                  >
+                    <Sliders size={15} />
+                    <span>Config</span>
+                  </button>
+                  <button
+                    className="topbar-icon-btn"
+                    onClick={() => void refresh(detail.project.id)}
+                    title="Refresh Studio State"
+                  >
+                    <RefreshCw size={15} />
                   </button>
                 </div>
               </header>
 
-              {showSettings && (
-                <div className="settings-panel">
-                  <div className="key-stack-horizontal">
-                    <label>
-                      <span>Transcription Engine</span>
-                      <select
-                        value={transcriptionEngine}
-                        onChange={(event) => setTranscriptionEngine(event.target.value as "deepgram" | "local")}
-                      >
-                        <option value="local">Local Whisper (Offline)</option>
-                        <option value="deepgram">Deepgram (Cloud)</option>
-                      </select>
-                      <span>LLM Engine</span>
-                      <select
-                        value={llmEngine}
-                        onChange={(event) => setLlmEngine(event.target.value as any)}
-                      >
-                        <option value="local">Ollama (Offline Local)</option>
-                        <option value="claude">Claude (Cloud)</option>
-                        <option value="deepseek">DeepSeek (Cloud)</option>
-                        <option value="gemini">Google Gemini (Cloud)</option>
-                        <option value="openai">OpenAI (Cloud)</option>
-                        <option value="openrouter">OpenRouter (Cloud)</option>
-                        <option value="groq">Groq (Cloud)</option>
-                      </select>
-                    </label>
-                    {transcriptionEngine === "deepgram" && (
-                      <label>
-                        <span>Deepgram API Key</span>
-                        <input
-                          value={deepgramKey}
-                          onChange={(event) => setDeepgramKey(event.target.value)}
-                          placeholder={environment?.hasDeepgramKey ? "Loaded from env" : "Optional (Deepgram API Key)"}
-                          type="password"
-                        />
-                      </label>
-                    )}
-                    {llmEngine === "claude" && (
-                      <label>
-                        <span>Claude API Key</span>
-                        <input
-                          value={anthropicKey}
-                          onChange={(event) => setAnthropicKey(event.target.value)}
-                          placeholder={environment?.hasAnthropicKey ? "Loaded from env" : "Optional (Claude API Key)"}
-                          type="password"
-                        />
-                      </label>
-                    )}
-                    {llmEngine === "deepseek" && (
-                      <>
-                        <label>
-                          <span>DeepSeek API Key</span>
-                          <input
-                            value={deepseekKey}
-                            onChange={(event) => setDeepseekKey(event.target.value)}
-                            placeholder={environment?.hasDeepseekKey ? "Loaded from env" : "Optional (DeepSeek API Key)"}
-                            type="password"
-                          />
-                        </label>
-                        <label>
-                          <span>DeepSeek Model</span>
-                          <input
-                            value={deepseekModel}
-                            onChange={(event) => setDeepseekModel(event.target.value)}
-                            placeholder="Optional (e.g. deepseek-chat, deepseek-v4-pro)"
-                            type="text"
-                          />
-                        </label>
-                      </>
-                    )}
-                    {llmEngine === "gemini" && (
-                      <label>
-                        <span>Gemini API Key</span>
-                        <input
-                          value={geminiKey}
-                          onChange={(event) => setGeminiKey(event.target.value)}
-                          placeholder={environment?.hasGeminiKey ? "Loaded from env" : "Optional (Gemini API Key)"}
-                          type="password"
-                        />
-                      </label>
-                    )}
-                    {llmEngine === "openai" && (
-                      <label>
-                        <span>OpenAI API Key</span>
-                        <input
-                          value={openaiKey}
-                          onChange={(event) => setOpenaiKey(event.target.value)}
-                          placeholder={environment?.hasOpenaiKey ? "Loaded from env" : "Optional (OpenAI API Key)"}
-                          type="password"
-                        />
-                      </label>
-                    )}
-                    {llmEngine === "openrouter" && (
-                      <>
-                        <label>
-                          <span>OpenRouter API Key</span>
-                          <input
-                            value={openrouterKey}
-                            onChange={(event) => setOpenrouterKey(event.target.value)}
-                            placeholder={environment?.hasOpenrouterKey ? "Loaded from env" : "Optional (OpenRouter API Key)"}
-                            type="password"
-                          />
-                        </label>
-                        <label>
-                          <span>OpenRouter Model</span>
-                          <input
-                            value={openrouterModel}
-                            onChange={(event) => setOpenrouterModel(event.target.value)}
-                            placeholder="Optional (e.g. google/gemini-2.5-flash, deepseek/deepseek-r1)"
-                            type="text"
-                          />
-                        </label>
-                      </>
-                    )}
-                    {llmEngine === "groq" && (
-                      <label>
-                        <span>Groq API Key</span>
-                        <input
-                          value={groqKey}
-                          onChange={(event) => setGroqKey(event.target.value)}
-                          placeholder={environment?.hasGroqKey ? "Loaded from env" : "Optional (Groq API Key)"}
-                          type="password"
-                        />
-                      </label>
-                    )}
-
-                    {llmEngine === "local" && (
-                      <label>
-                        <span>Ollama Model Name</span>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <input
-                            value={localLlmModel}
-                            onChange={(event) => setLocalLlmModel(event.target.value)}
-                            placeholder="e.g. llama3.2, qwen2.5:7b"
-                            type="text"
-                          />
-                          <button
-                            type="button"
-                            className="icon-button"
-                            style={{ minHeight: '36px', height: '36px' }}
-                            onClick={() => pullModelDirectly(localLlmModel)}
-                          >
-                            <Download size={14} /> Pull
-                          </button>
-                        </div>
-                      </label>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
-                    <button
-                      type="button"
-                      className="icon-button"
-                      style={{ background: 'rgba(239, 68, 68, 0.08)', borderColor: 'rgba(239, 68, 68, 0.2)', color: '#f87171' }}
-                      onClick={() => {
-                        if (window.confirm("Are you sure you want to reset your configuration and restart onboarding from scratch?")) {
-                          localStorage.clear();
-                          window.location.reload();
-                        }
-                      }}
-                    >
-                      Reset App Configuration & Onboarding
-                    </button>
-                  </div>
+              {/* Error Banner */}
+              {error && (
+                <div className="workspace-error-banner">
+                  <AlertTriangle size={16} />
+                  <span>{error}</span>
+                  <button onClick={() => setError(null)}><X size={14} /></button>
                 </div>
               )}
 
-              {error && <div className="error-banner">{error}</div>}
+              {/* 4-Stage Studio Pipeline Tracker */}
+              <div className="pipeline-tracker">
+                <div className={`pipeline-step ${detail.project.sourcePath ? "complete" : ""}`}>
+                  <div className="step-circle">{detail.project.sourcePath ? <Check size={12} /> : "1"}</div>
+                  <div className="step-content">
+                    <span className="step-title">Source Loaded</span>
+                    <span className="step-sub">{fileName(detail.project.sourcePath)}</span>
+                  </div>
+                </div>
+                <div className="pipeline-connector" />
 
-              <div className="pipeline-strip">
-                <PipelineStep icon={<AudioLines size={16} />} label="Transcript" done={Boolean(detail.transcript)} />
-                <PipelineStep icon={<Sparkles size={16} />} label="Moments" done={detail.candidates.length > 0} />
-                <PipelineStep icon={<Scissors size={16} />} label="Cut" done={selectedCount > 0 && selectedCutCount === selectedCount} />
-                <PipelineStep icon={<Captions size={16} />} label="Captions" done={selectedCount > 0 && selectedCaptionsCount === selectedCount} />
-                <PipelineStep icon={<Download size={16} />} label="Export" done={selectedCount > 0 && selectedCutCount === selectedCount} />
+                <div className={`pipeline-step ${Boolean(detail.transcript) ? "complete" : ""}`}>
+                  <div className="step-circle">{detail.transcript ? <Check size={12} /> : "2"}</div>
+                  <div className="step-content">
+                    <span className="step-title">Transcription</span>
+                    <span className="step-sub">{transcript ? `${transcript.segments.length} segments` : "Pending"}</span>
+                  </div>
+                </div>
+                <div className="pipeline-connector" />
+
+                <div className={`pipeline-step ${detail.candidates.length > 0 ? "complete" : ""}`}>
+                  <div className="step-circle">{detail.candidates.length > 0 ? <Check size={12} /> : "3"}</div>
+                  <div className="step-content">
+                    <span className="step-title">Viral Moments</span>
+                    <span className="step-sub">{detail.candidates.length ? `${detail.candidates.length} found` : "Pending"}</span>
+                  </div>
+                </div>
+                <div className="pipeline-connector" />
+
+                <div className={`pipeline-step ${cutCount > 0 ? "complete" : ""}`}>
+                  <div className="step-circle">{cutCount > 0 ? <Check size={12} /> : "4"}</div>
+                  <div className="step-content">
+                    <span className="step-title">Rendered Clips</span>
+                    <span className="step-sub">{cutCount > 0 ? `${cutCount} ready` : "Not cut"}</span>
+                  </div>
+                </div>
               </div>
 
-              <div className="work-grid">
-                <section className="panel transcript-panel">
-                  <div className="panel-heading">
+              {/* Split-Screen Studio Grid */}
+              <div className="studio-grid">
+                {/* Left Panel: Transcript Studio */}
+                <section className="studio-panel transcript-studio">
+                  <div className="panel-header">
                     <div>
-                      <h3>Transcript</h3>
-                      <p>{transcript ? `${transcript.segments.length} segments` : "No transcript"}</p>
+                      <h3>Interactive Transcript</h3>
+                      <p>{transcript ? `${transcript.segments.length} dialogue segments` : "Audio not transcribed yet"}</p>
                     </div>
-                    <div className="button-pair">
-                      <button onClick={transcribe} disabled={busy !== "idle" || !canTranscribe}>
-                        {busy === "transcribe" ? <Loader2 className="spin" size={16} /> : <AudioLines size={16} />}
-                        Transcribe
-                      </button>
-                    </div>
+
+                    <button
+                      className="studio-btn primary"
+                      onClick={transcribe}
+                      disabled={busy !== "idle" || !canTranscribe}
+                    >
+                      {busy === "transcribe" ? <Loader2 className="spin" size={14} /> : <AudioLines size={14} />}
+                      {transcript ? "Re-transcribe" : "Transcribe"}
+                    </button>
                   </div>
 
-                  {!canTranscribe && (
-                    <div className="api-warning">
-                      {transcriptionEngine === "local"
-                        ? `⚠️ Local Whisper (Python package 'openai-whisper') is not installed. Run 'pip3 install openai-whisper' in your terminal.`
-                        : "⚠️ Deepgram API Key is missing. Transcribing will not work. Please add your key in API Settings."}
+                  {transcript && (
+                    <div className="panel-search-bar">
+                      <Search size={14} className="search-icon" />
+                      <input
+                        type="text"
+                        placeholder="Search transcript text..."
+                        value={transcriptSearch}
+                        onChange={(e) => setTranscriptSearch(e.target.value)}
+                      />
+                      {transcriptSearch && (
+                        <button onClick={() => setTranscriptSearch("")} className="clear-search"><X size={13} /></button>
+                      )}
                     </div>
                   )}
 
-                  <div className="transcript-list">
-                    {transcript?.segments.map((segment, index) => (
-                      <article key={`${segment.start}-${index}`} className="segment-row">
-                        <span>{formatTime(segment.start)}</span>
-                        <p>{segment.text}</p>
-                      </article>
-                    )) ?? <EmptyState icon={<AudioLines size={28} />} label="Transcript pending" />}
+                  <div className="transcript-scroll-area">
+                    {filteredSegments.length > 0 ? (
+                      filteredSegments.map((seg, idx) => (
+                        <div key={`${seg.start}-${idx}`} className="transcript-segment-card">
+                          <div className="segment-meta">
+                            <span className="segment-time">{formatTime(seg.start)}</span>
+                            {seg.speaker && <span className="segment-speaker">{seg.speaker}</span>}
+                          </div>
+                          <p className="segment-text">{seg.text}</p>
+                        </div>
+                      ))
+                    ) : transcript ? (
+                      <div className="empty-panel-state">
+                        <Search size={28} />
+                        <p>No matching transcript lines found</p>
+                      </div>
+                    ) : (
+                      <div className="empty-panel-state">
+                        <AudioLines size={36} />
+                        <h4>No Transcript Available</h4>
+                        <p>Run transcription to enable AI moment detection and automated captions.</p>
+                        <button
+                          className="studio-btn primary"
+                          onClick={transcribe}
+                          disabled={busy !== "idle" || !canTranscribe}
+                          style={{ marginTop: "12px" }}
+                        >
+                          {busy === "transcribe" ? <Loader2 className="spin" size={14} /> : <AudioLines size={14} />}
+                          Transcribe Video ({transcriptionEngine === "local" ? "Whisper Offline" : "Deepgram Cloud"})
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </section>
 
-                <section className="panel candidate-panel">
-                  <div className="panel-heading">
+                {/* Right Panel: Viral Moments Studio */}
+                <section className="studio-panel moments-studio">
+                  <div className="panel-header">
                     <div>
-                      <h3>Clip Candidates</h3>
-                      <p>{detail.candidates.length ? `${selectedCount} selected` : "No candidates"}</p>
+                      <h3>Viral Moment Candidates</h3>
+                      <p>{detail.candidates.length ? `${selectedCount} selected of ${detail.candidates.length}` : "Run AI detection to find viral hooks"}</p>
                     </div>
-                    <div className="button-pair" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '4px 10px' }}>
-                        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>Format:</span>
-                        <select
-                          value={reframeMode}
-                          onChange={(e) => {
-                            const val = e.target.value as "vertical_blur" | "vertical_crop" | "original";
-                            setReframeMode(val);
-                            localStorage.setItem("clipon_reframe_mode", val);
-                          }}
-                          style={{ background: 'transparent', color: 'var(--text-primary)', border: 'none', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer', outline: 'none', padding: 0 }}
-                        >
-                          <option value="vertical_blur" style={{ background: '#0f1118', color: '#fff' }}>📱 9:16 Smart Blur (Shorts/Reels)</option>
-                          <option value="vertical_crop" style={{ background: '#0f1118', color: '#fff' }}>✂️ 9:16 Center Crop</option>
-                          <option value="original" style={{ background: '#0f1118', color: '#fff' }}>🖥️ 16:9 Original</option>
-                        </select>
-                      </div>
-                      <button onClick={cutSelected} disabled={busy !== "idle" || selectedCount === 0 || !environment?.hasFfmpeg}>
-                        {busy === "cut" ? <Loader2 className="spin" size={16} /> : <Scissors size={16} />}
-                        Cut ({selectedCount})
+
+                    <div className="panel-header-actions">
+                      <button
+                        className="studio-btn secondary"
+                        onClick={moments}
+                        disabled={busy !== "idle" || !detail.transcript || !canUseActiveLlm}
+                      >
+                        {busy === "moments" ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
+                        Find Moments
                       </button>
-                      <button onClick={() => void moments(false)} disabled={busy !== "idle" || !detail.transcript || !canUseActiveLlm}>
-                        {busy === "moments" ? <Loader2 className="spin" size={16} /> : <Sparkles size={16} />}
-                        Find Viral Moments
+
+                      <button
+                        className="studio-btn primary"
+                        onClick={cutSelected}
+                        disabled={busy !== "idle" || selectedCount === 0 || !environment?.hasFfmpeg}
+                      >
+                        {busy === "cut" ? <Loader2 className="spin" size={14} /> : <Scissors size={14} />}
+                        Cut Selected ({selectedCount})
                       </button>
                     </div>
                   </div>
 
-                  {!canUseActiveLlm && (
-                    <div className="api-warning">
-                      {llmEngine === "local"
-                        ? "⚠️ Ollama local server is not running at http://localhost:11434. Moment detection will not work."
-                        : `⚠️ ${llmEngine === "claude" ? "Claude" :
-                          llmEngine === "deepseek" ? "DeepSeek" :
-                            llmEngine === "gemini" ? "Gemini" :
-                              llmEngine === "openai" ? "OpenAI" :
-                                llmEngine === "openrouter" ? "OpenRouter" :
-                                  llmEngine === "groq" ? "Groq" : "LLM"
-                        } API Key is missing. Viral moment identification will not work. Please add your key in API Settings.`}
+                  {/* Batch Toolbar & Controls */}
+                  <div className="moments-controls-bar">
+                    {/* Filter Tabs */}
+                    <div className="tab-pills">
+                      <button
+                        className={`tab-pill ${momentTab === "all" ? "active" : ""}`}
+                        onClick={() => setMomentTab("all")}
+                      >
+                        All ({detail.candidates.length})
+                      </button>
+                      <button
+                        className={`tab-pill ${momentTab === "selected" ? "active" : ""}`}
+                        onClick={() => setMomentTab("selected")}
+                      >
+                        Selected ({selectedCount})
+                      </button>
+                      <button
+                        className={`tab-pill ${momentTab === "ready" ? "active" : ""}`}
+                        onClick={() => setMomentTab("ready")}
+                      >
+                        Rendered ({cutCount})
+                      </button>
                     </div>
-                  )}
 
-                  {detail.candidates.length > 0 && (
-                    <div className="clip-control">
-                      <SlidersHorizontal size={17} />
-                      <input
-                        type="range"
-                        min="0"
-                        max={detail.candidates.length}
-                        value={selectedCount}
-                        onChange={(event) => void updateClipCount(Number(event.target.value))}
-                      />
-                      <strong>{selectedCount}</strong>
+                    {/* Batch Selection */}
+                    <div className="batch-actions">
+                      <span className="batch-label">Quick Select:</span>
+                      <button className="batch-btn" onClick={() => selectBatch("top3")}>Top 3</button>
+                      <button className="batch-btn" onClick={() => selectBatch("top5")}>Top 5</button>
+                      <button className="batch-btn" onClick={() => selectBatch("all")}>All</button>
+                      <button className="batch-btn" onClick={() => selectBatch("none")}>Clear</button>
                     </div>
-                  )}
 
-                  <div className="candidate-list">
-                    {detail.candidates.map((candidate) => {
-                      const clip = clipByCandidate.get(candidate.id);
-                      const isCut = clip?.status === "done" && Boolean(clip.outputPath);
-                      return (
-                        <article key={candidate.id} className={`candidate-card ${candidate.selected ? "selected" : ""}`}>
-                          {/* 9:16 portrait mockup preview placeholder representing vertical formats */}
-                          <div className="portrait-preview-container">
-                            <div className="portrait-preview-mock">
-                              {isCut ? (
-                                <div className="mock-video-active">
-                                  <Play size={20} className="play-icon-mock" />
-                                </div>
-                              ) : (
-                                <div className="mock-video-inactive">
-                                  <span>9:16</span>
+                    {/* Reframe Dropdown */}
+                    <div className="reframe-picker">
+                      <select
+                        value={reframeMode}
+                        onChange={(e) => setReframeMode(e.target.value as ReframeMode)}
+                        title="Video Framing Aspect Ratio"
+                      >
+                        <option value="vertical_blur">📱 9:16 Smart Blur (Shorts/Reels)</option>
+                        <option value="vertical_crop">✂️ 9:16 Center Crop</option>
+                        <option value="original">🖥️ 16:9 Original</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Candidates Cards List */}
+                  <div className="candidates-scroll-area">
+                    {filteredCandidates.length > 0 ? (
+                      filteredCandidates.map((candidate) => {
+                        const clip = clipByCandidate.get(candidate.id);
+                        const isCut = clip?.status === "done" && Boolean(clip.outputPath);
+                        const isCuttingThis = renderingCandidateId === candidate.id;
+
+                        return (
+                          <article
+                            key={candidate.id}
+                            className={`moment-candidate-card ${candidate.selected ? "selected" : ""}`}
+                          >
+                            <div className="moment-card-header">
+                              <div className="moment-card-header-left">
+                                <button
+                                  className="checkbox-toggle-btn"
+                                  onClick={() => toggleCandidate(candidate.id)}
+                                  title="Toggle clip selection"
+                                >
+                                  {candidate.selected ? <CheckSquare size={17} className="checked" /> : <Square size={17} />}
+                                </button>
+                                <span className="moment-rank-badge">#{candidate.rank}</span>
+                                <span className="moment-score-badge">{Math.round(candidate.score * 100)}% Viral Score</span>
+                                <span className="moment-duration-badge">
+                                  {formatTime(candidate.startSec)} - {formatTime(candidate.endSec)} ({Math.round(candidate.endSec - candidate.startSec)}s)
+                                </span>
+                              </div>
+
+                              <div className="moment-card-header-right">
+                                <span className={`moment-render-status ${isCut ? "ready" : clip?.status === "error" ? "error" : "pending"}`}>
+                                  {isCuttingThis ? "Rendering..." : isCut ? "Ready" : clip?.status === "error" ? "Failed" : "Pending"}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="moment-card-body">
+                              <h4 className="moment-hook">{candidate.hook}</h4>
+                              <p className="moment-rationale">{candidate.rationale}</p>
+
+                              {clip?.outputPath && (
+                                <div className="rendered-clip-path">
+                                  <span className="path-label">Export:</span>
+                                  <span className="path-value truncate">{clip.outputPath}</span>
                                 </div>
                               )}
                             </div>
-                            <div className="candidate-rank">
-                              <span>#{candidate.rank}</span>
-                              {candidate.selected && <Check size={14} />}
-                            </div>
-                          </div>
 
-                          <div className="candidate-body">
-                            <div className="candidate-meta">
-                              <span>{formatTime(candidate.startSec)} - {formatTime(candidate.endSec)}</span>
-                              <span className="candidate-score">{Math.round(candidate.score * 100)}% Match</span>
-                            </div>
-                            <h4>{candidate.hook}</h4>
-                            <p className="candidate-rationale">{candidate.rationale}</p>
-
-                            <div className="candidate-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                              <span className={`clip-status ${isCut ? "ready" : clip?.status === "error" ? "error" : ""}`}>
-                                {isCut ? "Cut ready" : clip?.status === "error" ? "Cut failed" : clip?.status ?? "Pending"}
-                              </span>
-
-                              {/* AI Social Kit Button */}
+                            <div className="moment-card-actions">
                               <button
-                                className="cut-button"
+                                className="action-pill-btn social-kit"
                                 onClick={() => void handleOpenSocialKit(candidate)}
-                                style={{ background: "rgba(142, 230, 199, 0.12)", color: "var(--accent-primary)", borderColor: "rgba(142, 230, 199, 0.3)" }}
                                 title="Generate viral titles, hashtags & captions for this clip"
                               >
                                 <Sparkles size={13} />
-                                Social Kit
+                                <span>AI Social Kit</span>
                               </button>
 
-                              {/* Open in Finder Button */}
                               {isCut && clip?.outputPath && (
                                 <button
-                                  className="cut-button"
+                                  className="action-pill-btn finder"
                                   onClick={() => openFolder(clip.outputPath!)}
-                                  style={{ background: "transparent", color: "var(--text-muted)", borderColor: "var(--border)" }}
-                                  title="Show clip in Finder"
+                                  title="Reveal clip in macOS Finder"
                                 >
                                   <FolderOpen size={13} />
-                                  Finder
+                                  <span>Finder</span>
                                 </button>
                               )}
 
-                              {/* Cut / Re-cut Button */}
                               <button
-                                className="cut-button"
+                                className="action-pill-btn cut-action"
                                 onClick={() => void cutCandidate(candidate.id)}
                                 disabled={busy !== "idle" || !environment?.hasFfmpeg}
                               >
-                                {renderingCandidateId === candidate.id ? (
-                                  <Loader2 className="spin" size={14} />
-                                ) : (
-                                  <Scissors size={14} />
-                                )}
-                                {renderingCandidateId === candidate.id ? "Cutting..." : isCut ? "Re-cut" : "Cut"}
+                                {isCuttingThis ? <Loader2 className="spin" size={13} /> : <Scissors size={13} />}
+                                <span>{isCuttingThis ? "Cutting..." : isCut ? "Re-cut" : "Cut Clip"}</span>
                               </button>
                             </div>
-                            {clip?.outputPath && <div className="output-path">{clip.outputPath}</div>}
-                            {clip?.captionAssPath && (
-                              <div className="output-path" style={{ background: "rgba(142, 230, 199, 0.05)", borderColor: "var(--accent-primary)", color: "var(--accent-primary)", marginTop: "4px" }}>
-                                Subtitles: {clip.captionAssPath}
-                              </div>
-                            )}
-                            {clip?.renderLog && <div className="render-log">{clip.renderLog}</div>}
-                          </div>
-                        </article>
-                      );
-                    })}
-                    {detail.candidates.length === 0 && <EmptyState icon={<Sparkles size={28} />} label="Moments pending" />}
+                          </article>
+                        );
+                      })
+                    ) : detail.candidates.length > 0 ? (
+                      <div className="empty-panel-state">
+                        <Filter size={28} />
+                        <p>No candidates match the active tab filter.</p>
+                      </div>
+                    ) : (
+                      <div className="empty-panel-state">
+                        <Sparkles size={36} />
+                        <h4>No Viral Moments Detected</h4>
+                        <p>Click "Find Moments" to use AI to locate high-retention viral segments.</p>
+                        <button
+                          className="studio-btn secondary"
+                          onClick={moments}
+                          disabled={busy !== "idle" || !detail.transcript || !canUseActiveLlm}
+                          style={{ marginTop: "12px" }}
+                        >
+                          {busy === "moments" ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
+                          Find Viral Moments
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </section>
               </div>
-            </>
+            </div>
           ) : (
+            /* All Projects Dashboard (Minimalist & Monochrome) */
             <div className="home-dashboard">
               <header className="home-header">
                 <div className="home-header-info">
@@ -1271,11 +1273,11 @@ function App() {
                     {busy === "import" ? <Loader2 className="spin" size={15} /> : <FileVideo size={15} />}
                     Import Recording
                   </button>
-                  <button 
-                    className="btn-minimal-secondary" 
-                    onClick={() => setYoutubeModalOpen(true)} 
+                  <button
+                    className="btn-minimal-secondary"
+                    onClick={() => setYoutubeModalOpen(true)}
                     disabled={busy !== "idle" || !environment?.hasYtdlp}
-                    title={!environment?.hasYtdlp ? "Please install yt-dlp to use this feature" : "Download a video from YouTube"}
+                    title={!environment?.hasYtdlp ? "yt-dlp required" : "Download a video from YouTube"}
                   >
                     <Youtube size={15} />
                     Import from YouTube
@@ -1283,24 +1285,47 @@ function App() {
                 </div>
               </header>
 
-              {projects.length > 0 ? (
+              {/* Search & Metrics bar */}
+              <div className="dashboard-metrics-bar">
+                <div className="dashboard-search-container">
+                  <Search size={14} className="dashboard-search-icon" />
+                  <input
+                    type="text"
+                    placeholder="Search projects..."
+                    value={projectSearch}
+                    onChange={(e) => setProjectSearch(e.target.value)}
+                  />
+                  {projectSearch && (
+                    <button onClick={() => setProjectSearch("")} className="clear-search"><X size={13} /></button>
+                  )}
+                </div>
+
+                <div className="dashboard-stats-pills">
+                  <span className="stats-pill">{projects.length} Total Projects</span>
+                  <span className="stats-pill">
+                    Engine: {transcriptionEngine === "local" ? "Whisper Offline" : "Deepgram"}
+                  </span>
+                </div>
+              </div>
+
+              {filteredProjects.length > 0 ? (
                 <div className="projects-grid">
-                  {projects.map((project) => {
+                  {filteredProjects.map((project) => {
                     const name = project.name || fileName(project.sourcePath);
                     return (
                       <article key={project.id} className="project-card">
                         <div className="project-card-header">
-                          <FileVideo size={24} className="project-card-icon" />
+                          <FileVideo size={20} className="project-card-icon" />
                           <span className="project-card-status">{project.status}</span>
                         </div>
-                        <h3 className="project-card-title">{name}</h3>
+                        <h3 className="project-card-title truncate" title={name}>{name}</h3>
                         <div className="project-card-meta">
-                          <span>Duration: {project.sourceDuration ? formatTime(project.sourceDuration) : "Probing..."}</span>
-                          <span>Created: {new Date(project.createdAt).toLocaleDateString()}</span>
+                          <span>{project.sourceDuration ? formatTime(project.sourceDuration) : "Probing..."}</span>
+                          <span>{formatDate(project.createdAt)}</span>
                         </div>
                         <div className="project-card-actions">
                           <button className="action-btn open-btn" onClick={() => void selectProject(project.id)}>
-                            Open
+                            Open Studio
                           </button>
                           <button className="action-btn rename-btn" onClick={() => void renameProject(project.id)}>
                             Rename
@@ -1313,11 +1338,17 @@ function App() {
                     );
                   })}
                 </div>
+              ) : projects.length > 0 ? (
+                <div className="empty-dashboard-state">
+                  <Search size={36} className="empty-state-icon" />
+                  <h3>No projects match "{projectSearch}"</h3>
+                  <p>Try clearing your search query.</p>
+                </div>
               ) : (
                 <div className="empty-dashboard-state">
-                  <Clapperboard size={48} className="empty-state-icon" />
+                  <Clapperboard size={44} className="empty-state-icon" />
                   <h3>No projects found</h3>
-                  <p>Import your first recording to begin creating shorts.</p>
+                  <p>Import a recording or paste a YouTube link to generate viral short clips.</p>
                 </div>
               )}
             </div>
@@ -1325,36 +1356,374 @@ function App() {
         </section>
       </main>
 
+      {/* Modern Status Bar */}
       <footer className="status-bar">
-        <div className="status-bar-left" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span className="app-status-indicator">System Ready</span>
+        <div className="status-bar-left">
+          <span className="system-dot" />
+          <span className="system-text">System Ready</span>
           {environment?.hasHardwareAccel && (
-            <span style={{ fontSize: "0.72rem", fontWeight: 600, background: "rgba(142, 230, 199, 0.15)", color: "var(--accent-primary)", padding: "2px 8px", borderRadius: "12px", border: "1px solid rgba(142, 230, 199, 0.35)", display: "flex", alignItems: "center", gap: "4px" }}>
+            <span className="accel-pill" title="Apple Silicon VideoToolbox Hardware Acceleration">
               ⚡ Apple Silicon VideoToolbox GPU Active
             </span>
           )}
         </div>
+
         <div className="status-bar-right">
-          <div className="status-indicators">
-            <span className={`indicator ${environment?.hasHardwareAccel ? "active" : ""}`} title="Apple Silicon VideoToolbox Hardware Acceleration">VideoToolbox</span>
-            <span className={`indicator ${environment?.hasFfmpeg ? "active" : ""}`} title="FFmpeg status">ffmpeg</span>
-            <span className={`indicator ${environment?.hasFfprobe ? "active" : ""}`} title="FFprobe status">ffprobe</span>
-            <span className={`indicator ${environment?.hasYtdlp ? "active" : ""}`} title="yt-dlp status">yt-dlp</span>
-            <span className={`indicator ${environment?.hasLocalWhisperModel ? "active" : ""}`} title="Whisper Model status">Whisper Model</span>
-            <span className={`indicator ${environment?.hasOllama ? "active" : ""}`} title="Ollama status">Ollama</span>
-            <span className={`indicator ${canUseCloudKey ? "active" : ""}`} title="Deepgram Key status">Deepgram</span>
-            <span className={`indicator ${canUseClaude ? "active" : ""}`} title="Claude Key status">Claude</span>
-            <span className={`indicator ${canUseDeepseek ? "active" : ""}`} title="DeepSeek Key status">DeepSeek</span>
-          </div>
+          <span className={`status-tag ${environment?.hasFfmpeg ? "active" : ""}`}>ffmpeg</span>
+          <span className={`status-tag ${environment?.hasFfprobe ? "active" : ""}`}>ffprobe</span>
+          <span className={`status-tag ${environment?.hasYtdlp ? "active" : ""}`}>yt-dlp</span>
+          <span className={`status-tag ${environment?.hasLocalWhisperModel ? "active" : ""}`}>Whisper</span>
+          <span className={`status-tag ${environment?.hasOllama ? "active" : ""}`}>Ollama</span>
+          <span className={`status-tag ${canUseCloudKey ? "active" : ""}`}>Deepgram</span>
         </div>
       </footer>
 
+      {/* Unified Settings Modal */}
+      {showSettings && (
+        <div className="modal-overlay" onClick={() => setShowSettings(false)}>
+          <div className="settings-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon-badge">
+                  <Settings size={18} />
+                </div>
+                <div>
+                  <h3>Studio Settings</h3>
+                  <p>Configure AI engines, storage directories, and video exports</p>
+                </div>
+              </div>
+              <button className="modal-close-btn" onClick={() => setShowSettings(false)}><X size={16} /></button>
+            </div>
+
+            {/* Tab navigation */}
+            <div className="settings-tab-bar">
+              <button
+                className={`settings-tab-btn ${settingsTab === "ai" ? "active" : ""}`}
+                onClick={() => setSettingsTab("ai")}
+              >
+                🧠 AI & Engines
+              </button>
+              <button
+                className={`settings-tab-btn ${settingsTab === "storage" ? "active" : ""}`}
+                onClick={() => setSettingsTab("storage")}
+              >
+                📁 Storage & Folders
+              </button>
+              <button
+                className={`settings-tab-btn ${settingsTab === "export" ? "active" : ""}`}
+                onClick={() => setSettingsTab("export")}
+              >
+                📱 Video & Captions
+              </button>
+              <button
+                className={`settings-tab-btn ${settingsTab === "system" ? "active" : ""}`}
+                onClick={() => setSettingsTab("system")}
+              >
+                ⚡ System Diagnostics
+              </button>
+            </div>
+
+            {/* Tab Content */}
+            <div className="settings-tab-content">
+              {settingsTab === "ai" && (
+                <div className="settings-form-stack">
+                  <div className="settings-field-group">
+                    <label>Transcription Provider</label>
+                    <select
+                      value={transcriptionEngine}
+                      onChange={(e) => setTranscriptionEngine(e.target.value as any)}
+                    >
+                      <option value="local">Local Whisper (Offline & Free)</option>
+                      <option value="deepgram">Deepgram (Cloud API - Super Fast)</option>
+                    </select>
+                  </div>
+
+                  {transcriptionEngine === "deepgram" && (
+                    <div className="settings-field-group">
+                      <label>Deepgram API Key</label>
+                      <input
+                        type="password"
+                        value={deepgramKey}
+                        onChange={(e) => setDeepgramKey(e.target.value)}
+                        placeholder={environment?.hasDeepgramKey ? "Loaded from .env" : "Enter Deepgram API Key"}
+                      />
+                    </div>
+                  )}
+
+                  <div className="settings-field-group">
+                    <label>Viral Moment LLM Provider</label>
+                    <select
+                      value={llmEngine}
+                      onChange={(e) => setLlmEngine(e.target.value as any)}
+                    >
+                      <option value="local">Ollama (Offline Local)</option>
+                      <option value="claude">Anthropic Claude</option>
+                      <option value="deepseek">DeepSeek AI</option>
+                      <option value="gemini">Google Gemini</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="openrouter">OpenRouter</option>
+                      <option value="groq">Groq (Ultra-Fast)</option>
+                    </select>
+                  </div>
+
+                  {llmEngine === "local" && (
+                    <div className="settings-field-group">
+                      <label>Ollama Model</label>
+                      <div className="input-with-button">
+                        <input
+                          type="text"
+                          value={localLlmModel}
+                          onChange={(e) => setLocalLlmModel(e.target.value)}
+                          placeholder="e.g. llama3.2, qwen2.5:7b"
+                        />
+                        <button
+                          type="button"
+                          className="studio-btn secondary"
+                          onClick={() => pullModelDirectly(localLlmModel)}
+                        >
+                          <Download size={13} />
+                          Pull Model
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {llmEngine === "claude" && (
+                    <div className="settings-field-group">
+                      <label>Anthropic API Key</label>
+                      <input
+                        type="password"
+                        value={anthropicKey}
+                        onChange={(e) => setAnthropicKey(e.target.value)}
+                        placeholder={environment?.hasAnthropicKey ? "Loaded from .env" : "Enter Anthropic API Key"}
+                      />
+                    </div>
+                  )}
+
+                  {llmEngine === "deepseek" && (
+                    <>
+                      <div className="settings-field-group">
+                        <label>DeepSeek API Key</label>
+                        <input
+                          type="password"
+                          value={deepseekKey}
+                          onChange={(e) => setDeepseekKey(e.target.value)}
+                          placeholder={environment?.hasDeepseekKey ? "Loaded from .env" : "Enter DeepSeek API Key"}
+                        />
+                      </div>
+                      <div className="settings-field-group">
+                        <label>DeepSeek Model Name (Optional)</label>
+                        <input
+                          type="text"
+                          value={deepseekModel}
+                          onChange={(e) => setDeepseekModel(e.target.value)}
+                          placeholder="e.g. deepseek-chat"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {llmEngine === "gemini" && (
+                    <div className="settings-field-group">
+                      <label>Google Gemini API Key</label>
+                      <input
+                        type="password"
+                        value={geminiKey}
+                        onChange={(e) => setGeminiKey(e.target.value)}
+                        placeholder={environment?.hasGeminiKey ? "Loaded from .env" : "Enter Gemini API Key"}
+                      />
+                    </div>
+                  )}
+
+                  {llmEngine === "openai" && (
+                    <div className="settings-field-group">
+                      <label>OpenAI API Key</label>
+                      <input
+                        type="password"
+                        value={openaiKey}
+                        onChange={(e) => setOpenaiKey(e.target.value)}
+                        placeholder={environment?.hasOpenaiKey ? "Loaded from .env" : "Enter OpenAI API Key"}
+                      />
+                    </div>
+                  )}
+
+                  {llmEngine === "groq" && (
+                    <div className="settings-field-group">
+                      <label>Groq API Key</label>
+                      <input
+                        type="password"
+                        value={groqKey}
+                        onChange={(e) => setGroqKey(e.target.value)}
+                        placeholder={environment?.hasGroqKey ? "Loaded from .env" : "Enter Groq API Key"}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {settingsTab === "storage" && (
+                <div className="settings-form-stack">
+                  {/* YouTube Downloads Folder */}
+                  <div className="settings-folder-group">
+                    <div className="folder-group-header">
+                      <label>📥 YouTube Downloads Destination</label>
+                      <span className="folder-hint">Where downloaded YouTube videos will be stored</span>
+                    </div>
+                    <div className="folder-input-row">
+                      <input
+                        type="text"
+                        value={youtubeSaveDir}
+                        onChange={(e) => setYoutubeSaveDir(e.target.value)}
+                        placeholder={defaultFolders?.youtubeSaveDir || "~/Downloads/ClipOn"}
+                      />
+                      <button
+                        className="studio-btn secondary"
+                        onClick={() => browseFolder(youtubeSaveDir || defaultFolders?.youtubeSaveDir || "", setYoutubeSaveDir, "clipon_youtube_dir")}
+                        title="Pick folder visually"
+                      >
+                        Browse...
+                      </button>
+                      <button
+                        className="studio-btn secondary icon-only"
+                        onClick={() => openFolder(youtubeSaveDir || defaultFolders?.youtubeSaveDir || "")}
+                        title="Open folder in Finder"
+                      >
+                        <FolderOpen size={15} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Clips Output Folder */}
+                  <div className="settings-folder-group">
+                    <div className="folder-group-header">
+                      <label>✂️ Rendered Clips Output Destination</label>
+                      <span className="folder-hint">Where final vertical video clips and captions will be saved</span>
+                    </div>
+                    <div className="folder-input-row">
+                      <input
+                        type="text"
+                        value={clipsSaveDir}
+                        onChange={(e) => setClipsSaveDir(e.target.value)}
+                        placeholder={defaultFolders?.clipsOutputDir || "~/Documents/ClipOn"}
+                      />
+                      <button
+                        className="studio-btn secondary"
+                        onClick={() => browseFolder(clipsSaveDir || defaultFolders?.clipsOutputDir || "", setClipsSaveDir, "clipon_clips_dir")}
+                        title="Pick folder visually"
+                      >
+                        Browse...
+                      </button>
+                      <button
+                        className="studio-btn secondary icon-only"
+                        onClick={() => openFolder(clipsSaveDir || defaultFolders?.clipsOutputDir || "")}
+                        title="Open folder in Finder"
+                      >
+                        <FolderOpen size={15} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {settingsTab === "export" && (
+                <div className="settings-form-stack">
+                  <div className="settings-field-group">
+                    <label>Default Reframe Aspect Ratio</label>
+                    <select
+                      value={reframeMode}
+                      onChange={(e) => setReframeMode(e.target.value as ReframeMode)}
+                    >
+                      <option value="vertical_blur">📱 9:16 Smart Blur (Recommended for Shorts/Reels/TikTok)</option>
+                      <option value="vertical_crop">✂️ 9:16 Center Crop</option>
+                      <option value="original">🖥️ 16:9 Original</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {settingsTab === "system" && (
+                <div className="settings-form-stack">
+                  <div className="diagnostics-list">
+                    <div className="diag-item">
+                      <span className="diag-name">Apple Silicon VideoToolbox Hardware Accel</span>
+                      <span className={`diag-badge ${environment?.hasHardwareAccel ? "ok" : "muted"}`}>
+                        {environment?.hasHardwareAccel ? "⚡ Active (Hardware Accelerated)" : "Inactive (CPU)"}
+                      </span>
+                    </div>
+                    <div className="diag-item">
+                      <span className="diag-name">FFmpeg</span>
+                      <span className={`diag-badge ${environment?.hasFfmpeg ? "ok" : "err"}`}>
+                        {environment?.hasFfmpeg ? "Installed" : "Missing"}
+                      </span>
+                    </div>
+                    <div className="diag-item">
+                      <span className="diag-name">FFprobe</span>
+                      <span className={`diag-badge ${environment?.hasFfprobe ? "ok" : "err"}`}>
+                        {environment?.hasFfprobe ? "Installed" : "Missing"}
+                      </span>
+                    </div>
+                    <div className="diag-item">
+                      <span className="diag-name">yt-dlp (YouTube downloader)</span>
+                      <span className={`diag-badge ${environment?.hasYtdlp ? "ok" : "err"}`}>
+                        {environment?.hasYtdlp ? "Installed" : "Missing"}
+                      </span>
+                    </div>
+                    <div className="diag-item">
+                      <span className="diag-name">Local Whisper (openai-whisper)</span>
+                      <span className={`diag-badge ${environment?.hasLocalWhisperModel ? "ok" : "err"}`}>
+                        {environment?.hasLocalWhisperModel ? "Installed" : "Missing"}
+                      </span>
+                    </div>
+                    <div className="diag-item">
+                      <span className="diag-name">Ollama Local Daemon</span>
+                      <span className={`diag-badge ${environment?.hasOllama ? "ok" : "err"}`}>
+                        {environment?.hasOllama ? "Running (127.0.0.1:11434)" : "Not detected"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="danger-zone">
+                    <label>Danger Zone</label>
+                    <p>Reset all configuration and restart onboarding from scratch.</p>
+                    <button
+                      className="studio-btn danger"
+                      onClick={() => {
+                        if (window.confirm("Reset all settings and restart onboarding?")) {
+                          localStorage.clear();
+                          window.location.reload();
+                        }
+                      }}
+                    >
+                      Reset Configuration & Onboarding
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="modal-footer">
+              <button className="studio-btn primary" onClick={() => setShowSettings(false)}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Caption Style Picker Modal */}
       {showStyleModal && (
-        <div className="style-modal-overlay">
-          <div className="style-modal">
-            <div className="style-modal-header">
-              <h3>Choose Caption Style</h3>
-              <p>Select how your automated captions should look on the portrait short-form video clips.</p>
+        <div className="modal-overlay">
+          <div className="style-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon-badge">
+                  <Captions size={18} />
+                </div>
+                <div>
+                  <h3>Choose Caption Style</h3>
+                  <p>Select automated subtitle typography for your vertical clips</p>
+                </div>
+              </div>
             </div>
 
             <div className="style-grid">
@@ -1366,7 +1735,7 @@ function App() {
                   <span className="preview-text-box">BRAINFOOD BECAUSE</span>
                 </div>
                 <div className="style-card-title">Modern Box</div>
-                <div className="style-card-desc">Sleek white text inside a semi-transparent black background padding box. Highly readable.</div>
+                <div className="style-card-desc">Sleek white text inside semi-transparent dark box. Clean & readable.</div>
               </div>
 
               <div
@@ -1377,7 +1746,7 @@ function App() {
                   <span className="preview-text-outline">BRAINFOOD BECAUSE</span>
                 </div>
                 <div className="style-card-title">Classic Outline</div>
-                <div className="style-card-desc">Vibrant bold yellow text with a clean black outline. High-energy CapCut formatting.</div>
+                <div className="style-card-desc">Vibrant bold yellow text with a clean black stroke (CapCut style).</div>
               </div>
 
               <div
@@ -1388,7 +1757,7 @@ function App() {
                   <span className="preview-text-shadow">BRAINFOOD BECAUSE</span>
                 </div>
                 <div className="style-card-title">Minimal Shadow</div>
-                <div className="style-card-desc">Pure white text with a soft, elegant drop shadow. Unobtrusive and modern.</div>
+                <div className="style-card-desc">Pure white text with a soft drop shadow. Elegant & unobtrusive.</div>
               </div>
 
               <div
@@ -1399,7 +1768,7 @@ function App() {
                   <span className="preview-text-cyan">BRAINFOOD BECAUSE</span>
                 </div>
                 <div className="style-card-title">Vibrant Cyan</div>
-                <div className="style-card-desc">Vibrant tech cyan text with a black drop shadow for a clean look.</div>
+                <div className="style-card-desc">Vibrant electric cyan text for tech and modern content.</div>
               </div>
 
               <div
@@ -1410,7 +1779,7 @@ function App() {
                   <span className="preview-text-yellow-box">BRAINFOOD BECAUSE</span>
                 </div>
                 <div className="style-card-title">Vibrant Yellow Box</div>
-                <div className="style-card-desc">Bold black text inside a solid yellow padding box. Punchy and high visibility.</div>
+                <div className="style-card-desc">Bold dark text inside a solid yellow box. High contrast.</div>
               </div>
 
               <div
@@ -1421,7 +1790,7 @@ function App() {
                   <span className="preview-text-green">BRAINFOOD BECAUSE</span>
                 </div>
                 <div className="style-card-title">Vibrant Green</div>
-                <div className="style-card-desc">High-energy neon green text with black borders and a drop shadow (Hormozi style).</div>
+                <div className="style-card-desc">High-energy neon green with black borders (Hormozi style).</div>
               </div>
 
               <div
@@ -1432,386 +1801,254 @@ function App() {
                   <span className="preview-text-red">BRAINFOOD BECAUSE</span>
                 </div>
                 <div className="style-card-title">Vibrant Red</div>
-                <div className="style-card-desc">Dramatic neon crimson text with outline and drop shadow (gaming/action style).</div>
+                <div className="style-card-desc">Dramatic neon crimson for punchy, dramatic hooks.</div>
               </div>
             </div>
 
-            <div className="style-modal-actions">
-              <button className="btn-cancel" onClick={() => { setShowStyleModal(false); setMediaPathToImport(null); }}>
+            <div className="modal-footer">
+              <button
+                className="studio-btn secondary"
+                onClick={() => { setShowStyleModal(false); setMediaPathToImport(null); }}
+              >
                 Cancel
               </button>
-              <button className="btn-confirm" onClick={() => confirmImport(selectedStyle)}>
+              <button className="studio-btn primary" onClick={() => confirmImport(selectedStyle)}>
                 Confirm & Import
               </button>
             </div>
           </div>
         </div>
       )}
-      {downloadingModelName && (
-        <div className="onboarding-overlay" style={{ zIndex: 20000 }}>
-          <div className="onboarding-card" style={{ maxWidth: '480px', textAlign: 'center' }}>
-            <div className="onboarding-header compact" style={{ textAlign: 'center' }}>
-              <h2>Downloading Ollama Model</h2>
-              <p>Downloading model weights for "{downloadingModelName}". Please do not close the app.</p>
-            </div>
 
-            <div className="download-progress-container">
-              <div className="download-loader">
-                <Loader2 className="spin" size={48} />
-              </div>
-
-              <div className="progress-bar-container">
-                <div className="progress-bar-fill" style={{ width: `${modelDownloadProgress}%` }}></div>
-              </div>
-
-              <div className="download-stats">
-                <span className="download-status">{modelDownloadStatus}</span>
-                <span className="download-percentage">{modelDownloadProgress}%</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
+      {/* YouTube Import Modal */}
       {youtubeModalOpen && (
-        <div className="style-modal-overlay">
-          <div className="style-modal" style={{ maxWidth: "500px" }}>
-            <div className="style-modal-header">
-              <h3>Import from YouTube</h3>
-              <p>Paste a YouTube URL below to download and import it directly.</p>
+        <div className="modal-overlay" onClick={() => setYoutubeModalOpen(false)}>
+          <div className="youtube-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon-badge">
+                  <Youtube size={18} />
+                </div>
+                <div>
+                  <h3>Import from YouTube</h3>
+                  <p>Download and convert a YouTube video directly into ClipOn</p>
+                </div>
+              </div>
+              <button className="modal-close-btn" onClick={() => setYoutubeModalOpen(false)}><X size={16} /></button>
             </div>
-            <div style={{ padding: "1rem" }}>
+
+            <div className="youtube-modal-body">
               <input
                 type="text"
                 placeholder="https://www.youtube.com/watch?v=..."
                 value={youtubeUrl}
                 onChange={(e) => setYoutubeUrl(e.target.value)}
                 disabled={youtubeStatus !== "idle" && youtubeStatus !== "warning"}
-                style={{ width: "100%", padding: "0.75rem", borderRadius: "8px", border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", fontSize: "1rem", marginBottom: "1rem" }}
+                className="youtube-url-input"
               />
 
               {youtubeStatus === "warning" && (
-                <div style={{ background: "rgba(255, 165, 0, 0.1)", border: "1px solid orange", padding: "1rem", borderRadius: "8px", marginBottom: "1rem", color: "orange" }}>
-                  <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "0.5rem", fontWeight: "bold" }}>
-                    <AlertTriangle size={20} />
-                    Copyright Warning
+                <div className="youtube-warning-box">
+                  <div className="warning-title">
+                    <AlertTriangle size={18} />
+                    <span>Copyright Advisory</span>
                   </div>
-                  <p style={{ margin: 0, fontSize: "0.9rem" }}>
-                    This video is not explicitly marked for reuse (Creative Commons). Its license appears to be: <strong>{youtubeWarningLicense}</strong>.
-                    <br/><br/>
-                    Clipping this video may lead to copyright strikes. Are you sure you want to proceed?
+                  <p>
+                    This video is not explicitly marked with a Creative Commons license. Detected license: <strong>{youtubeWarningLicense}</strong>.
+                    Clipping and republishing copyrighted content may violate platform terms.
                   </p>
                 </div>
               )}
+            </div>
 
-              <div className="style-modal-actions" style={{ marginTop: "1rem" }}>
-                <button 
-                  className="btn-cancel" 
-                  onClick={() => { setYoutubeModalOpen(false); setYoutubeUrl(""); setYoutubeStatus("idle"); }}
-                  disabled={youtubeStatus === "checking" || youtubeStatus === "downloading"}
-                >
-                  Cancel
+            <div className="modal-footer">
+              <button
+                className="studio-btn secondary"
+                onClick={() => { setYoutubeModalOpen(false); setYoutubeUrl(""); setYoutubeStatus("idle"); }}
+                disabled={youtubeStatus === "checking" || youtubeStatus === "downloading"}
+              >
+                Cancel
+              </button>
+              {youtubeStatus === "warning" ? (
+                <button className="studio-btn danger" onClick={executeYoutubeDownload}>
+                  Proceed Anyway
                 </button>
-                {youtubeStatus === "warning" ? (
-                  <button className="btn-confirm" onClick={executeYoutubeDownload}>
-                    Yes, I understand the risks
-                  </button>
-                ) : (
-                  <button 
-                    className="btn-confirm" 
-                    onClick={handleYoutubeImport}
-                    disabled={!youtubeUrl || youtubeStatus !== "idle"}
-                    style={{ minWidth: "120px" }}
-                  >
-                    {youtubeStatus === "checking" ? <><Loader2 className="spin" size={18} /> Checking...</> :
-                     youtubeStatus === "downloading" ? <><Loader2 className="spin" size={18} /> Downloading...</> : 
-                     "Check & Download"}
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-
-      {/* ===== Folder Settings Modal ===== */}
-      {showFolderSettings && (
-        <div
-          className="modal-overlay"
-          onClick={() => setShowFolderSettings(false)}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{ background: "#0e111a", border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "18px", padding: "1.75rem", width: "min(520px, 92vw)", display: "flex", flexDirection: "column", gap: "1.25rem", boxShadow: "0 24px 70px -10px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.08)" }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-              <div style={{ background: "rgba(16, 185, 129, 0.15)", borderRadius: "10px", padding: "0.5rem", display: "flex" }}>
-                <Settings size={20} color="var(--accent-primary)" />
-              </div>
-              <div>
-                <h2 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 700 }}>File Locations</h2>
-                <p style={{ margin: 0, fontSize: "0.82rem", opacity: 0.6 }}>Choose where your files are saved</p>
-              </div>
-            </div>
-
-            {/* YouTube Downloads Folder */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              <label style={{ fontWeight: 600, fontSize: "0.88rem", opacity: 0.85 }}>
-                📥 YouTube Downloads Folder
-              </label>
-              <p style={{ margin: 0, fontSize: "0.78rem", opacity: 0.55 }}>
-                Currently: <code style={{ fontSize: "0.76rem" }}>{youtubeSaveDir || defaultFolders?.youtubeSaveDir || "~/Downloads/ClipOn"}</code>
-              </p>
-              <div style={{ display: "flex", gap: "0.5rem" }}>
-                <input
-                  type="text"
-                  value={youtubeSaveDir}
-                  onChange={(e) => setYoutubeSaveDir(e.target.value)}
-                  placeholder={defaultFolders?.youtubeSaveDir || "~/Downloads/ClipOn"}
-                  style={{ flex: 1, padding: "0.55rem 0.75rem", borderRadius: "8px", border: "1px solid var(--border-color)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: "0.85rem" }}
-                />
+              ) : (
                 <button
-                  className="icon-button"
-                  title="Open folder in Finder"
-                  onClick={() => openFolder(youtubeSaveDir || defaultFolders?.youtubeSaveDir || "")}
-                  style={{ minWidth: "40px" }}
+                  className="studio-btn primary"
+                  onClick={handleYoutubeImport}
+                  disabled={!youtubeUrl || youtubeStatus !== "idle"}
                 >
-                  <FolderOpen size={15} />
+                  {youtubeStatus === "checking" ? <><Loader2 className="spin" size={14} /> Checking...</> :
+                   youtubeStatus === "downloading" ? <><Loader2 className="spin" size={14} /> Downloading...</> :
+                   "Download & Import"}
                 </button>
-              </div>
-            </div>
-
-            {/* Clips Output Folder */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              <label style={{ fontWeight: 600, fontSize: "0.88rem", opacity: 0.85 }}>
-                ✂️ Clips Output Folder
-              </label>
-              <p style={{ margin: 0, fontSize: "0.78rem", opacity: 0.55 }}>
-                Currently: <code style={{ fontSize: "0.76rem" }}>{clipsSaveDir || defaultFolders?.clipsOutputDir || "~/Documents/ClipOn"}</code>
-              </p>
-              <div style={{ display: "flex", gap: "0.5rem" }}>
-                <input
-                  type="text"
-                  value={clipsSaveDir}
-                  onChange={(e) => setClipsSaveDir(e.target.value)}
-                  placeholder={defaultFolders?.clipsOutputDir || "~/Documents/ClipOn"}
-                  style={{ flex: 1, padding: "0.55rem 0.75rem", borderRadius: "8px", border: "1px solid var(--border-color)", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: "0.85rem" }}
-                />
-                <button
-                  className="icon-button"
-                  title="Open folder in Finder"
-                  onClick={() => openFolder(clipsSaveDir || defaultFolders?.clipsOutputDir || "")}
-                  style={{ minWidth: "40px" }}
-                >
-                  <FolderOpen size={15} />
-                </button>
-              </div>
-            </div>
-
-            {/* Quick Open Buttons */}
-            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-              <button
-                className="primary-action"
-                style={{ flex: 1, justifyContent: "center", gap: "0.4rem", fontSize: "0.85rem" }}
-                onClick={() => openFolder(youtubeSaveDir || defaultFolders?.youtubeSaveDir || "")}
-              >
-                <FolderOpen size={14} /> Open YouTube Downloads
-              </button>
-              <button
-                className="primary-action"
-                style={{ flex: 1, justifyContent: "center", gap: "0.4rem", fontSize: "0.85rem", background: "rgba(255, 255, 255, 0.04)", border: "1px solid var(--border-color)", color: "var(--text-primary)" }}
-                onClick={() => openFolder(clipsSaveDir || defaultFolders?.clipsOutputDir || "")}
-              >
-                <FolderOpen size={14} /> Open Clips Folder
-              </button>
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "flex-end", borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
-              <button
-                className="icon-button"
-                onClick={() => setShowFolderSettings(false)}
-                style={{ padding: "0.5rem 1.25rem" }}
-              >
-                Done
-              </button>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* ===== Social Kit Modal ===== */}
+      {/* AI Social Kit Modal */}
       {socialKitModalCandidate && (
-        <div
-          className="modal-overlay"
-          onClick={() => setSocialKitModalCandidate(null)}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", backdropFilter: "blur(6px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{ background: "#0e111a", border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "18px", padding: "1.75rem", width: "min(560px, 92vw)", maxHeight: "90vh", overflowY: "auto", display: "flex", flexDirection: "column", gap: "1.25rem", boxShadow: "0 24px 70px -10px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.08)" }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                <div style={{ background: "rgba(142, 230, 199, 0.15)", borderRadius: "10px", padding: "0.5rem", display: "flex" }}>
-                  <Sparkles size={20} color="var(--accent-primary)" />
+        <div className="modal-overlay" onClick={() => setSocialKitModalCandidate(null)}>
+          <div className="social-kit-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon-badge">
+                  <Sparkles size={18} />
                 </div>
                 <div>
-                  <h2 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 700 }}>AI Social Publishing Kit</h2>
-                  <p style={{ margin: 0, fontSize: "0.8rem", opacity: 0.6 }}>Viral titles, hashtags & captions for Clip #{socialKitModalCandidate.rank}</p>
+                  <h3>AI Social Publishing Kit</h3>
+                  <p>Viral titles, hashtags & captions for Clip #{socialKitModalCandidate.rank}</p>
                 </div>
               </div>
-              <button
-                className="icon-button"
-                onClick={() => setSocialKitModalCandidate(null)}
-                style={{ borderRadius: "50%", padding: "6px" }}
-              >
-                <X size={16} />
-              </button>
+              <button className="modal-close-btn" onClick={() => setSocialKitModalCandidate(null)}><X size={16} /></button>
             </div>
 
-            {socialKitLoading === socialKitModalCandidate.id ? (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "3rem 1rem", gap: "1rem" }}>
-                <Loader2 className="spin" size={32} color="var(--accent-primary)" />
-                <p style={{ margin: 0, fontSize: "0.9rem", color: "var(--text-muted)" }}>Generating high-converting titles & hashtags with AI...</p>
-              </div>
-            ) : socialKitData[socialKitModalCandidate.id] ? (
-              (() => {
-                const kit = socialKitData[socialKitModalCandidate.id];
-                const fullPostText = `${kit.titles[0]}\n\n${kit.description}\n\n${kit.callToAction}\n\n${kit.hashtags.join(" ")}`;
-                return (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-                    {/* Titles */}
-                    <div>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-                        <label style={{ fontWeight: 600, fontSize: "0.85rem", opacity: 0.85 }}>🔥 High-CTR Titles (Click to Copy)</label>
+            <div className="social-kit-modal-body">
+              {socialKitLoading === socialKitModalCandidate.id ? (
+                <div className="center-loader-box">
+                  <Loader2 className="spin" size={28} />
+                  <p>Generating high-converting viral titles & hashtags...</p>
+                </div>
+              ) : socialKitData[socialKitModalCandidate.id] ? (
+                (() => {
+                  const kit = socialKitData[socialKitModalCandidate.id];
+                  const fullPost = `${kit.titles[0]}
+
+${kit.description}
+
+${kit.callToAction}
+
+${kit.hashtags.join(" ")}`;
+                  return (
+                    <div className="social-kit-content">
+                      {/* Viral Titles */}
+                      <div className="social-section">
+                        <label className="section-label">🔥 High-CTR Titles (Click to copy)</label>
+                        <div className="titles-stack">
+                          {kit.titles.map((title, i) => (
+                            <div
+                              key={i}
+                              className="copy-item-row"
+                              onClick={() => {
+                                navigator.clipboard.writeText(title);
+                                showToast("Title copied to clipboard!");
+                              }}
+                            >
+                              <span>{title}</span>
+                              <Copy size={13} className="copy-icon" />
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-                        {kit.titles.map((title, i) => (
-                          <div
-                            key={i}
-                            onClick={() => copyToClipboard(title, `title-${i}`)}
-                            style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.65rem 0.85rem", background: "rgba(255, 255, 255, 0.02)", border: "1px solid var(--border-color)", borderRadius: "8px", cursor: "pointer", fontSize: "0.85rem", transition: "all 0.15s ease" }}
+
+                      {/* Hashtags */}
+                      <div className="social-section">
+                        <div className="section-header-row">
+                          <label className="section-label">#️⃣ Trending Hashtags</label>
+                          <button
+                            className="text-action-btn"
+                            onClick={() => {
+                              navigator.clipboard.writeText(kit.hashtags.join(" "));
+                              showToast("All hashtags copied!");
+                            }}
                           >
-                            <span style={{ fontWeight: 500 }}>{title}</span>
-                            <span style={{ fontSize: "0.75rem", color: copiedToast === `title-${i}` ? "var(--accent-primary)" : "var(--text-muted)", display: "flex", alignItems: "center", gap: "4px" }}>
-                              {copiedToast === `title-${i}` ? <><Check size={12} /> Copied</> : <Copy size={12} />}
+                            Copy All Tags
+                          </button>
+                        </div>
+                        <div className="hashtag-chips-wrap">
+                          {kit.hashtags.map((tag, i) => (
+                            <span
+                              key={i}
+                              className="hashtag-chip"
+                              onClick={() => {
+                                navigator.clipboard.writeText(tag);
+                                showToast(`Copied ${tag}`);
+                              }}
+                              title="Click to copy"
+                            >
+                              {tag}
                             </span>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    </div>
 
-                    {/* Hashtags */}
-                    <div>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-                        <label style={{ fontWeight: 600, fontSize: "0.85rem", opacity: 0.85 }}>#️⃣ Trending Hashtags</label>
-                        <button
-                          onClick={() => copyToClipboard(kit.hashtags.join(" "), "hashtags")}
-                          style={{ background: "none", border: "none", color: "var(--accent-primary)", fontSize: "0.75rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px" }}
-                        >
-                          {copiedToast === "hashtags" ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy All Tags</>}
-                        </button>
-                      </div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", padding: "0.65rem", background: "rgba(255, 255, 255, 0.02)", border: "1px solid var(--border-color)", borderRadius: "8px" }}>
-                        {kit.hashtags.map((tag, i) => (
-                          <span
-                            key={i}
-                            onClick={() => copyToClipboard(tag, `tag-${i}`)}
-                            style={{ fontSize: "0.78rem", background: "rgba(142, 230, 199, 0.1)", color: "var(--accent-primary)", padding: "3px 8px", borderRadius: "6px", cursor: "pointer" }}
-                            title="Click to copy single tag"
+                      {/* Description & Caption */}
+                      <div className="social-section">
+                        <div className="section-header-row">
+                          <label className="section-label">📝 Caption & Description</label>
+                          <button
+                            className="text-action-btn"
+                            onClick={() => {
+                              navigator.clipboard.writeText(`${kit.description}
+
+${kit.callToAction}`);
+                              showToast("Caption copied!");
+                            }}
                           >
-                            {tag}
-                          </span>
-                        ))}
+                            Copy Caption
+                          </button>
+                        </div>
+                        <div className="caption-preview-box">
+                          <p>{kit.description}</p>
+                          <span className="caption-cta">{kit.callToAction}</span>
+                        </div>
                       </div>
-                    </div>
 
-                    {/* Caption & Description */}
-                    <div>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-                        <label style={{ fontWeight: 600, fontSize: "0.85rem", opacity: 0.85 }}>📝 Post Caption & Description</label>
+                      {/* Master Copy Button */}
+                      <div className="social-master-actions">
                         <button
-                          onClick={() => copyToClipboard(kit.description, "desc")}
-                          style={{ background: "none", border: "none", color: "var(--accent-primary)", fontSize: "0.75rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px" }}
+                          className="studio-btn primary full-width"
+                          onClick={() => {
+                            navigator.clipboard.writeText(fullPost);
+                            showToast("Full Social Post Package Copied!");
+                          }}
                         >
-                          {copiedToast === "desc" ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy Caption</>}
+                          <Copy size={15} />
+                          Copy Complete Social Package (TikTok / Reels / Shorts)
+                        </button>
+                        <button
+                          className="studio-btn secondary icon-only"
+                          onClick={() => void handleRegenerateSocialKit(socialKitModalCandidate.id)}
+                          title="Regenerate with AI"
+                        >
+                          <RefreshCw size={14} />
                         </button>
                       </div>
-                      <div style={{ padding: "0.75rem", background: "rgba(255, 255, 255, 0.02)", border: "1px solid var(--border-color)", borderRadius: "8px", fontSize: "0.83rem", lineHeight: 1.5, color: "var(--text-primary)" }}>
-                        {kit.description}
-                        <div style={{ marginTop: "0.5rem", color: "var(--accent-primary)", fontSize: "0.8rem" }}>{kit.callToAction}</div>
-                      </div>
                     </div>
-
-                    {/* Action buttons */}
-                    <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.5rem" }}>
-                      <button
-                        className="primary-action"
-                        onClick={() => copyToClipboard(fullPostText, "full-post")}
-                        style={{ flex: 1, justifyContent: "center", gap: "6px" }}
-                      >
-                        {copiedToast === "full-post" ? <><Check size={15} /> Full Post Copied!</> : <><Copy size={15} /> Copy Full Post Package</>}
-                      </button>
-                      <button
-                        className="icon-button"
-                        onClick={() => void handleRegenerateSocialKit(socialKitModalCandidate.id)}
-                        title="Regenerate with AI"
-                        style={{ padding: "0.5rem 0.8rem" }}
-                      >
-                        <RefreshCw size={14} />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })()
-            ) : null}
+                  );
+                })()
+              ) : null}
+            </div>
           </div>
         </div>
       )}
 
-    </>
-  );
-}
+      {/* Ollama Model Pull Progress Modal */}
+      {downloadingModelName && (
+        <div className="modal-overlay" style={{ zIndex: 10000 }}>
+          <div className="download-modal">
+            <h3>Downloading Ollama Model</h3>
+            <p>Fetching model weights for "{downloadingModelName}". Keep ClipOn open.</p>
 
-function StatusPill({ label, active }: { label: string; active?: boolean }) {
-  return (
-    <div className={`status-pill ${active ? "active" : ""}`}>
-      <BadgeCheck size={14} />
-      {label}
+            <div className="download-progress-bar">
+              <div className="progress-fill" style={{ width: `${modelDownloadProgress}%` }} />
+            </div>
+
+            <div className="download-stats-row">
+              <span>{modelDownloadStatus}</span>
+              <strong>{modelDownloadProgress}%</strong>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function PipelineStep({ icon, label, done }: { icon: React.ReactNode; label: string; done: boolean }) {
-  return (
-    <div className={`pipeline-step ${done ? "done" : ""}`}>
-      {icon}
-      <span>{label}</span>
-    </div>
-  );
-}
-
-function EmptyState({ icon, label }: { icon: React.ReactNode; label: string }) {
-  return (
-    <div className="empty-state">
-      {icon}
-      <span>{label}</span>
-    </div>
-  );
-}
-
-function fileName(path: string) {
-  return path.split(/[\\/]/).pop() ?? path;
-}
-
-function formatTime(seconds: number) {
-  const minutes = Math.floor(seconds / 60);
-  const remaining = Math.floor(seconds % 60);
-  return `${minutes}:${remaining.toString().padStart(2, "0")}`;
-}
-
+// ===== Onboarding Component =====
 interface OnboardingProps {
   environment: EnvironmentStatus | null;
   onComplete: () => void;
@@ -1847,12 +2084,10 @@ function Onboarding({
 }: OnboardingProps) {
   const [setupMode, setSetupMode] = useState<"choose" | "local" | "cloud" | "downloading">("choose");
   const [selectedModel, setSelectedModel] = useState<string>("llama3.2");
-
   const [dgKey, setDgKey] = useState(initialDeepgramKey);
   const [antKey, setAntKey] = useState(initialAnthropicKey);
   const [dsKey, setDsKey] = useState(initialDeepseekKey);
   const [grKey, setGrKey] = useState(initialGroqKey);
-
   const [downloadStatus, setDownloadStatus] = useState("Initializing download...");
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -1906,28 +2141,23 @@ function Onboarding({
     setError(null);
     setCheckingOllama(true);
     setDownloadProgress(0);
-
     await refreshEnv();
 
     let isOllamaRunning = false;
     try {
       const currentEnv = await invoke<EnvironmentStatus>("environment_status");
       isOllamaRunning = currentEnv.hasOllama;
-    } catch (e) {
-      // ignore
-    }
+    } catch (e) {}
 
     setCheckingOllama(false);
 
     if (!isOllamaRunning) {
       setSetupMode("downloading");
       setDownloadStatus("Ollama not found. Starting automatic installer...");
-
       try {
         const unlistenInstall = await listen<string>("ollama-install-status", (event) => {
           setDownloadStatus(event.payload);
         });
-
         await invoke("install_ollama");
         unlistenInstall();
       } catch (err) {
@@ -1941,12 +2171,7 @@ function Onboarding({
     setDownloadStatus("Ollama connected. Initiating model download...");
 
     try {
-      const unlisten = await listen<{
-        status: string;
-        completed?: number;
-        total?: number;
-        percentage?: number;
-      }>("ollama-pull-progress", (event) => {
+      const unlisten = await listen<{ status: string; completed?: number; total?: number; percentage?: number }>("ollama-pull-progress", (event) => {
         const payload = event.payload;
         setDownloadStatus(payload.status);
         if (payload.percentage !== undefined && payload.percentage !== null) {
@@ -1955,18 +2180,15 @@ function Onboarding({
       });
 
       await invoke("pull_ollama_model", { modelName: selectedModel });
-
       unlisten();
 
       setTranscriptionEngine("local");
       setLlmEngine("local");
       setLocalLlmModel(selectedModel);
-
       localStorage.setItem("clipon_transcription_engine", "local");
       localStorage.setItem("clipon_llm_engine", "local");
       localStorage.setItem("clipon_local_llm_model", selectedModel);
       localStorage.setItem("clipon_onboarded", "true");
-
       onComplete();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -1975,7 +2197,7 @@ function Onboarding({
   };
 
   return (
-    <div className="onboarding-overlay">
+    <div className="modal-overlay">
       <div className="onboarding-card">
         {setupMode === "choose" && (
           <>
@@ -1984,25 +2206,25 @@ function Onboarding({
                 <Clapperboard size={36} />
               </div>
               <h2>Welcome to ClipOn</h2>
-              <p>Long recording in. Short clips out. Select how you would like to run the studio.</p>
+              <p>Long recording in. Short clips out. Choose how you want to run the studio.</p>
             </div>
 
             <div className="onboarding-choices">
-              <div className="choice-card clickable" onClick={() => setSetupMode("local")}>
+              <div className="choice-card" onClick={() => setSetupMode("local")}>
                 <div className="choice-icon">
                   <Database size={28} />
                 </div>
                 <h3>Fully Offline & Private</h3>
-                <p>Process everything locally on your computer. Private, secure, and completely free.</p>
-                <div className="choice-badge local">Offline (Ollama)</div>
+                <p>Process everything locally on your machine. 100% private, free, and offline.</p>
+                <div className="choice-badge local">Offline (Ollama + Whisper)</div>
               </div>
 
-              <div className="choice-card clickable" onClick={() => setSetupMode("cloud")}>
+              <div className="choice-card" onClick={() => setSetupMode("cloud")}>
                 <div className="choice-icon">
                   <Cloud size={28} />
                 </div>
                 <h3>Cloud APIs</h3>
-                <p>Use high-speed cloud services for transcription and analysis. No local GPU needed.</p>
+                <p>Blazing fast cloud transcription & analysis. Minimal local RAM requirements.</p>
                 <div className="choice-badge cloud">API Keys Required</div>
               </div>
             </div>
@@ -2013,17 +2235,17 @@ function Onboarding({
           <div className="local-setup-flow">
             <div className="onboarding-header compact">
               <h2>Configure Offline Mode</h2>
-              <p>Follow these steps to set up your local studio.</p>
+              <p>Set up your local transcription and Ollama intelligence.</p>
             </div>
 
-            {error && <div className="error-banner" style={{ marginBottom: "16px" }}>{error}</div>}
+            {error && <div className="workspace-error-banner" style={{ marginBottom: "16px" }}>{error}</div>}
 
             <div className="setup-steps">
               <div className="setup-step">
                 <div className="step-num">1</div>
                 <div className="step-body">
                   <h4>Install Python Whisper</h4>
-                  <p>Open your terminal and run the following command to install the transcription engine:</p>
+                  <p>Run the following command in terminal to enable local transcription:</p>
                   <div className="code-block-container">
                     <code>pip3 install -U openai-whisper</code>
                     <button type="button" className="copy-btn" onClick={copyWhisperCommand}>
@@ -2032,9 +2254,9 @@ function Onboarding({
                     </button>
                   </div>
                   {environment?.hasLocalWhisperModel ? (
-                    <span className="step-check success"><BadgeCheck size={14} /> Whisper installed in Python!</span>
+                    <span className="step-check success"><BadgeCheck size={14} /> Whisper detected in Python!</span>
                   ) : (
-                    <span className="step-check warning">⚠️ Python package 'whisper' not detected yet. Run the command above.</span>
+                    <span className="step-check warning">⚠️ Package 'whisper' not detected yet. Run command above.</span>
                   )}
                 </div>
               </div>
@@ -2042,13 +2264,7 @@ function Onboarding({
               <div className="setup-step">
                 <div className="step-num">2</div>
                 <div className="step-body">
-                  <h4>Set up local LLM (Ollama)</h4>
-                  <p>
-                    Ollama must be installed and running on your machine.
-                    If you don't have it installed, you can download it from <a href="https://ollama.com" target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)', textDecoration: 'underline' }}>ollama.com</a>.
-                  </p>
-                  <p>Select a model to download:</p>
-
+                  <h4>Select Ollama Local Model</h4>
                   <div className="model-cards">
                     <div
                       className={`model-card ${selectedModel === "llama3.2" ? "active" : ""}`}
@@ -2058,7 +2274,7 @@ function Onboarding({
                         <h5>LLaMA 3.2 3B</h5>
                         <span className="model-size">1.9 GB</span>
                       </div>
-                      <p>Requires 8GB+ RAM. Recommended for standard setups. Fast and efficient.</p>
+                      <p>Fast, efficient, excellent hook identification for shorts.</p>
                     </div>
 
                     <div
@@ -2069,18 +2285,7 @@ function Onboarding({
                         <h5>Qwen 2.5 3B</h5>
                         <span className="model-size">2.0 GB</span>
                       </div>
-                      <p>Requires 8GB+ RAM. Excellent coding and logical reasoning abilities.</p>
-                    </div>
-
-                    <div
-                      className={`model-card ${selectedModel === "qwen2.5:7b" ? "active" : ""}`}
-                      onClick={() => setSelectedModel("qwen2.5:7b")}
-                    >
-                      <div className="model-card-header">
-                        <h5>Qwen 2.5 7B</h5>
-                        <span className="model-size">4.7 GB</span>
-                      </div>
-                      <p>Requires 16GB+ RAM. High-quality moment detection and hook precision.</p>
+                      <p>Optimized for multilingual dialogues and concise hooks.</p>
                     </div>
                   </div>
                 </div>
@@ -2088,15 +2293,15 @@ function Onboarding({
             </div>
 
             <div className="onboarding-actions">
-              <button type="button" className="icon-button" onClick={() => setSetupMode("choose")}>Back</button>
+              <button type="button" className="studio-btn secondary" onClick={() => setSetupMode("choose")}>Back</button>
               <button
                 type="button"
-                className="primary-action compact"
+                className="studio-btn primary"
                 onClick={startLocalSetup}
                 disabled={checkingOllama}
               >
-                {checkingOllama ? <Loader2 className="spin" size={18} /> : null}
-                {checkingOllama ? "Checking Ollama..." : "Download & Start Setup"}
+                {checkingOllama ? <Loader2 className="spin" size={16} /> : null}
+                {checkingOllama ? "Connecting Ollama..." : "Download & Finish Setup"}
               </button>
             </div>
           </div>
@@ -2106,57 +2311,56 @@ function Onboarding({
           <form className="cloud-setup-flow" onSubmit={handleCloudSubmit}>
             <div className="onboarding-header compact">
               <h2>Configure Cloud APIs</h2>
-              <p>Add your keys below. ClipOn will route transcription and analysis to the cloud.</p>
+              <p>Add your API keys to enable cloud processing.</p>
             </div>
 
-            {error && <div className="error-banner" style={{ marginBottom: "16px" }}>{error}</div>}
+            {error && <div className="workspace-error-banner" style={{ marginBottom: "16px" }}>{error}</div>}
 
             <div className="form-stack">
-              <div className="input-group">
+              <div className="settings-field-group">
                 <label>Deepgram API Key *</label>
                 <input
                   type="password"
                   value={dgKey}
                   onChange={(e) => setDgKey(e.target.value)}
-                  placeholder="Insert your Deepgram API Key (for transcription)"
+                  placeholder="Deepgram API Key (Transcription)"
                 />
               </div>
 
-              <div className="input-group">
+              <div className="settings-field-group">
                 <label>Claude API Key</label>
                 <input
                   type="password"
                   value={antKey}
                   onChange={(e) => setAntKey(e.target.value)}
-                  placeholder="Insert your Anthropic API Key (moment detection)"
+                  placeholder="Anthropic API Key"
                 />
               </div>
 
-              <div className="input-group">
+              <div className="settings-field-group">
                 <label>DeepSeek API Key</label>
                 <input
                   type="password"
                   value={dsKey}
                   onChange={(e) => setDsKey(e.target.value)}
-                  placeholder="Insert your DeepSeek API Key (alternative moment detection)"
+                  placeholder="DeepSeek API Key"
                 />
               </div>
 
-              <div className="input-group">
+              <div className="settings-field-group">
                 <label>Groq API Key</label>
                 <input
                   type="password"
                   value={grKey}
                   onChange={(e) => setGrKey(e.target.value)}
-                  placeholder="Insert your Groq API Key (alternative moment detection)"
+                  placeholder="Groq API Key"
                 />
               </div>
-              <p className="form-help">* Deepgram Key + at least one LLM Key (Claude, DeepSeek, or Groq) is required.</p>
             </div>
 
             <div className="onboarding-actions">
-              <button type="button" className="icon-button" onClick={() => setSetupMode("choose")}>Back</button>
-              <button type="submit" className="primary-action compact">Save & Start</button>
+              <button type="button" className="studio-btn secondary" onClick={() => setSetupMode("choose")}>Back</button>
+              <button type="submit" className="studio-btn primary">Save & Launch Studio</button>
             </div>
           </form>
         )}
@@ -2164,23 +2368,17 @@ function Onboarding({
         {setupMode === "downloading" && (
           <div className="downloading-flow">
             <div className="onboarding-header compact">
-              <h2>Downloading Local Model</h2>
-              <p>Please wait while your local environment is downloaded. Do not close the application.</p>
+              <h2>Preparing Local Studio</h2>
+              <p>Downloading local model weights. Please keep ClipOn open.</p>
             </div>
 
-            <div className="download-progress-container">
-              <div className="download-loader">
-                <Loader2 className="spin" size={48} />
-              </div>
+            <div className="download-progress-bar">
+              <div className="progress-fill" style={{ width: `${downloadProgress}%` }} />
+            </div>
 
-              <div className="progress-bar-container">
-                <div className="progress-bar-fill" style={{ width: `${downloadProgress}%` }}></div>
-              </div>
-
-              <div className="download-stats">
-                <span className="download-status">{downloadStatus}</span>
-                <span className="download-percentage">{downloadProgress}%</span>
-              </div>
+            <div className="download-stats-row">
+              <span>{downloadStatus}</span>
+              <strong>{downloadProgress}%</strong>
             </div>
           </div>
         )}
@@ -2192,5 +2390,5 @@ function Onboarding({
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />
-  </React.StrictMode>,
+  </React.StrictMode>
 );
