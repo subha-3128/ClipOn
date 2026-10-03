@@ -1,14 +1,14 @@
 # ClipOn ✂️
 
-**ClipOn** is a high-performance, local-first desktop application for turning long-form videos into viral, high-converting vertical short-form clips (9:16 Shorts, Reels, and TikToks) with AI-powered viral moment ranking.
+**ClipOn** is an ultra-fast, local-first desktop application designed for content creators, podcasters, and video editors to transform long-form recordings and YouTube videos into high-converting, viral vertical short-form clips (**9:16 YouTube Shorts, Instagram Reels, and TikToks**) powered by AI moment ranking.
 
-Built with **Tauri 2 + React + TypeScript + Rust + SQLite**.
+Built with **Tauri 2 + React 19 + TypeScript + Rust + SQLite + Apple Silicon VideoToolbox**.
 
 ---
 
-## ⚡ Features
+## ⚡ Core Features
 
-- **🚀 Apple Silicon GPU Acceleration**: Native hardware-accelerated video rendering via Apple VideoToolbox (`h264_videotoolbox`), exporting clips in 1–3 seconds with near-zero CPU load.
+- **🚀 Apple Silicon GPU Acceleration**: Native hardware-accelerated video transcoding via Apple VideoToolbox (`h264_videotoolbox`). Renders full-resolution 1080x1920 60fps vertical clips in 1–3 seconds with near-zero CPU load.
 - **📱 Smart 9:16 Vertical Reframe**:
   - **9:16 Smart Blur (Default)**: Converts 16:9 widescreen videos into vertical shorts with a high-definition blurred mirror background and sharp centered video.
   - **9:16 Center Crop**: Direct center cut for solo speaker podcasts.
@@ -16,59 +16,136 @@ Built with **Tauri 2 + React + TypeScript + Rust + SQLite**.
 - **✨ AI Social Publishing Kit**:
   - Auto-generates **3 High-CTR Viral Titles** (Curiosity, Value, Controversy) per clip.
   - Trending topic hashtags with 1-click copy.
-  - Post caption & description + Call to Action.
-  - 1-click **"Copy Full Post Package"** for rapid publishing to YouTube Shorts, TikTok, and Instagram Reels.
-- **🤖 Multi-LLM Moment Detection**:
-  - Supports **DeepSeek**, **Gemini**, **Claude**, **OpenAI**, **Groq**, and local **Ollama** models for ranking moments by hook strength and virality score.
-- **🎙️ Fast Cloud & Offline Transcription**:
-  - Deepgram cloud transcription with word-level timestamps.
-  - Offline local Whisper support.
+  - Complete post caption & description + Call to Action.
+  - 1-click **"Copy Complete Social Package"** ready for immediate publishing to TikTok, Reels, and YouTube Shorts.
+- **🤖 Multi-LLM Moment Ranking**:
+  - Compatible with **Ollama** (100% offline & private local models like LLaMA 3.2, Qwen 2.5), **DeepSeek**, **Google Gemini**, **Anthropic Claude**, **OpenAI**, and **Groq**.
+  - Ranks clips by hook strength, virality score, and audience retention potential.
+- **🎙️ Dual-Engine Transcription**:
+  - **Offline Local Whisper**: Private, free transcription via local Whisper model.
+  - **Deepgram Nova-2**: High-speed cloud transcription with word-level timestamps.
 - **📥 Direct YouTube Importer**:
-  - Paste any YouTube link to analyze and download locally with copyright checking.
-- **📁 Custom File Locations**:
-  - Choose custom download and clip export folders with 1-click Finder access.
+  - Paste any YouTube link to download and analyze locally.
+  - Automatic Creative Commons / copyright license verification.
+- **📁 Native Folder Management**:
+  - Native macOS directory picker (`Browse...`) to choose custom download and clip output directories.
+  - Instant 1-click **"Show in Finder"** for any clip or project folder.
+- **🎛️ Minimalist Pro Studio UI/UX**:
+  - Monochrome, minimalist **All Projects** dashboard with real-time search.
+  - 4-Stage visual pipeline tracker: `1. Source Loaded` → `2. Interactive Transcript` → `3. Viral Moments` → `4. Rendered Clips`.
+  - Split-screen workspace with interactive dialogue search, batch clip selection, and live cutting status.
 
 ---
 
-## 🛠️ Prerequisites
+## 📂 Project File Structure
 
-To run ClipOn, ensure **FFmpeg & FFprobe** are installed on your system `PATH`:
-
-### macOS
-```bash
-brew install ffmpeg
+```text
+ClipOn/
+├── .env.example                     # Environment template for API keys & folder paths
+├── .gitignore                       # Git ignore rules (node_modules, target, dist, .env)
+├── README.md                        # Documentation & setup guide
+├── index.html                       # HTML entry point with Plus Jakarta Sans & JetBrains Mono
+├── package.json                     # Node.js project manifest & scripts
+├── package-lock.json                # Locked dependency tree
+├── tsconfig.json                    # TypeScript compiler configuration (ES2022, React JSX)
+├── vite.config.ts                   # Vite bundler configuration (dev server on 127.0.0.1:1420)
+│
+├── src/                             # Frontend application source (React 19 + TypeScript)
+│   ├── main.tsx                     # Main UI orchestrator, state management, & modal systems
+│   │                                # (Dashboard, Studio Workspace, Settings, Social Kit, YouTube)
+│   └── styles.css                   # Cohesive dark-mode design system & micro-interactions
+│
+├── src-tauri/                       # Desktop native layer (Rust + Tauri v2)
+│   ├── Cargo.toml                   # Rust package manifest & dependencies
+│   ├── Cargo.lock                   # Locked Rust dependencies
+│   ├── build.rs                     # Tauri build script
+│   ├── tauri.conf.json              # App configuration (window dimensions, bundle identifier, icons)
+│   │
+│   ├── capabilities/                # Tauri v2 security & permission manifests
+│   │   └── default.json             # Core window, dialog, and event capabilities
+│   │
+│   ├── icons/                       # Application icons for macOS, Windows, iOS, and Android
+│   │   ├── icon.icns                # macOS application icon bundle
+│   │   ├── icon.ico                 # Windows application icon
+│   │   └── *.png                    # Multi-resolution square PNG app icons
+│   │
+│   └── src/                         # Rust backend source code
+│       ├── main.rs                  # Native application entry point
+│       ├── lib.rs                   # Tauri commands handler, app lifecycle, & IPC router
+│       ├── media.rs                 # FFmpeg/FFprobe runner, Apple Silicon VideoToolbox GPU pipeline
+│       ├── llm.rs                   # Prompt engineering & LLM integration (Ollama, Claude, Gemini, etc.)
+│       ├── transcription.rs         # Speech-to-text runner (Whisper local & Deepgram cloud)
+│       ├── db.rs                    # Embedded SQLite database schema, migrations, & queries
+│       └── models.rs                # Rust data structures (Project, Candidate, Clip, SocialKit)
 ```
+
+---
+
+## 🛠️ System Prerequisites
+
+ClipOn requires **FFmpeg & FFprobe** on your system `PATH`:
+
+### macOS (Homebrew)
+```bash
+brew install ffmpeg yt-dlp
+```
+
+### Optional Offline Engines:
+- **Local Whisper**: `pip3 install -U openai-whisper`
+- **Local LLM**: Install [Ollama](https://ollama.com) (`ollama run llama3.2`)
 
 ---
 
 ## 🚀 Getting Started
 
 ### 1. Configure Environment
-Copy `.env.example` to `.env` and add your API keys:
+Copy `.env.example` to `.env` and add your preferred API keys:
 ```bash
 cp .env.example .env
 ```
 
 ```env
-DEEPGRAM_API_KEY=your_deepgram_key
-GEMINI_API_KEY=your_gemini_key
-DEEPSEEK_API_KEY=your_deepseek_key
+# Cloud Transcription (Optional if using Local Whisper)
+DEEPGRAM_API_KEY=your_deepgram_api_key
+
+# Viral Moments LLM (Optional if using Local Ollama)
+GEMINI_API_KEY=your_gemini_api_key
+DEEPSEEK_API_KEY=your_deepseek_api_key
+ANTHROPIC_API_KEY=your_anthropic_api_key
+GROQ_API_KEY=your_groq_api_key
+OPENAI_API_KEY=your_openai_api_key
 LLM_PROVIDER=gemini
 ```
 
-### 2. Run in Development
+### 2. Install Dependencies
 ```bash
 npm install
-npm run tauri:dev
 ```
 
-### 3. Build Production App
+### 3. Run in Development Mode
+```bash
+npm run tauri:dev
+```
+> This starts the Vite dev server and launches the native macOS desktop app window with hot-reloading enabled.
+
+### 4. How to Close / Stop the App
+- **From GUI**: Press **`⌘ + Q`** (`Command + Q`) or click the red close button on the top-left of the window.
+- **From Terminal**: Press **`Ctrl + C`** in your terminal window.
+
+---
+
+## 📦 Building Standalone App (`.dmg` / `.app`)
+
+To generate an optimized, standalone macOS installer:
 ```bash
 npm run tauri:build
 ```
-The output `.app` and `.dmg` installers will be generated under `src-tauri/target/release/bundle/`.
+Your ready-to-install `.dmg` package will be created in:
+```bash
+src-tauri/target/release/bundle/dmg/
+```
 
 ---
 
 ## 📄 License
-MIT License.
+MIT License. Created for high-velocity video creators and editors.

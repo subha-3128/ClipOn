@@ -844,9 +844,9 @@ async fn download_youtube_video(url: String, output_dir: Option<String>) -> Resu
     tokio::task::spawn_blocking(move || {
         let save_dir = output_dir
             .filter(|s| !s.is_empty())
-            .or_else(|| std::env::var("AUTOSHORTS_YOUTUBE_DIR").ok())
+            .or_else(|| std::env::var("CLIPON_YOUTUBE_DIR").or_else(|_| std::env::var("AUTOSHORTS_YOUTUBE_DIR")).ok())
             .map(std::path::PathBuf::from)
-            .or_else(|| dirs::download_dir().map(|d| d.join("AutoShorts")))
+            .or_else(|| dirs::download_dir().map(|d| d.join("ClipOn")))
             .ok_or_else(|| "Could not find Downloads folder".to_string())?;
 
         std::fs::create_dir_all(&save_dir).ok();
@@ -892,7 +892,7 @@ fn documents_project_dir(project: &Project) -> Result<PathBuf, String> {
     let documents_dir = dirs::document_dir()
         .ok_or_else(|| "Could not find your Documents folder for clip output.".to_string())?;
     Ok(documents_dir
-        .join("AutoShorts")
+        .join("ClipOn")
         .join(project_output_slug(project)))
 }
 
