@@ -1,5 +1,13 @@
 # ClipOn ✂️
 
+[![GitHub](https://img.shields.io/badge/Creator-subha--3128-181717?style=flat&logo=github)](https://github.com/subha-3128)
+[![Repository](https://img.shields.io/badge/GitHub-subha--3128%2FClipOn-10b981?style=flat&logo=github)](https://github.com/subha-3128/ClipOn)
+
+> **Created & Maintained by [@subha-3128](https://github.com/subha-3128)**  
+> 🔗 **Official Repository**: [https://github.com/subha-3128/ClipOn](https://github.com/subha-3128/ClipOn)
+
+---
+
 **ClipOn** is an ultra-fast, local-first desktop application designed for content creators, podcasters, and video editors to transform long-form recordings and YouTube videos into high-converting, viral vertical short-form clips (**9:16 YouTube Shorts, Instagram Reels, and TikToks**) powered by AI moment ranking.
 
 Built with **Tauri 2 + React 19 + TypeScript + Rust + SQLite + Apple Silicon VideoToolbox**.
@@ -147,6 +155,13 @@ src-tauri/target/release/bundle/dmg/
 ```
 
 ---
+
+---
+
+## 👤 Author & Credits
+
+- **Creator & Lead Developer**: [@subha-3128](https://github.com/subha-3128)
+- **GitHub Repository**: [https://github.com/subha-3128/ClipOn](https://github.com/subha-3128/ClipOn)
 
 ## 📄 License
 MIT License. Created for high-velocity video creators and editors.
