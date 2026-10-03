@@ -64,10 +64,11 @@ ClipOn/
 │   ├── capabilities/                # Tauri v2 security & permission manifests
 │   │   └── default.json             # Core window, dialog, and event capabilities
 │   │
-│   ├── icons/                       # Application icons for macOS, Windows, iOS, and Android
-│   │   ├── icon.icns                # macOS application icon bundle
+│   ├── icons/                       # Native desktop icons
+│   │   ├── icon.icns                # macOS application icon bundle (Apple VideoToolbox)
 │   │   ├── icon.ico                 # Windows application icon
-│   │   └── *.png                    # Multi-resolution square PNG app icons
+│   │   ├── icon.png                 # Master 1024x1024 transparent icon
+│   │   └── *.png                    # 32x32, 128x128 desktop app icons
 │   │
 │   └── src/                         # Rust backend source code
 │       ├── main.rs                  # Native application entry point
