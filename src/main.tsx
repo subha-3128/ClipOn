@@ -38,7 +38,14 @@ import {
   CheckSquare,
   Square,
   Instagram,
-  Flame
+  Flame,
+  Hash,
+  Zap,
+  Mic,
+  Monitor,
+  Activity,
+  CheckCircle2,
+  Menu
 } from "lucide-react";
 import "./styles.css";
 
@@ -1442,10 +1449,10 @@ function App() {
                           onChange={(e) => setReframeMode(e.target.value as ReframeMode)}
                           title="Video Framing Aspect Ratio"
                         >
-                          <option value="vertical_crop">✂️ 9:16 Center Crop</option>
-                          <option value="podcast_split">🎙️ 9:16 Podcast Split-Screen</option>
-                          <option value="punch_zoom">⚡ 9:16 Retention Punch-Zoom</option>
-                          <option value="original">🖥️ 16:9 Original</option>
+                          <option value="vertical_crop">9:16 Center Crop</option>
+                          <option value="podcast_split">9:16 Podcast Split-Screen</option>
+                          <option value="punch_zoom">9:16 Retention Punch-Zoom</option>
+                          <option value="original">16:9 Original</option>
                         </select>
                       </div>
 
@@ -1770,7 +1777,7 @@ function App() {
           <span className="system-text">System Ready</span>
           {environment?.hasHardwareAccel && (
             <span className="accel-pill" title="Apple Silicon VideoToolbox Hardware Acceleration">
-              ⚡ Apple Silicon VideoToolbox GPU Active
+              <Zap size={11} /> VideoToolbox GPU Active
             </span>
           )}
         </div>
@@ -1808,31 +1815,31 @@ function App() {
                 className={`settings-tab-btn ${settingsTab === "ai" ? "active" : ""}`}
                 onClick={() => setSettingsTab("ai")}
               >
-                🧠 AI & Engines
+                <Cpu size={14} /> AI & Engines
               </button>
               <button
                 className={`settings-tab-btn ${settingsTab === "storage" ? "active" : ""}`}
                 onClick={() => setSettingsTab("storage")}
               >
-                📁 Storage & Folders
+                <FolderOpen size={14} /> Storage & Folders
               </button>
               <button
                 className={`settings-tab-btn ${settingsTab === "export" ? "active" : ""}`}
                 onClick={() => setSettingsTab("export")}
               >
-                📱 Video & Captions
+                <SlidersHorizontal size={14} /> Video & Captions
               </button>
               <button
                 className={`settings-tab-btn ${settingsTab === "instagram" ? "active" : ""}`}
                 onClick={() => setSettingsTab("instagram")}
               >
-                📸 Instagram Automation
+                <Instagram size={14} /> Instagram Automation
               </button>
               <button
                 className={`settings-tab-btn ${settingsTab === "system" ? "active" : ""}`}
                 onClick={() => setSettingsTab("system")}
               >
-                ⚡ System Diagnostics
+                <Activity size={14} /> System Diagnostics
               </button>
             </div>
 
@@ -2009,7 +2016,7 @@ function App() {
                   {/* Clips Output Folder */}
                   <div className="settings-folder-group">
                     <div className="folder-group-header">
-                      <label>✂️ Rendered Clips Output Destination</label>
+                      <label>Rendered Clips Output Destination</label>
                       <span className="folder-hint">Where final vertical video clips and captions will be saved</span>
                     </div>
                     <div className="folder-input-row">
@@ -2046,10 +2053,10 @@ function App() {
                       value={reframeMode}
                       onChange={(e) => setReframeMode(e.target.value as ReframeMode)}
                     >
-                      <option value="vertical_crop">✂️ 9:16 Center Crop (Recommended for Shorts/Reels/TikTok)</option>
-                      <option value="podcast_split">🎙️ 9:16 Podcast Split-Screen (Host on top, Guest on bottom)</option>
-                      <option value="punch_zoom">⚡ 9:16 Retention Punch-Zoom (Attention cuts every 5.5s)</option>
-                                            <option value="original">🖥️ 16:9 Original</option>
+                      <option value="vertical_crop">9:16 Center Crop (Recommended for Shorts/Reels/TikTok)</option>
+                      <option value="podcast_split">9:16 Podcast Split-Screen (Host on top, Guest on bottom)</option>
+                      <option value="punch_zoom">9:16 Retention Punch-Zoom (Attention cuts every 5.5s)</option>
+                                            <option value="original">16:9 Original</option>
                     </select>
                   </div>
                 </div>
@@ -2171,7 +2178,7 @@ function App() {
                     <div className="diag-item">
                       <span className="diag-name">Apple Silicon VideoToolbox Hardware Accel</span>
                       <span className={`diag-badge ${environment?.hasHardwareAccel ? "ok" : "muted"}`}>
-                        {environment?.hasHardwareAccel ? "⚡ Active (Hardware Accelerated)" : "Inactive (CPU)"}
+                        {environment?.hasHardwareAccel ? "Active (Hardware Accelerated)" : "Inactive (CPU)"}
                       </span>
                     </div>
                     <div className="diag-item">
@@ -2486,7 +2493,7 @@ ${kit.hashtags.join(" ")}`;
                     <div className="social-kit-content">
                       {/* Viral Titles */}
                       <div className="social-section">
-                        <label className="section-label">🔥 High-CTR Titles (Click to copy)</label>
+                        <label className="section-label"><Flame size={13} /> High-CTR Titles (Click to copy)</label>
                         <div className="titles-stack">
                           {kit.titles.map((title, i) => (
                             <div
@@ -2507,7 +2514,7 @@ ${kit.hashtags.join(" ")}`;
                       {/* Hashtags */}
                       <div className="social-section">
                         <div className="section-header-row">
-                          <label className="section-label">#️⃣ Trending Hashtags</label>
+                          <label className="section-label"><Hash size={13} /> Trending Hashtags</label>
                           <button
                             className="text-action-btn"
                             onClick={() => {
@@ -2938,7 +2945,7 @@ function Onboarding({
                   {environment?.hasLocalWhisperModel ? (
                     <span className="step-check success"><BadgeCheck size={14} /> Whisper detected in Python!</span>
                   ) : (
-                    <span className="step-check warning">⚠️ Package 'whisper' not detected yet. Run command above.</span>
+                    <span className="step-check warning">Package 'whisper' not detected yet. Run command above.</span>
                   )}
                 </div>
               </div>
