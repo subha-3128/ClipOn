@@ -1594,18 +1594,6 @@ function App() {
                               </div>
 
                               <div className="card-actions-right">
-                                {igPost?.status === "published" && igPost.postUrl && (
-                                  <button
-                                    type="button"
-                                    className="action-pill-btn instagram-view-btn"
-                                    onClick={() => openFolder(igPost.postUrl!)}
-                                    title="Open live Reel on Instagram"
-                                  >
-                                    <ExternalLink size={12} />
-                                    <span>View Reel ↗</span>
-                                  </button>
-                                )}
-
                                 <button
                                   className={`action-pill-btn instagram-publish-btn ${isPublishingThis ? "loading" : ""}`}
                                   onClick={() => void handlePublishToInstagram(candidate.id)}
