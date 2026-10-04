@@ -9,7 +9,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
 use crate::models::{
-    Candidate, CandidateDraft, Clip, ClipCopy, Project, ProjectDetail, Transcript,
+    Candidate, CandidateDraft, Clip, ClipCopy, InstagramPost, Project, ProjectDetail, Transcript,
 };
 
 #[derive(Clone)]
@@ -95,6 +95,18 @@ impl Database {
                 scheduled_for TEXT,
                 status TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS instagram_posts (
+                id TEXT PRIMARY KEY,
+                candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+                clip_id TEXT REFERENCES clips(id) ON DELETE SET NULL,
+                status TEXT NOT NULL,
+                caption TEXT,
+                post_url TEXT,
+                error_message TEXT,
+                created_at TEXT NOT NULL,
+                published_at TEXT
+            );
             ",
         )?;
         let _ = conn.execute("ALTER TABLE projects ADD COLUMN name TEXT", []);
@@ -171,6 +183,7 @@ impl Database {
         let candidates = self.list_candidates(project_id)?;
         let clips = self.list_clips_for_project(project_id)?;
         let copy = self.list_copy_for_project(project_id)?;
+        let instagram_posts = self.list_instagram_posts_for_project(project_id)?;
 
         Ok(ProjectDetail {
             project,
@@ -178,6 +191,7 @@ impl Database {
             candidates,
             clips,
             copy,
+            instagram_posts,
         })
     }
 
@@ -307,6 +321,15 @@ impl Database {
         Ok(candidates)
     }
 
+    pub fn update_candidate_timing(&self, candidate_id: &str, start_sec: f64, end_sec: f64) -> Result<()> {
+        let conn = self.conn.lock().expect("database mutex poisoned");
+        conn.execute(
+            "UPDATE candidates SET start_sec = ?1, end_sec = ?2 WHERE id = ?3",
+            params![start_sec, end_sec, candidate_id],
+        )?;
+        Ok(())
+    }
+
     pub fn list_candidates(&self, project_id: &str) -> Result<Vec<Candidate>> {
         let conn = self.conn.lock().expect("database mutex poisoned");
         let mut stmt = conn.prepare(
@@ -395,7 +418,7 @@ impl Database {
         self.list_candidates(project_id)
     }
 
-    fn list_clips_for_project(&self, project_id: &str) -> Result<Vec<Clip>> {
+    pub fn list_clips_for_project(&self, project_id: &str) -> Result<Vec<Clip>> {
         let conn = self.conn.lock().expect("database mutex poisoned");
         let mut stmt = conn.prepare(
             "SELECT clips.id, clips.candidate_id, clips.status, clips.output_path, clips.face_track_json, clips.caption_ass_path, clips.render_log
@@ -456,6 +479,91 @@ impl Database {
             params![name, now, project_id],
         )?;
         Ok(())
+    }
+
+    pub fn list_instagram_posts_for_project(&self, project_id: &str) -> Result<Vec<InstagramPost>> {
+        let conn = self.conn.lock().expect("database mutex poisoned");
+        let mut stmt = conn.prepare(
+            "SELECT p.id, p.candidate_id, p.clip_id, p.status, p.caption, p.post_url, p.error_message, p.created_at, p.published_at 
+             FROM instagram_posts p 
+             INNER JOIN candidates c ON c.id = p.candidate_id 
+             WHERE c.project_id = ?1 
+             ORDER BY p.created_at DESC"
+        )?;
+        let rows = stmt.query_map(params![project_id], |row| {
+            Ok(InstagramPost {
+                id: row.get(0)?,
+                candidate_id: row.get(1)?,
+                clip_id: row.get(2)?,
+                status: row.get(3)?,
+                caption: row.get(4)?,
+                post_url: row.get(5)?,
+                error_message: row.get(6)?,
+                created_at: row.get(7)?,
+                published_at: row.get(8)?,
+            })
+        })?;
+        let mut posts = Vec::new();
+        for r in rows {
+            posts.push(r?);
+        }
+        Ok(posts)
+    }
+
+    pub fn upsert_instagram_post(
+        &self,
+        candidate_id: &str,
+        clip_id: Option<&str>,
+        status: &str,
+        caption: Option<&str>,
+        post_url: Option<&str>,
+        error_message: Option<&str>,
+    ) -> Result<InstagramPost> {
+        let conn = self.conn.lock().expect("database mutex poisoned");
+        let now = Utc::now().to_rfc3339();
+        let existing: Option<String> = conn.query_row(
+            "SELECT id FROM instagram_posts WHERE candidate_id = ?1",
+            params![candidate_id],
+            |row| row.get(0),
+        ).optional()?;
+
+        let published_at = if status == "published" { Some(now.clone()) } else { None };
+
+        let post = if let Some(id) = existing {
+            conn.execute(
+                "UPDATE instagram_posts SET clip_id = COALESCE(?1, clip_id), status = ?2, caption = COALESCE(?3, caption), post_url = COALESCE(?4, post_url), error_message = ?5, published_at = COALESCE(?6, published_at) WHERE id = ?7",
+                params![clip_id, status, caption, post_url, error_message, published_at, id],
+            )?;
+            InstagramPost {
+                id,
+                candidate_id: candidate_id.to_string(),
+                clip_id: clip_id.map(ToOwned::to_owned),
+                status: status.to_string(),
+                caption: caption.map(ToOwned::to_owned),
+                post_url: post_url.map(ToOwned::to_owned),
+                error_message: error_message.map(ToOwned::to_owned),
+                created_at: now,
+                published_at,
+            }
+        } else {
+            let id = Uuid::new_v4().to_string();
+            conn.execute(
+                "INSERT INTO instagram_posts (id, candidate_id, clip_id, status, caption, post_url, error_message, created_at, published_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![id, candidate_id, clip_id, status, caption, post_url, error_message, now, published_at],
+            )?;
+            InstagramPost {
+                id,
+                candidate_id: candidate_id.to_string(),
+                clip_id: clip_id.map(ToOwned::to_owned),
+                status: status.to_string(),
+                caption: caption.map(ToOwned::to_owned),
+                post_url: post_url.map(ToOwned::to_owned),
+                error_message: error_message.map(ToOwned::to_owned),
+                created_at: now,
+                published_at,
+            }
+        };
+        Ok(post)
     }
 }
 

@@ -32,6 +32,10 @@ pub struct EnvironmentStatus {
     pub openai_key: Option<String>,
     #[serde(default)]
     pub openrouter_key: Option<String>,
+    #[serde(default)]
+    pub instagram_account_id: Option<String>,
+    #[serde(default)]
+    pub instagram_access_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,12 +113,28 @@ pub struct ClipCopy {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct InstagramPost {
+    pub id: String,
+    pub candidate_id: String,
+    pub clip_id: Option<String>,
+    pub status: String,
+    pub caption: Option<String>,
+    pub post_url: Option<String>,
+    pub error_message: Option<String>,
+    pub created_at: String,
+    pub published_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProjectDetail {
     pub project: Project,
     pub transcript: Option<Transcript>,
     pub candidates: Vec<Candidate>,
     pub clips: Vec<Clip>,
     pub copy: Vec<ClipCopy>,
+    #[serde(default)]
+    pub instagram_posts: Vec<InstagramPost>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

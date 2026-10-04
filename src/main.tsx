@@ -36,7 +36,9 @@ import {
   Sliders,
   Filter,
   CheckSquare,
-  Square
+  Square,
+  Instagram,
+  Flame
 } from "lucide-react";
 import "./styles.css";
 
@@ -64,6 +66,8 @@ export type EnvironmentStatus = {
   groqKey?: string;
   openaiKey?: string;
   openrouterKey?: string;
+  instagramAccountId?: string;
+  instagramAccessToken?: string;
 };
 
 export type Project = {
@@ -117,11 +121,24 @@ export type Clip = {
   renderLog: string | null;
 };
 
+export type InstagramPost = {
+  id: string;
+  candidateId: string;
+  clipId: string | null;
+  status: "queued" | "publishing" | "published" | "failed";
+  caption: string | null;
+  postUrl: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  publishedAt: string | null;
+};
+
 export type ProjectDetail = {
   project: Project;
   transcript: Transcript | null;
   candidates: Candidate[];
   clips: Clip[];
+  instagramPosts?: InstagramPost[];
 };
 
 export type NormalizedTranscriptSegment = {
@@ -147,8 +164,8 @@ export type BusyState =
   | "clipCount"
   | "cut";
 
-export type ReframeMode = "vertical_blur" | "vertical_crop" | "original";
-export type SettingsTab = "ai" | "storage" | "export" | "system";
+export type ReframeMode = "vertical_crop" | "podcast_split" | "punch_zoom" | "original";
+export type SettingsTab = "ai" | "storage" | "export" | "instagram" | "system";
 
 // ===== Utility Helpers =====
 function fileName(path: string): string {
@@ -235,7 +252,11 @@ function App() {
   const [anthropicKey, setAnthropicKey] = useState(() => (localStorage.getItem("clipon_anthropic_key") || localStorage.getItem("autoshorts_anthropic_key")) || "");
   const [deepseekKey, setDeepseekKey] = useState(() => (localStorage.getItem("clipon_deepseek_key") || localStorage.getItem("autoshorts_deepseek_key")) || "");
   const [deepseekModel, setDeepseekModel] = useState(() => (localStorage.getItem("clipon_deepseek_model") || localStorage.getItem("autoshorts_deepseek_model")) || "");
-  const [geminiKey, setGeminiKey] = useState(() => (localStorage.getItem("clipon_gemini_key") || localStorage.getItem("autoshorts_gemini_key")) || "");
+  const [geminiKey, setGeminiKey] = useState(() => {
+    let k = (localStorage.getItem("clipon_gemini_key") || localStorage.getItem("autoshorts_gemini_key")) || "";
+    if (k.startsWith("Q.Ab8")) k = "A" + k;
+    return k;
+  });
   const [openaiKey, setOpenaiKey] = useState(() => (localStorage.getItem("clipon_openai_key") || localStorage.getItem("autoshorts_openai_key")) || "");
   const [openrouterKey, setOpenrouterKey] = useState(() => (localStorage.getItem("clipon_openrouter_key") || localStorage.getItem("autoshorts_openrouter_key")) || "");
   const [openrouterModel, setOpenrouterModel] = useState(() => (localStorage.getItem("clipon_openrouter_model") || localStorage.getItem("autoshorts_openrouter_model")) || "");
@@ -248,8 +269,49 @@ function App() {
 
   // Reframe Mode
   const [reframeMode, setReframeMode] = useState<ReframeMode>(() => {
-    return ((localStorage.getItem("clipon_reframe_mode") || localStorage.getItem("autoshorts_reframe_mode")) as ReframeMode) || "vertical_blur";
+    const saved = (localStorage.getItem("clipon_reframe_mode") || localStorage.getItem("autoshorts_reframe_mode")) as any;
+    if (saved && saved !== "vertical_blur") return saved as ReframeMode;
+    return "vertical_crop";
   });
+
+  // Instagram Reels Automation State
+  const [autoInstagramEnabled, setAutoInstagramEnabled] = useState<boolean>(() => {
+    return localStorage.getItem("clipon_auto_instagram_enabled") === "true";
+  });
+  const [instagramMinScore, setInstagramMinScore] = useState<number>(() => {
+    return Number(localStorage.getItem("clipon_instagram_min_score")) || 90;
+  });
+  const [instagramProvider, setInstagramProvider] = useState<"graph_api" | "webhook">(() => {
+    return (localStorage.getItem("clipon_instagram_provider") as any) || "graph_api";
+  });
+  const [instagramAccountId, setInstagramAccountId] = useState(() => {
+    return localStorage.getItem("clipon_instagram_account_id") || "";
+  });
+  const [instagramAccessToken, setInstagramAccessToken] = useState(() => {
+    return localStorage.getItem("clipon_instagram_access_token") || "";
+  });
+  const [instagramWebhookUrl, setInstagramWebhookUrl] = useState(() => {
+    return localStorage.getItem("clipon_instagram_webhook_url") || "";
+  });
+  const [instagramTesting, setInstagramTesting] = useState(false);
+  const [instagramTestResult, setInstagramTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [publishingCandidateId, setPublishingCandidateId] = useState<string | null>(null);
+
+  // Meta Graph API Quick Connect Modal State
+  const [showMetaModal, setShowMetaModal] = useState(false);
+  const [pendingCandidateIdToPost, setPendingCandidateIdToPost] = useState<string | null>(null);
+  const [metaModalAccountId, setMetaModalAccountId] = useState('');
+  const [metaModalAccessToken, setMetaModalAccessToken] = useState('');
+  const [metaModalSaving, setMetaModalSaving] = useState(false);
+  const [metaModalTesting, setMetaModalTesting] = useState(false);
+  const [metaModalStatus, setMetaModalStatus] = useState<{ success: boolean; message: string } | null>(null);
+
+  useEffect(() => { localStorage.setItem("clipon_auto_instagram_enabled", String(autoInstagramEnabled)); }, [autoInstagramEnabled]);
+  useEffect(() => { localStorage.setItem("clipon_instagram_min_score", String(instagramMinScore)); }, [instagramMinScore]);
+  useEffect(() => { localStorage.setItem("clipon_instagram_provider", instagramProvider); }, [instagramProvider]);
+  useEffect(() => { localStorage.setItem("clipon_instagram_account_id", instagramAccountId); }, [instagramAccountId]);
+  useEffect(() => { localStorage.setItem("clipon_instagram_access_token", instagramAccessToken); }, [instagramAccessToken]);
+  useEffect(() => { localStorage.setItem("clipon_instagram_webhook_url", instagramWebhookUrl); }, [instagramWebhookUrl]);
 
   // UI Filters
   const [projectSearch, setProjectSearch] = useState("");
@@ -257,6 +319,20 @@ function App() {
   const [momentTab, setMomentTab] = useState<"all" | "selected" | "ready">("all");
 
   const showToast = (msg: string) => setToast(msg);
+
+  function getActiveLlmKey(): string {
+    let key =
+      llmEngine === "claude" ? (anthropicKey.trim() || environment?.anthropicKey || "") :
+      llmEngine === "deepseek" ? (deepseekKey.trim() || environment?.deepseekKey || "") :
+      llmEngine === "gemini" ? (geminiKey.trim() || environment?.geminiKey || "") :
+      llmEngine === "openai" ? (openaiKey.trim() || environment?.openaiKey || "") :
+      llmEngine === "openrouter" ? (openrouterKey.trim() || environment?.openrouterKey || "") :
+      llmEngine === "groq" ? (groqKey.trim() || environment?.groqKey || "") : "";
+    if (llmEngine === "gemini" && key.startsWith("Q.Ab8")) {
+      key = "A" + key;
+    }
+    return key;
+  }
 
   // Sync state with LocalStorage
   useEffect(() => { localStorage.setItem("clipon_transcription_engine", transcriptionEngine); }, [transcriptionEngine]);
@@ -315,14 +391,38 @@ function App() {
       if (env.hasDeepgramKey && !localStorage.getItem("clipon_transcription_engine")) {
         setTranscriptionEngine("deepgram");
       }
-      if (env.deepgramKey && !localStorage.getItem("clipon_deepgram_key")) {
+      if (env.deepgramKey && (!deepgramKey || !localStorage.getItem("clipon_deepgram_key"))) {
         setDeepgramKey(env.deepgramKey);
+        localStorage.setItem("clipon_deepgram_key", env.deepgramKey);
       }
-      if (env.geminiKey && !localStorage.getItem("clipon_gemini_key")) {
+      if (env.geminiKey && (!geminiKey || geminiKey.startsWith("Q.Ab8") || !localStorage.getItem("clipon_gemini_key"))) {
         setGeminiKey(env.geminiKey);
+        localStorage.setItem("clipon_gemini_key", env.geminiKey);
       }
-      if (env.deepseekKey && !localStorage.getItem("clipon_deepseek_key")) {
+      if (env.deepseekKey && (!deepseekKey || !localStorage.getItem("clipon_deepseek_key"))) {
         setDeepseekKey(env.deepseekKey);
+        localStorage.setItem("clipon_deepseek_key", env.deepseekKey);
+      }
+      if (env.anthropicKey && (!anthropicKey || !localStorage.getItem("clipon_anthropic_key"))) {
+        setAnthropicKey(env.anthropicKey);
+        localStorage.setItem("clipon_anthropic_key", env.anthropicKey);
+      }
+      if (env.groqKey && (!groqKey || !localStorage.getItem("clipon_groq_key"))) {
+        setGroqKey(env.groqKey);
+        localStorage.setItem("clipon_groq_key", env.groqKey);
+      }
+      if (env.instagramAccountId && (!instagramAccountId || !localStorage.getItem("clipon_instagram_account_id"))) {
+        setInstagramAccountId(env.instagramAccountId);
+        localStorage.setItem("clipon_instagram_account_id", env.instagramAccountId);
+      }
+      if (env.instagramAccessToken && (!instagramAccessToken || !localStorage.getItem("clipon_instagram_access_token"))) {
+        setInstagramAccessToken(env.instagramAccessToken);
+        localStorage.setItem("clipon_instagram_access_token", env.instagramAccessToken);
+      }
+
+      if (env.hasDeepgramKey || env.hasGeminiKey || env.hasDeepseekKey || env.hasAnthropicKey || env.hasGroqKey || env.hasLocalWhisperModel || env.hasOllama || projectList.length > 0) {
+        setIsOnboarded(true);
+        localStorage.setItem("clipon_onboarded", "true");
       }
 
       if (nextProjectId) {
@@ -351,11 +451,136 @@ function App() {
     return new Map(detail?.clips.map((clip) => [clip.candidateId, clip]) ?? []);
   }, [detail?.clips]);
 
+  const instagramPostByCandidate = useMemo(() => {
+    return new Map((detail?.instagramPosts ?? []).map((post) => [post.candidateId, post]));
+  }, [detail?.instagramPosts]);
+
+  async function testInstagramConnection() {
+    setInstagramTesting(true);
+    setInstagramTestResult(null);
+    try {
+      const msg = await invoke<string>("test_instagram_connection", {
+        provider: instagramProvider,
+        accountId: instagramAccountId.trim() || null,
+        accessToken: instagramAccessToken.trim() || null,
+        webhookUrl: instagramWebhookUrl.trim() || null,
+      });
+      setInstagramTestResult({ success: true, message: msg });
+      showToast("Instagram connected!");
+    } catch (err) {
+      setInstagramTestResult({ success: false, message: String(err) });
+    } finally {
+      setInstagramTesting(false);
+    }
+  }
+
+  async function handlePublishToInstagram(candidateId: string) {
+    if (!detail) return;
+    const currentAccId = (
+      instagramAccountId.trim() ||
+      environment?.instagramAccountId?.trim() ||
+      ""
+    );
+    const currentToken = (
+      instagramAccessToken.trim() ||
+      environment?.instagramAccessToken?.trim() ||
+      ""
+    );
+
+    // Directly and automatically publish without asking for API!
+    await executeInstagramPublish(candidateId, currentAccId, currentToken);
+  }
+
+  async function executeInstagramPublish(candidateId: string, accId?: string, token?: string) {
+    if (!detail) return;
+    setPublishingCandidateId(candidateId);
+    try {
+      const activeAccId = accId || instagramAccountId.trim() || environment?.instagramAccountId?.trim() || null;
+      const activeToken = token || instagramAccessToken.trim() || environment?.instagramAccessToken?.trim() || null;
+
+      await invoke<InstagramPost>("publish_candidate_to_instagram", {
+        candidateId,
+        captionOverride: null,
+        provider: instagramProvider,
+        accountId: activeAccId,
+        accessToken: activeToken,
+        webhookUrl: instagramWebhookUrl.trim() || null,
+      });
+      await refresh(detail.project.id);
+      showToast("🎉 Successfully published to Instagram Reels!");
+    } catch (err) {
+      console.error("Instagram publish error:", err);
+      setError(String(err));
+      showToast("Instagram error: " + String(err));
+    } finally {
+      setPublishingCandidateId(null);
+    }
+  }
+
+  async function handleSaveMetaAndPost() {
+    if (!metaModalAccountId.trim()) {
+      showToast("Please enter your Instagram Account ID");
+      return;
+    }
+    if (!metaModalAccessToken.trim()) {
+      showToast("Please enter your Meta Graph API Access Token");
+      return;
+    }
+    setMetaModalSaving(true);
+    try {
+      setInstagramAccountId(metaModalAccountId.trim());
+      setInstagramAccessToken(metaModalAccessToken.trim());
+      localStorage.setItem("clipon_instagram_account_id", metaModalAccountId.trim());
+      localStorage.setItem("clipon_instagram_access_token", metaModalAccessToken.trim());
+
+      await invoke("save_instagram_credentials", {
+        accountId: metaModalAccountId.trim(),
+        accessToken: metaModalAccessToken.trim(),
+      });
+
+      showToast("Meta Graph API credentials saved!");
+      setShowMetaModal(false);
+
+      if (pendingCandidateIdToPost) {
+        const candId = pendingCandidateIdToPost;
+        setPendingCandidateIdToPost(null);
+        await executeInstagramPublish(candId, metaModalAccountId.trim(), metaModalAccessToken.trim());
+      }
+    } catch (err) {
+      showToast("Failed to save credentials: " + String(err));
+    } finally {
+      setMetaModalSaving(false);
+    }
+  }
+
+  async function handleTestMetaConnection() {
+    if (!metaModalAccountId.trim() || !metaModalAccessToken.trim()) {
+      setMetaModalStatus({ success: false, message: "Please enter both Account ID and Access Token to test" });
+      return;
+    }
+    setMetaModalTesting(true);
+    setMetaModalStatus(null);
+    try {
+      const msg = await invoke<string>("test_instagram_connection", {
+        provider: "graph_api",
+        accountId: metaModalAccountId.trim(),
+        accessToken: metaModalAccessToken.trim(),
+        webhookUrl: null,
+      });
+      setMetaModalStatus({ success: true, message: msg });
+    } catch (err) {
+      setMetaModalStatus({ success: false, message: String(err) });
+    } finally {
+      setMetaModalTesting(false);
+    }
+  }
+
   const selectedCount = detail?.candidates.filter((c) => c.selected).length ?? 0;
   const cutCount = detail?.candidates.filter((c) => {
     const clip = clipByCandidate.get(c.id);
     return clip?.status === "done" && Boolean(clip.outputPath);
   }).length ?? 0;
+
 
   const canUseCloudKey = Boolean(environment?.hasDeepgramKey || deepgramKey.trim().length > 0);
   const canUseClaude = Boolean(environment?.hasAnthropicKey || anthropicKey.trim().length > 0);
@@ -557,13 +782,7 @@ function App() {
     // 2. Moments detection
     try {
       setBusy("moments");
-      const activeKey =
-        llmEngine === "claude" ? anthropicKey.trim() :
-        llmEngine === "deepseek" ? deepseekKey.trim() :
-        llmEngine === "gemini" ? geminiKey.trim() :
-        llmEngine === "openai" ? openaiKey.trim() :
-        llmEngine === "openrouter" ? openrouterKey.trim() :
-        llmEngine === "groq" ? groqKey.trim() : "";
+      const activeKey = getActiveLlmKey();
 
       await invoke<Candidate[]>("generate_candidates", {
         projectId,
@@ -640,13 +859,7 @@ function App() {
   async function moments() {
     if (!detail) return;
     await run("moments", async () => {
-      const activeKey =
-        llmEngine === "claude" ? anthropicKey.trim() :
-        llmEngine === "deepseek" ? deepseekKey.trim() :
-        llmEngine === "gemini" ? geminiKey.trim() :
-        llmEngine === "openai" ? openaiKey.trim() :
-        llmEngine === "openrouter" ? openrouterKey.trim() :
-        llmEngine === "groq" ? groqKey.trim() : "";
+      const activeKey = getActiveLlmKey();
 
       await invoke<Candidate[]>("generate_candidates", {
         projectId: detail.project.id,
@@ -657,6 +870,23 @@ function App() {
       });
       await refresh(detail.project.id);
       showToast("Viral moments detected");
+
+      if (autoInstagramEnabled) {
+        try {
+          await invoke("auto_publish_eligible_candidates", {
+            projectId: detail.project.id,
+            minScore: instagramMinScore / 100.0,
+            provider: instagramProvider,
+            accountId: instagramAccountId.trim() || null,
+            accessToken: instagramAccessToken.trim() || null,
+            webhookUrl: instagramWebhookUrl.trim() || null,
+          });
+          await refresh(detail.project.id);
+          showToast("Eligible 90%+ moments auto-posted to Instagram!");
+        } catch (e) {
+          console.warn("Auto-publish to Instagram failed:", e);
+        }
+      }
     });
   }
 
@@ -702,7 +932,7 @@ function App() {
     setBusy("cut");
     setError(null);
     try {
-      await invoke<string>("render_flat_clip_for_candidate", { candidateId, reframeMode });
+      await invoke<string>("render_flat_clip_for_candidate", { candidateId, reframeMode, outputDir: clipsSaveDir.trim() || null });
       showToast("Clip rendered successfully!");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -723,7 +953,7 @@ function App() {
     try {
       for (const candidate of selected) {
         setRenderingCandidateId(candidate.id);
-        await invoke<string>("render_flat_clip_for_candidate", { candidateId: candidate.id, reframeMode });
+        await invoke<string>("render_flat_clip_for_candidate", { candidateId: candidate.id, reframeMode, outputDir: clipsSaveDir.trim() || null });
       }
       showToast(`Finished rendering ${selected.length} clips!`);
     } catch (err) {
@@ -734,6 +964,8 @@ function App() {
       await refresh(detail.project.id);
     }
   }
+
+
 
   async function handleOpenSocialKit(candidate: Candidate) {
     setSocialKitModalCandidate(candidate);
@@ -811,10 +1043,12 @@ function App() {
         setLlmEngine={setLlmEngine}
         setLocalLlmModel={setLocalLlmModel}
         setDeepgramKey={setDeepgramKey}
+        setGeminiKey={setGeminiKey}
         setAnthropicKey={setAnthropicKey}
         setDeepseekKey={setDeepseekKey}
         setGroqKey={setGroqKey}
         deepgramKey={deepgramKey}
+        geminiKey={geminiKey}
         anthropicKey={anthropicKey}
         deepseekKey={deepseekKey}
         groqKey={groqKey}
@@ -936,9 +1170,48 @@ function App() {
 
                 <div className="topbar-right">
                   <button
+                    className={`topbar-action-btn ${autoInstagramEnabled ? "instagram-active" : ""}`}
+                    onClick={() => {
+                      setSettingsTab("instagram");
+                      setShowSettings(true);
+                    }}
+                    title="Configure Auto-Post to Instagram (Score ≥ 90%)"
+                  >
+                    <Instagram size={15} />
+                    <span>Auto-Post {autoInstagramEnabled ? "ON (90%+)" : "Setup"}</span>
+                  </button>
+                  <button
                     className="topbar-action-btn"
-                    onClick={() => openFolder(clipsSaveDir || defaultFolders?.clipsOutputDir || "")}
-                    title="Open Output Clips in Finder"
+                    onClick={() => {
+                      // 1. If any candidate in this project has already been cut and has an output path, open that folder!
+                      const renderedClip = detail?.candidates.map((c) => clipByCandidate.get(c.id)).find((cl) => cl?.outputPath);
+                      if (renderedClip?.outputPath) {
+                        const parts = renderedClip.outputPath.split(/[\/]/);
+                        parts.pop(); // remove clip filename (e.g. clip-01_flat.mp4)
+                        const folder = parts.join("/");
+                        void openFolder(folder);
+                        return;
+                      }
+
+                      // 2. Otherwise calculate the project clip folder path
+                      if (detail?.project) {
+                        const rawName = detail.project.name || fileName(detail.project.sourcePath);
+                        const slug = rawName
+                          .replace(/\.[^/.]+$/, "")
+                          .replace(/[^a-zA-Z0-9_-]/g, "-")
+                          .replace(/-+/g, "-")
+                          .replace(/^-|-$/g, "");
+                        const base = clipsSaveDir || defaultFolders?.clipsOutputDir || "";
+                        if (base) {
+                          void openFolder(`${base}/${slug}/clips`);
+                          return;
+                        }
+                      }
+
+                      // 3. Fallback to base clips directory
+                      void openFolder(clipsSaveDir || defaultFolders?.clipsOutputDir || "");
+                    }}
+                    title="Open Project Clips Folder in Finder"
                   >
                     <FolderOpen size={15} />
                     <span>Clips Folder</span>
@@ -1088,6 +1361,25 @@ function App() {
 
                     <div className="panel-header-actions">
                       <button
+                        className={`studio-btn ${autoInstagramEnabled ? "instagram-active" : "secondary"}`}
+                        onClick={() => {
+                          if (!instagramAccountId && !instagramWebhookUrl) {
+                            setSettingsTab("instagram");
+                            setShowSettings(true);
+                            showToast("Configure your Instagram credentials to enable Auto-Post");
+                          } else {
+                            const next = !autoInstagramEnabled;
+                            setAutoInstagramEnabled(next);
+                            showToast(next ? "Auto-Post to Instagram (90%+) ENABLED" : "Auto-Post to Instagram DISABLED");
+                          }
+                        }}
+                        title="Toggle Auto-Post to Instagram for clips with viral score ≥ 90%"
+                      >
+                        <Instagram size={14} />
+                        <span>Auto-Post (90%+): {autoInstagramEnabled ? "ON" : "OFF"}</span>
+                      </button>
+
+                      <button
                         className="studio-btn secondary"
                         onClick={moments}
                         disabled={busy !== "idle" || !detail.transcript || !canUseActiveLlm}
@@ -1109,58 +1401,71 @@ function App() {
 
                   {/* Batch Toolbar & Controls */}
                   <div className="moments-controls-bar">
-                    {/* Filter Tabs */}
-                    <div className="tab-pills">
-                      <button
-                        className={`tab-pill ${momentTab === "all" ? "active" : ""}`}
-                        onClick={() => setMomentTab("all")}
-                      >
-                        All ({detail.candidates.length})
-                      </button>
-                      <button
-                        className={`tab-pill ${momentTab === "selected" ? "active" : ""}`}
-                        onClick={() => setMomentTab("selected")}
-                      >
-                        Selected ({selectedCount})
-                      </button>
-                      <button
-                        className={`tab-pill ${momentTab === "ready" ? "active" : ""}`}
-                        onClick={() => setMomentTab("ready")}
-                      >
-                        Rendered ({cutCount})
-                      </button>
+                    {/* Top Row: Filter Tabs & Quick Batch Select */}
+                    <div className="controls-row top-row">
+                      <div className="tab-pills">
+                        <button
+                          className={`tab-pill ${momentTab === "all" ? "active" : ""}`}
+                          onClick={() => setMomentTab("all")}
+                        >
+                          All ({detail.candidates.length})
+                        </button>
+                        <button
+                          className={`tab-pill ${momentTab === "selected" ? "active" : ""}`}
+                          onClick={() => setMomentTab("selected")}
+                        >
+                          Selected ({selectedCount})
+                        </button>
+                        <button
+                          className={`tab-pill ${momentTab === "ready" ? "active" : ""}`}
+                          onClick={() => setMomentTab("ready")}
+                        >
+                          Rendered ({cutCount})
+                        </button>
+                      </div>
+
+                      <div className="batch-actions">
+                        <span className="batch-label">Quick Select:</span>
+                        <button className="batch-btn" onClick={() => selectBatch("top3")}>Top 3</button>
+                        <button className="batch-btn" onClick={() => selectBatch("top5")}>Top 5</button>
+                        <button className="batch-btn" onClick={() => selectBatch("all")}>All</button>
+                        <button className="batch-btn" onClick={() => selectBatch("none")}>Clear</button>
+                      </div>
                     </div>
 
-                    {/* Batch Selection */}
-                    <div className="batch-actions">
-                      <span className="batch-label">Quick Select:</span>
-                      <button className="batch-btn" onClick={() => selectBatch("top3")}>Top 3</button>
-                      <button className="batch-btn" onClick={() => selectBatch("top5")}>Top 5</button>
-                      <button className="batch-btn" onClick={() => selectBatch("all")}>All</button>
-                      <button className="batch-btn" onClick={() => selectBatch("none")}>Clear</button>
-                    </div>
+                    {/* Bottom Row: Framing Aspect Ratio & Studio Sound Mastering */}
+                    <div className="controls-row bottom-row">
+                      <div className="reframe-picker">
+                        <span className="reframe-label">Framing:</span>
+                        <select
+                          value={reframeMode}
+                          onChange={(e) => setReframeMode(e.target.value as ReframeMode)}
+                          title="Video Framing Aspect Ratio"
+                        >
+                          <option value="vertical_crop">✂️ 9:16 Center Crop</option>
+                          <option value="podcast_split">🎙️ 9:16 Podcast Split-Screen</option>
+                          <option value="punch_zoom">⚡ 9:16 Retention Punch-Zoom</option>
+                          <option value="original">🖥️ 16:9 Original</option>
+                        </select>
+                      </div>
 
-                    {/* Reframe Dropdown */}
-                    <div className="reframe-picker">
-                      <select
-                        value={reframeMode}
-                        onChange={(e) => setReframeMode(e.target.value as ReframeMode)}
-                        title="Video Framing Aspect Ratio"
-                      >
-                        <option value="vertical_blur">📱 9:16 Smart Blur (Shorts/Reels)</option>
-                        <option value="vertical_crop">✂️ 9:16 Center Crop</option>
-                        <option value="original">🖥️ 16:9 Original</option>
-                      </select>
+                      <span className="studio-audio-tag" title="Studio Sound Auto-Mastering active: -14 LUFS Broadcast Standard & AI Noise Suppression">
+                        <AudioLines size={12} /> Studio Audio (-14 LUFS)
+                      </span>
                     </div>
                   </div>
 
                   {/* Candidates Cards List */}
                   <div className="candidates-scroll-area">
+
                     {filteredCandidates.length > 0 ? (
                       filteredCandidates.map((candidate) => {
                         const clip = clipByCandidate.get(candidate.id);
                         const isCut = clip?.status === "done" && Boolean(clip.outputPath);
                         const isCuttingThis = renderingCandidateId === candidate.id;
+                        const igPost = instagramPostByCandidate.get(candidate.id);
+                        const hasIgPost = Boolean(igPost);
+                        const isPublishingThis = publishingCandidateId === candidate.id || igPost?.status === "publishing";
 
                         return (
                           <article
@@ -1178,12 +1483,57 @@ function App() {
                                 </button>
                                 <span className="moment-rank-badge">#{candidate.rank}</span>
                                 <span className="moment-score-badge">{Math.round(candidate.score * 100)}% Viral Score</span>
+                                {(candidate.score >= 0.90 || candidate.score >= 90) && (
+                                  <span className="moment-viral-auto-badge" title="Meets 90%+ threshold for automatic Instagram Reels posting">
+                                    <Flame size={12} /> Viral 90%+
+                                  </span>
+                                )}
                                 <span className="moment-duration-badge">
                                   {formatTime(candidate.startSec)} - {formatTime(candidate.endSec)} ({Math.round(candidate.endSec - candidate.startSec)}s)
                                 </span>
                               </div>
 
                               <div className="moment-card-header-right">
+                                {(() => {
+                                  const igPost = instagramPostByCandidate.get(candidate.id);
+                                  if (igPost?.status === "published") {
+                                    return (
+                                      <a
+                                        href={igPost.postUrl || "#"}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="instagram-status-pill published"
+                                        onClick={(e) => {
+                                          if (igPost.postUrl) {
+                                            e.preventDefault();
+                                            openFolder(igPost.postUrl);
+                                          }
+                                        }}
+                                        title="View live Instagram Reel"
+                                      >
+                                        <Instagram size={11} />
+                                        <span>Reel Published ↗</span>
+                                      </a>
+                                    );
+                                  }
+                                  if (igPost?.status === "publishing" || publishingCandidateId === candidate.id) {
+                                    return (
+                                      <span className="instagram-status-pill publishing">
+                                        <Loader2 className="spin" size={11} />
+                                        <span>Posting to IG...</span>
+                                      </span>
+                                    );
+                                  }
+                                  if (igPost?.status === "failed") {
+                                    return (
+                                      <span className="instagram-status-pill failed" title={igPost.errorMessage || "Failed"}>
+                                        <AlertTriangle size={11} />
+                                        <span>IG Failed</span>
+                                      </span>
+                                    );
+                                  }
+                                  return null;
+                                })()}
                                 <span className={`moment-render-status ${isCut ? "ready" : clip?.status === "error" ? "error" : "pending"}`}>
                                   {isCuttingThis ? "Rendering..." : isCut ? "Ready" : clip?.status === "error" ? "Failed" : "Pending"}
                                 </span>
@@ -1202,35 +1552,81 @@ function App() {
                               )}
                             </div>
 
+
                             <div className="moment-card-actions">
-                              <button
-                                className="action-pill-btn social-kit"
-                                onClick={() => void handleOpenSocialKit(candidate)}
-                                title="Generate viral titles, hashtags & captions for this clip"
-                              >
-                                <Sparkles size={13} />
-                                <span>AI Social Kit</span>
-                              </button>
-
-                              {isCut && clip?.outputPath && (
+                              <div className="card-actions-left">
                                 <button
-                                  className="action-pill-btn finder"
-                                  onClick={() => openFolder(clip.outputPath!)}
-                                  title="Reveal clip in macOS Finder"
+                                  className="action-pill-btn social-kit"
+                                  onClick={() => void handleOpenSocialKit(candidate)}
+                                  title="Generate viral titles, hashtags & captions for this clip"
                                 >
-                                  <FolderOpen size={13} />
-                                  <span>Finder</span>
+                                  <Sparkles size={13} />
+                                  <span>AI Social Kit</span>
                                 </button>
-                              )}
 
-                              <button
-                                className="action-pill-btn cut-action"
-                                onClick={() => void cutCandidate(candidate.id)}
-                                disabled={busy !== "idle" || !environment?.hasFfmpeg}
-                              >
-                                {isCuttingThis ? <Loader2 className="spin" size={13} /> : <Scissors size={13} />}
-                                <span>{isCuttingThis ? "Cutting..." : isCut ? "Re-cut" : "Cut Clip"}</span>
-                              </button>
+                                <button
+                                  className="action-pill-btn cut-action"
+                                  onClick={() => void cutCandidate(candidate.id)}
+                                  disabled={busy !== "idle" || !environment?.hasFfmpeg}
+                                  title={isCut ? "Re-cut this 9:16 vertical clip" : "Cut 9:16 vertical clip with stylized captions"}
+                                >
+                                  {isCuttingThis ? <Loader2 className="spin" size={13} /> : <Scissors size={13} />}
+                                  <span>{isCuttingThis ? "Cutting..." : isCut ? "Re-cut" : "Cut Clip"}</span>
+                                </button>
+
+                                {isCut && clip?.outputPath && (
+                                  <button
+                                    className="action-pill-btn finder"
+                                    onClick={() => openFolder(clip.outputPath!)}
+                                    title="Reveal clip in macOS Finder"
+                                  >
+                                    <FolderOpen size={13} />
+                                    <span>Finder</span>
+                                  </button>
+                                )}
+                              </div>
+
+                              <div className="card-actions-right">
+                                {igPost?.status === "published" && igPost.postUrl && (
+                                  <button
+                                    type="button"
+                                    className="action-pill-btn instagram-view-btn"
+                                    onClick={() => openFolder(igPost.postUrl!)}
+                                    title="Open live Reel on Instagram"
+                                  >
+                                    <ExternalLink size={12} />
+                                    <span>View Reel ↗</span>
+                                  </button>
+                                )}
+
+                                <button
+                                  className={`action-pill-btn instagram-publish-btn ${isPublishingThis ? "loading" : ""}`}
+                                  onClick={() => void handlePublishToInstagram(candidate.id)}
+                                  disabled={isPublishingThis}
+                                  title={
+                                    isPublishingThis
+                                      ? "Publishing clip to Instagram Reels..."
+                                      : igPost?.status === "published"
+                                      ? "Re-post this clip to Instagram Reels"
+                                      : "Automatically cut clip, generate AI caption/hashtags, and post to Instagram Reels"
+                                  }
+                                >
+                                  {isPublishingThis ? (
+                                    <Loader2 className="spin" size={13} />
+                                  ) : (
+                                    <Instagram size={13} />
+                                  )}
+                                  <span>
+                                    {isPublishingThis
+                                      ? isCut
+                                        ? "Posting..."
+                                        : "Cutting & Posting..."
+                                      : igPost?.status === "published"
+                                      ? "Re-post IG"
+                                      : "Post to Instagram"}
+                                  </span>
+                                </button>
+                              </div>
                             </div>
                           </article>
                         );
@@ -1245,15 +1641,26 @@ function App() {
                         <Sparkles size={36} />
                         <h4>No Viral Moments Detected</h4>
                         <p>Click "Find Moments" to use AI to locate high-retention viral segments.</p>
-                        <button
-                          className="studio-btn secondary"
-                          onClick={moments}
-                          disabled={busy !== "idle" || !detail.transcript || !canUseActiveLlm}
-                          style={{ marginTop: "12px" }}
-                        >
-                          {busy === "moments" ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
-                          Find Viral Moments
-                        </button>
+                        <div className="empty-state-buttons">
+                          <button
+                            className="studio-btn primary"
+                            onClick={moments}
+                            disabled={busy !== "idle" || !detail.transcript || !canUseActiveLlm}
+                          >
+                            {busy === "moments" ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
+                            Find Viral Moments
+                          </button>
+                          <button
+                            className={`studio-btn ${autoInstagramEnabled ? "instagram-active" : "secondary"}`}
+                            onClick={() => {
+                              setSettingsTab("instagram");
+                              setShowSettings(true);
+                            }}
+                          >
+                            <Instagram size={14} />
+                            <span>Auto-Post (90%+): {autoInstagramEnabled ? "ON" : "Configure"}</span>
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1414,6 +1821,12 @@ function App() {
                 onClick={() => setSettingsTab("export")}
               >
                 📱 Video & Captions
+              </button>
+              <button
+                className={`settings-tab-btn ${settingsTab === "instagram" ? "active" : ""}`}
+                onClick={() => setSettingsTab("instagram")}
+              >
+                📸 Instagram Automation
               </button>
               <button
                 className={`settings-tab-btn ${settingsTab === "system" ? "active" : ""}`}
@@ -1633,11 +2046,122 @@ function App() {
                       value={reframeMode}
                       onChange={(e) => setReframeMode(e.target.value as ReframeMode)}
                     >
-                      <option value="vertical_blur">📱 9:16 Smart Blur (Recommended for Shorts/Reels/TikTok)</option>
-                      <option value="vertical_crop">✂️ 9:16 Center Crop</option>
-                      <option value="original">🖥️ 16:9 Original</option>
+                      <option value="vertical_crop">✂️ 9:16 Center Crop (Recommended for Shorts/Reels/TikTok)</option>
+                      <option value="podcast_split">🎙️ 9:16 Podcast Split-Screen (Host on top, Guest on bottom)</option>
+                      <option value="punch_zoom">⚡ 9:16 Retention Punch-Zoom (Attention cuts every 5.5s)</option>
+                                            <option value="original">🖥️ 16:9 Original</option>
                     </select>
                   </div>
+                </div>
+              )}
+
+              {settingsTab === "instagram" && (
+                <div className="settings-form-stack">
+                  {/* Master Toggle */}
+                  <div className="settings-toggle-row">
+                    <div className="settings-toggle-info">
+                      <h4>Auto-Post Viral Clips (Score ≥ 90%)</h4>
+                      <p>Automatically render 9:16 vertical clips, generate AI caption/hashtags, and post directly to Instagram Reels when AI viral confidence meets your threshold.</p>
+                    </div>
+                    <label className="settings-switch">
+                      <input
+                        type="checkbox"
+                        checked={autoInstagramEnabled}
+                        onChange={(e) => setAutoInstagramEnabled(e.target.checked)}
+                      />
+                      <span className="switch-slider"></span>
+                    </label>
+                  </div>
+
+                  {/* Threshold setting */}
+                  <div className="settings-field-group">
+                    <label>Minimum Viral Score Threshold (%)</label>
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      <input
+                        type="range"
+                        min="70"
+                        max="100"
+                        step="1"
+                        value={instagramMinScore}
+                        onChange={(e) => setInstagramMinScore(Number(e.target.value))}
+                        style={{ flex: 1 }}
+                      />
+                      <strong style={{ minWidth: "45px", fontFamily: "var(--font-mono)", fontSize: "14px" }}>
+                        {instagramMinScore}%
+                      </strong>
+                    </div>
+                    <span className="folder-hint">Clips scoring {instagramMinScore}% or higher will be eligible for automatic Reels posting</span>
+                  </div>
+
+                  {/* Provider selector */}
+                  <div className="settings-field-group">
+                    <label>Instagram Publishing Method</label>
+                    <select
+                      value={instagramProvider}
+                      onChange={(e) => setInstagramProvider(e.target.value as any)}
+                    >
+                      <option value="graph_api">Official Meta Graph API (Direct Instagram Reels)</option>
+                      <option value="webhook">Webhook Automation (Make.com, Zapier, n8n)</option>
+                    </select>
+                  </div>
+
+                  {instagramProvider === "graph_api" && (
+                    <>
+                      <div className="settings-field-group">
+                        <label>Instagram Professional / Creator Account ID</label>
+                        <input
+                          type="text"
+                          value={instagramAccountId}
+                          onChange={(e) => setInstagramAccountId(e.target.value)}
+                          placeholder="e.g. 17841400000000000"
+                        />
+                        <span className="folder-hint">Found in Meta Business Suite or via Graph API Explorer</span>
+                      </div>
+
+                      <div className="settings-field-group">
+                        <label>Meta Long-Lived Access Token</label>
+                        <input
+                          type="password"
+                          value={instagramAccessToken}
+                          onChange={(e) => setInstagramAccessToken(e.target.value)}
+                          placeholder="EAA... (Token with instagram_content_publish permission)"
+                        />
+                        <span className="folder-hint">Requires 'instagram_basic' and 'instagram_content_publish' scopes</span>
+                      </div>
+                    </>
+                  )}
+
+                  {instagramProvider === "webhook" && (
+                    <div className="settings-field-group">
+                      <label>Webhook URL (Make.com / Zapier / n8n)</label>
+                      <input
+                        type="text"
+                        value={instagramWebhookUrl}
+                        onChange={(e) => setInstagramWebhookUrl(e.target.value)}
+                        placeholder="https://hook.eu1.make.com/... or https://hooks.zapier.com/..."
+                      />
+                      <span className="folder-hint">Payload includes candidateId, videoPath, viralScore, hook, and formatted caption</span>
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: "8px", display: "flex", alignItems: "center", gap: "12px" }}>
+                    <button
+                      type="button"
+                      className="studio-btn primary"
+                      onClick={testInstagramConnection}
+                      disabled={instagramTesting || (instagramProvider === "graph_api" ? !instagramAccountId.trim() || !instagramAccessToken.trim() : !instagramWebhookUrl.trim())}
+                    >
+                      {instagramTesting ? <Loader2 className="spin" size={14} /> : <Instagram size={14} />}
+                      <span>{instagramTesting ? "Verifying..." : "Test Connection"}</span>
+                    </button>
+                  </div>
+
+                  {instagramTestResult && (
+                    <div className={`connection-status-banner ${instagramTestResult.success ? "success" : "error"}`}>
+                      {instagramTestResult.success ? <BadgeCheck size={16} /> : <AlertTriangle size={16} />}
+                      <span>{instagramTestResult.message}</span>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1727,6 +2251,42 @@ function App() {
             </div>
 
             <div className="style-grid">
+              {/* Feature 3: Submagic Viral Style with Auto-Emoji */}
+              <div
+                className={`style-card ${selectedStyle === "submagic-viral" ? "selected" : ""}`}
+                onClick={() => setSelectedStyle("submagic-viral")}
+              >
+                <div className="style-preview-box">
+                  <span className="preview-text-submagic">VIRAL MONEY 💰</span>
+                </div>
+                <div className="style-card-title">Submagic Viral (Auto-Emoji)</div>
+                <div className="style-card-desc">High-retention neon yellow text in a dark pillbox with automated emojis (🔥, 💰, 🤯, 🚀)!</div>
+              </div>
+
+              {/* Feature 3: Hormozi Punch Style */}
+              <div
+                className={`style-card ${selectedStyle === "hormozi-punch" ? "selected" : ""}`}
+                onClick={() => setSelectedStyle("hormozi-punch")}
+              >
+                <div className="style-preview-box">
+                  <span className="preview-text-hormozi">CRAZY GAINS 🔥</span>
+                </div>
+                <div className="style-card-title">Hormozi Punch (Auto-Emoji)</div>
+                <div className="style-card-desc">Heavy black text on solid golden yellow box with high-impact auto-emojis.</div>
+              </div>
+
+              {/* Feature 3: Neon Cyber Glow */}
+              <div
+                className={`style-card ${selectedStyle === "neon-glow" ? "selected" : ""}`}
+                onClick={() => setSelectedStyle("neon-glow")}
+              >
+                <div className="style-preview-box">
+                  <span className="preview-text-neonglow">TECH SHIFT 🚀</span>
+                </div>
+                <div className="style-card-title">Neon Glow (Auto-Emoji)</div>
+                <div className="style-card-desc">Electric glowing cyan text with deep shadows and contextual auto-emojis.</div>
+              </div>
+
               <div
                 className={`style-card ${selectedStyle === "modern-box" ? "selected" : ""}`}
                 onClick={() => setSelectedStyle("modern-box")}
@@ -2026,6 +2586,105 @@ ${kit.callToAction}`);
         </div>
       )}
 
+      {/* Official Meta Graph API Quick Setup Modal */}
+      {showMetaModal && (
+        <div className="modal-overlay" onClick={() => setShowMetaModal(false)}>
+          <div className="settings-modal" style={{ width: "min(560px, 94vw)" }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon-badge" style={{ background: "linear-gradient(135deg, rgba(225, 48, 108, 0.2) 0%, rgba(131, 58, 180, 0.2) 100%)", color: "#fb7185", borderColor: "rgba(225, 48, 108, 0.4)" }}>
+                  <Instagram size={18} />
+                </div>
+                <div>
+                  <h3>Official Meta Graph API Setup</h3>
+                  <p>Post high-viral Reels directly to Instagram with AI captions & hashtags</p>
+                </div>
+              </div>
+              <button className="modal-close-btn" onClick={() => setShowMetaModal(false)}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ padding: "20px" }}>
+              <div style={{ background: "rgba(225, 48, 108, 0.08)", border: "1px solid rgba(225, 48, 108, 0.25)", borderRadius: "8px", padding: "12px 14px", marginBottom: "16px", fontSize: "12px", color: "#fbcfe8", lineHeight: "1.5" }}>
+                <strong style={{ color: "#ffffff", display: "block", marginBottom: "4px" }}>Meta Graph API Direct Publishing</strong>
+                Enter your Instagram Professional Account ID and Meta Graph API Access Token. Once entered, ClipOn will automatically render vertical clips, generate engaging AI titles, captions, and hashtags, and publish directly to your Instagram Reels!
+              </div>
+
+              <div className="settings-form-stack">
+                <div className="settings-field-group">
+                  <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span>Instagram Professional / Creator Account ID</span>
+                    <button
+                      type="button"
+                      className="action-pill-btn"
+                      style={{ height: "22px", fontSize: "10.5px", padding: "0 6px" }}
+                      onClick={() => openFolder("https://developers.facebook.com/tools/explorer/")}
+                      title="Open Meta Graph API Explorer in browser"
+                    >
+                      <ExternalLink size={10} />
+                      <span>Graph Explorer</span>
+                    </button>
+                  </label>
+                  <input
+                    type="text"
+                    value={metaModalAccountId}
+                    onChange={(e) => setMetaModalAccountId(e.target.value)}
+                    placeholder="e.g. 17841400000000000"
+                    autoFocus
+                  />
+                  <span className="folder-hint">Found in Meta Business Suite or via Graph API Explorer (/me/accounts)</span>
+                </div>
+
+                <div className="settings-field-group">
+                  <label>Meta User / Page Access Token</label>
+                  <input
+                    type="password"
+                    value={metaModalAccessToken}
+                    onChange={(e) => setMetaModalAccessToken(e.target.value)}
+                    placeholder="EAA... (Token with instagram_basic and instagram_content_publish permissions)"
+                  />
+                  <span className="folder-hint">Requires 'instagram_basic' and 'instagram_content_publish' permissions</span>
+                </div>
+
+                <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
+                  <button
+                    type="button"
+                    className="studio-btn secondary small"
+                    onClick={() => void handleTestMetaConnection()}
+                    disabled={metaModalTesting}
+                  >
+                    {metaModalTesting ? <Loader2 className="spin" size={12} /> : <Check size={12} />}
+                    <span>{metaModalTesting ? "Testing Connection..." : "Test Connection"}</span>
+                  </button>
+                </div>
+
+                {metaModalStatus && (
+                  <div className={`connection-status-banner ${metaModalStatus.success ? "success" : "error"}`}>
+                    {metaModalStatus.success ? <BadgeCheck size={16} /> : <AlertTriangle size={16} />}
+                    <span>{metaModalStatus.message}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button className="studio-btn secondary" onClick={() => setShowMetaModal(false)}>
+                Cancel
+              </button>
+              <button
+                className="studio-btn instagram-active"
+                onClick={() => void handleSaveMetaAndPost()}
+                disabled={metaModalSaving}
+              >
+                {metaModalSaving ? <Loader2 className="spin" size={14} /> : <Instagram size={14} />}
+                <span>{metaModalSaving ? "Saving & Posting..." : pendingCandidateIdToPost ? "Save & Post to Instagram" : "Save Credentials"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Ollama Model Pull Progress Modal */}
       {downloadingModelName && (
         <div className="modal-overlay" style={{ zIndex: 10000 }}>
@@ -2053,13 +2712,15 @@ interface OnboardingProps {
   environment: EnvironmentStatus | null;
   onComplete: () => void;
   setTranscriptionEngine: (engine: "deepgram" | "local") => void;
-  setLlmEngine: (engine: "claude" | "deepseek" | "local" | "groq") => void;
+  setLlmEngine: (engine: "claude" | "deepseek" | "local" | "gemini" | "openai" | "openrouter" | "groq") => void;
   setLocalLlmModel: (model: string) => void;
   setDeepgramKey: (key: string) => void;
+  setGeminiKey: (key: string) => void;
   setAnthropicKey: (key: string) => void;
   setDeepseekKey: (key: string) => void;
   setGroqKey: (key: string) => void;
   deepgramKey: string;
+  geminiKey: string;
   anthropicKey: string;
   deepseekKey: string;
   groqKey: string;
@@ -2073,10 +2734,12 @@ function Onboarding({
   setLlmEngine,
   setLocalLlmModel,
   setDeepgramKey,
+  setGeminiKey,
   setAnthropicKey,
   setDeepseekKey,
   setGroqKey,
   deepgramKey: initialDeepgramKey,
+  geminiKey: initialGeminiKey,
   anthropicKey: initialAnthropicKey,
   deepseekKey: initialDeepseekKey,
   groqKey: initialGroqKey,
@@ -2084,15 +2747,29 @@ function Onboarding({
 }: OnboardingProps) {
   const [setupMode, setSetupMode] = useState<"choose" | "local" | "cloud" | "downloading">("choose");
   const [selectedModel, setSelectedModel] = useState<string>("llama3.2");
-  const [dgKey, setDgKey] = useState(initialDeepgramKey);
-  const [antKey, setAntKey] = useState(initialAnthropicKey);
-  const [dsKey, setDsKey] = useState(initialDeepseekKey);
-  const [grKey, setGrKey] = useState(initialGroqKey);
+  const [dgKey, setDgKey] = useState(initialDeepgramKey || environment?.deepgramKey || "");
+  const [gmKey, setGmKey] = useState(initialGeminiKey || environment?.geminiKey || "");
+  const [antKey, setAntKey] = useState(initialAnthropicKey || environment?.anthropicKey || "");
+  const [dsKey, setDsKey] = useState(initialDeepseekKey || environment?.deepseekKey || "");
+  const [grKey, setGrKey] = useState(initialGroqKey || environment?.groqKey || "");
   const [downloadStatus, setDownloadStatus] = useState("Initializing download...");
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [checkingOllama, setCheckingOllama] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  const skipToStudio = () => {
+    localStorage.setItem("clipon_onboarded", "true");
+    onComplete();
+  };
+
+  useEffect(() => {
+    if (!dgKey && (initialDeepgramKey || environment?.deepgramKey)) setDgKey(initialDeepgramKey || environment?.deepgramKey || "");
+    if (!gmKey && (initialGeminiKey || environment?.geminiKey)) setGmKey(initialGeminiKey || environment?.geminiKey || "");
+    if (!antKey && (initialAnthropicKey || environment?.anthropicKey)) setAntKey(initialAnthropicKey || environment?.anthropicKey || "");
+    if (!dsKey && (initialDeepseekKey || environment?.deepseekKey)) setDsKey(initialDeepseekKey || environment?.deepseekKey || "");
+    if (!grKey && (initialGroqKey || environment?.groqKey)) setGrKey(initialGroqKey || environment?.groqKey || "");
+  }, [environment, initialDeepgramKey, initialGeminiKey, initialAnthropicKey, initialDeepseekKey, initialGroqKey]);
 
   const copyWhisperCommand = () => {
     navigator.clipboard.writeText("pip3 install -U openai-whisper");
@@ -2102,21 +2779,21 @@ function Onboarding({
 
   const handleCloudSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!dgKey.trim()) {
-      setError("Deepgram API Key is required for cloud mode.");
-      return;
-    }
-    if (!antKey.trim() && !dsKey.trim() && !grKey.trim()) {
-      setError("Please provide at least one LLM Key (Claude, DeepSeek, or Groq).");
-      return;
+    if (dgKey.trim()) {
+      setTranscriptionEngine("deepgram");
+      setDeepgramKey(dgKey.trim());
+      localStorage.setItem("clipon_deepgram_key", dgKey.trim());
+      localStorage.setItem("clipon_transcription_engine", "deepgram");
     }
 
-    setTranscriptionEngine("deepgram");
-    setDeepgramKey(dgKey.trim());
-    localStorage.setItem("clipon_deepgram_key", dgKey.trim());
-    localStorage.setItem("clipon_transcription_engine", "deepgram");
-
-    if (antKey.trim()) {
+    if (gmKey.trim()) {
+      let clean = gmKey.trim();
+      if (clean.startsWith("Q.Ab8")) clean = "A" + clean;
+      setLlmEngine("gemini");
+      setGeminiKey(clean);
+      localStorage.setItem("clipon_gemini_key", clean);
+      localStorage.setItem("clipon_llm_engine", "gemini");
+    } else if (antKey.trim()) {
       setLlmEngine("claude");
       setAnthropicKey(antKey.trim());
       localStorage.setItem("clipon_anthropic_key", antKey.trim());
@@ -2228,6 +2905,11 @@ function Onboarding({
                 <div className="choice-badge cloud">API Keys Required</div>
               </div>
             </div>
+            <div style={{ marginTop: "24px", display: "flex", justifyContent: "center" }}>
+              <button type="button" className="studio-btn secondary" onClick={skipToStudio}>
+                Skip Setup & Explore Studio
+              </button>
+            </div>
           </>
         )}
 
@@ -2294,6 +2976,7 @@ function Onboarding({
 
             <div className="onboarding-actions">
               <button type="button" className="studio-btn secondary" onClick={() => setSetupMode("choose")}>Back</button>
+              <button type="button" className="studio-btn secondary" onClick={skipToStudio}>Skip Setup</button>
               <button
                 type="button"
                 className="studio-btn primary"
@@ -2318,12 +3001,22 @@ function Onboarding({
 
             <div className="form-stack">
               <div className="settings-field-group">
-                <label>Deepgram API Key *</label>
+                <label>Deepgram API Key (Transcription)</label>
                 <input
                   type="password"
                   value={dgKey}
                   onChange={(e) => setDgKey(e.target.value)}
-                  placeholder="Deepgram API Key (Transcription)"
+                  placeholder={environment?.hasDeepgramKey ? "Loaded from .env" : "Deepgram API Key"}
+                />
+              </div>
+
+              <div className="settings-field-group">
+                <label>Google Gemini API Key (Recommended)</label>
+                <input
+                  type="password"
+                  value={gmKey}
+                  onChange={(e) => setGmKey(e.target.value)}
+                  placeholder={environment?.hasGeminiKey ? "Loaded from .env" : "Google Gemini API Key"}
                 />
               </div>
 
@@ -2360,6 +3053,7 @@ function Onboarding({
 
             <div className="onboarding-actions">
               <button type="button" className="studio-btn secondary" onClick={() => setSetupMode("choose")}>Back</button>
+              <button type="button" className="studio-btn secondary" onClick={skipToStudio}>Skip for Now</button>
               <button type="submit" className="studio-btn primary">Save & Launch Studio</button>
             </div>
           </form>

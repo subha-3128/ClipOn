@@ -121,6 +121,13 @@ pub async fn detect_candidates_with_gemini(
     transcript: &NormalizedTranscript,
     api_key: &str,
 ) -> Result<Vec<CandidateDraft>> {
+    let trimmed = api_key.trim().trim_matches('"').trim_matches('\'').trim();
+    let clean_key = if trimmed.starts_with("Q.Ab8") {
+        format!("A{trimmed}")
+    } else {
+        trimmed.to_string()
+    };
+
     let segments = compact_segments(&transcript.segments);
     let prompt = format!(
         "You are an elite, world-class social media strategist with a track record of generating viral multi-million-view Shorts, TikToks, and Reels. \
@@ -152,11 +159,12 @@ Transcript:
     for model in &models_to_try {
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-            model, api_key
+            model, clean_key
         );
 
         let response = match reqwest::Client::new()
             .post(&url)
+            .header("x-goog-api-key", &clean_key)
             .json(&json!({
                 "contents": [
                     {
@@ -818,6 +826,13 @@ pub async fn generate_social_kit_with_gemini(
     transcript_text: &str,
     api_key: &str,
 ) -> Result<SocialKit> {
+    let trimmed = api_key.trim().trim_matches('"').trim_matches('\'').trim();
+    let clean_key = if trimmed.starts_with("Q.Ab8") {
+        format!("A{trimmed}")
+    } else {
+        trimmed.to_string()
+    };
+
     let prompt = format!(
         "You are an elite viral social media strategist for YouTube Shorts, TikTok, and Instagram Reels. \
 Given this clip's hook and spoken transcript, generate a complete high-converting social media posting kit. \
@@ -846,11 +861,12 @@ Return JSON matching exactly: \
     for model in &models_to_try {
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-            model, api_key
+            model, clean_key
         );
 
         let response = reqwest::Client::new()
             .post(&url)
+            .header("x-goog-api-key", &clean_key)
             .json(&json!({
                 "contents": [
                     {

@@ -18,7 +18,7 @@ Built with **Tauri 2 + React 19 + TypeScript + Rust + SQLite + Apple Silicon Vid
 
 - **🚀 Apple Silicon GPU Acceleration**: Native hardware-accelerated video transcoding via Apple VideoToolbox (`h264_videotoolbox`). Renders full-resolution 1080x1920 60fps vertical clips in 1–3 seconds with near-zero CPU load.
 - **📱 Smart 9:16 Vertical Reframe**:
-  - **9:16 Smart Blur (Default)**: Converts 16:9 widescreen videos into vertical shorts with a high-definition blurred mirror background and sharp centered video.
+  - **9:16 Center Crop (Default)**: Converts 16:9 widescreen videos into standard vertical 9:16 full-screen shorts with precise subject framing.
   - **9:16 Center Crop**: Direct center cut for solo speaker podcasts.
   - **16:9 Original**: Retains original aspect ratio.
 - **✨ AI Social Publishing Kit**:

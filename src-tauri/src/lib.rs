@@ -1,4 +1,5 @@
 mod db;
+mod instagram;
 mod llm;
 mod media;
 mod models;
@@ -31,6 +32,10 @@ struct AppState {
 
 #[tauri::command]
 async fn environment_status(state: tauri::State<'_, AppState>) -> Result<EnvironmentStatus, String> {
+    let env_file = state.data_dir.join(".env");
+    if env_file.exists() {
+        let _ = dotenvy::from_path(&env_file);
+    }
     let llm_provider = std::env::var("LLM_PROVIDER")
         .unwrap_or_else(|_| "deepseek".to_string())
         .to_lowercase();
@@ -67,6 +72,8 @@ async fn environment_status(state: tauri::State<'_, AppState>) -> Result<Environ
         groq_key: std::env::var("GROQ_API_KEY").ok(),
         openai_key: std::env::var("OPENAI_API_KEY").ok(),
         openrouter_key: std::env::var("OPENROUTER_API_KEY").ok(),
+        instagram_account_id: std::env::var("INSTAGRAM_ACCOUNT_ID").ok(),
+        instagram_access_token: std::env::var("INSTAGRAM_ACCESS_TOKEN").ok(),
     })
 }
 
@@ -367,6 +374,7 @@ async fn transcribe_project(
     let transcript = match provider.as_str() {
         "deepgram" => {
             let key = api_key
+                .filter(|k| !k.trim().is_empty())
                 .or_else(|| std::env::var("DEEPGRAM_API_KEY").ok())
                 .ok_or_else(|| {
                     "Set DEEPGRAM_API_KEY or paste an API key to use cloud transcription."
@@ -455,6 +463,7 @@ async fn generate_candidates(
     let drafts = match active_provider.as_str() {
         "claude" => {
             let key = api_key
+                .filter(|k| !k.trim().is_empty())
                 .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
                 .ok_or_else(|| "Set ANTHROPIC_API_KEY or supply Claude API Key to generate candidates.".to_string())?;
             llm::detect_candidates_with_claude(&normalized, &key)
@@ -463,6 +472,7 @@ async fn generate_candidates(
         }
         "local" | "ollama" => {
             let model = model_name
+                .filter(|m| !m.trim().is_empty())
                 .or_else(|| std::env::var("OLLAMA_MODEL").ok())
                 .unwrap_or_else(|| "llama3.2".to_string());
             llm::detect_candidates_with_local_llm(&normalized, &model)
@@ -471,6 +481,7 @@ async fn generate_candidates(
         }
         "gemini" => {
             let key = api_key
+                .filter(|k| !k.trim().is_empty())
                 .or_else(|| std::env::var("GEMINI_API_KEY").ok())
                 .ok_or_else(|| "Set GEMINI_API_KEY or supply Gemini API Key to generate candidates.".to_string())?;
             llm::detect_candidates_with_gemini(&normalized, &key)
@@ -479,6 +490,7 @@ async fn generate_candidates(
         }
         "openai" => {
             let key = api_key
+                .filter(|k| !k.trim().is_empty())
                 .or_else(|| std::env::var("OPENAI_API_KEY").ok())
                 .ok_or_else(|| "Set OPENAI_API_KEY or supply OpenAI API Key to generate candidates.".to_string())?;
             llm::detect_candidates_with_openai(&normalized, &key)
@@ -487,6 +499,7 @@ async fn generate_candidates(
         }
         "openrouter" => {
             let key = api_key
+                .filter(|k| !k.trim().is_empty())
                 .or_else(|| std::env::var("OPENROUTER_API_KEY").ok())
                 .ok_or_else(|| "Set OPENROUTER_API_KEY or supply OpenRouter API Key to generate candidates.".to_string())?;
             llm::detect_candidates_with_openrouter(&normalized, &key, model_name.as_deref())
@@ -495,6 +508,7 @@ async fn generate_candidates(
         }
         "groq" => {
             let key = api_key
+                .filter(|k| !k.trim().is_empty())
                 .or_else(|| std::env::var("GROQ_API_KEY").ok())
                 .ok_or_else(|| "Set GROQ_API_KEY or supply Groq API Key to generate candidates.".to_string())?;
             llm::detect_candidates_with_groq(&normalized, &key)
@@ -503,6 +517,7 @@ async fn generate_candidates(
         }
         _ => {
             let key = api_key
+                .filter(|k| !k.trim().is_empty())
                 .or_else(|| std::env::var("DEEPSEEK_API_KEY").ok())
                 .ok_or_else(|| "Set DEEPSEEK_API_KEY or supply DeepSeek API Key to generate candidates.".to_string())?;
             llm::detect_candidates_with_deepseek(&normalized, &key, model_name.as_deref())
@@ -536,14 +551,32 @@ fn set_selected_clip_count(
 }
 
 #[tauri::command]
+async fn update_candidate_timing(
+    state: tauri::State<'_, AppState>,
+    candidate_id: String,
+    start_sec: f64,
+    end_sec: f64,
+) -> Result<models::Candidate, String> {
+    let db = state.db.clone();
+    let valid_start = start_sec.max(0.0);
+    let valid_end = end_sec.max(valid_start + 1.0);
+    db.update_candidate_timing(&candidate_id, valid_start, valid_end)
+        .map_err(to_command_error)?;
+    let (candidate, _) = db.get_candidate_with_project(&candidate_id).map_err(to_command_error)?;
+    Ok(candidate)
+}
+
+#[tauri::command]
 async fn render_flat_clip_for_candidate(
     state: tauri::State<'_, AppState>,
     candidate_id: String,
     reframe_mode: Option<String>,
+    output_dir: Option<String>,
 ) -> Result<String, String> {
     let db = state.db.clone();
     let data_dir = state.data_dir.clone();
     let mode = reframe_mode.clone();
+    let out_dir = output_dir.clone();
 
     tokio::task::spawn_blocking(move || {
         let (candidate, project) = db
@@ -553,7 +586,7 @@ async fn render_flat_clip_for_candidate(
             .update_clip_for_candidate(&candidate_id, "cutting", None, None, None)
             .map_err(to_command_error)?;
 
-        let output_path = documents_project_dir(&project)?
+        let output_path = documents_project_dir(&project, out_dir.as_deref())?
             .join("clips")
             .join(format!("clip-{:02}_flat.mp4", candidate.rank));
 
@@ -671,26 +704,90 @@ fn rename_project(
     state.db.rename_project(&project_id, &name).map_err(to_command_error)
 }
 
-/// Open a folder in the native file manager (Finder on macOS).
+/// Open a folder or reveal a file in the native file manager (Finder on macOS).
 #[tauri::command]
 fn open_folder(path: String) -> Result<(), String> {
-    let p = std::path::Path::new(&path);
-    std::fs::create_dir_all(p).ok();
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("No path provided to open.".to_string());
+    }
+
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        #[cfg(target_os = "macos")]
+        std::process::Command::new("open")
+            .arg(trimmed)
+            .spawn()
+            .map_err(|e| format!("Failed to open URL: {}", e))?;
+        #[cfg(target_os = "windows")]
+        std::process::Command::new("explorer")
+            .arg(trimmed)
+            .spawn()
+            .map_err(|e| format!("Failed to open URL: {}", e))?;
+        #[cfg(target_os = "linux")]
+        std::process::Command::new("xdg-open")
+            .arg(trimmed)
+            .spawn()
+            .map_err(|e| format!("Failed to open URL: {}", e))?;
+        return Ok(());
+    }
+
+    let resolved_path = if trimmed.starts_with("~/") {
+        if let Some(home) = dirs::home_dir() {
+            home.join(&trimmed[2..]).to_string_lossy().to_string()
+        } else {
+            trimmed.to_string()
+        }
+    } else {
+        trimmed.to_string()
+    };
+
+    let p = std::path::Path::new(&resolved_path);
+
+    // If it is a file, reveal it in Finder or Explorer!
+    if p.is_file() {
+        #[cfg(target_os = "macos")]
+        std::process::Command::new("open")
+            .args(["-R", &resolved_path])
+            .spawn()
+            .map_err(|e| format!("Failed to reveal file in Finder: {}", e))?;
+        #[cfg(target_os = "windows")]
+        std::process::Command::new("explorer")
+            .args(["/select,", &resolved_path])
+            .spawn()
+            .map_err(|e| format!("Failed to reveal file in Explorer: {}", e))?;
+        #[cfg(target_os = "linux")]
+        {
+            if let Some(parent) = p.parent() {
+                std::process::Command::new("xdg-open")
+                    .arg(parent)
+                    .spawn()
+                    .map_err(|e| format!("Failed to open folder: {}", e))?;
+            }
+        }
+        return Ok(());
+    }
+
+    // If directory does not exist yet, create it
+    if !p.exists() {
+        std::fs::create_dir_all(p).ok();
+    }
+
     #[cfg(target_os = "macos")]
     std::process::Command::new("open")
-        .arg(&path)
+        .arg(&resolved_path)
         .spawn()
-        .map_err(|e| format!("Failed to open folder: {}", e))?;
+        .map_err(|e| format!("Failed to open folder in Finder: {}", e))?;
     #[cfg(target_os = "windows")]
     std::process::Command::new("explorer")
-        .arg(&path)
+        .arg(&resolved_path)
         .spawn()
         .map_err(|e| format!("Failed to open folder: {}", e))?;
     #[cfg(target_os = "linux")]
     std::process::Command::new("xdg-open")
-        .arg(&path)
+        .arg(&resolved_path)
         .spawn()
         .map_err(|e| format!("Failed to open folder: {}", e))?;
+
     Ok(())
 }
 
@@ -766,6 +863,16 @@ pub fn run() {
                 .context("resolving app data directory")?;
             std::fs::create_dir_all(&data_dir).context("creating app data directory")?;
             std::fs::create_dir_all(data_dir.join("models")).context("creating models directory")?;
+            let env_path = data_dir.join(".env");
+            if !env_path.exists() {
+                let project_env = std::path::PathBuf::from("/Users/subhajitbepari/Desktop/AutoShorts/.env");
+                if project_env.exists() {
+                    let _ = std::fs::copy(&project_env, &env_path);
+                }
+            }
+            if env_path.exists() {
+                let _ = dotenvy::from_path(&env_path);
+            }
             let db_path = if data_dir.join("clipon.sqlite").exists() {
                 data_dir.join("clipon.sqlite")
             } else if data_dir.join("autoshorts.sqlite").exists() {
@@ -798,7 +905,12 @@ pub fn run() {
             download_youtube_video,
             open_folder,
             get_default_folders,
-            generate_social_kit_for_candidate
+            generate_social_kit_for_candidate,
+            test_instagram_connection,
+            publish_candidate_to_instagram,
+            auto_publish_eligible_candidates,
+            save_instagram_credentials,
+            update_candidate_timing
         ])
         .run(tauri::generate_context!())
         .expect("error while running ClipOn");
@@ -888,12 +1000,36 @@ fn project_dir(state: &AppState, project_id: &str) -> PathBuf {
     state.data_dir.join("projects").join(project_id)
 }
 
-fn documents_project_dir(project: &Project) -> Result<PathBuf, String> {
-    let documents_dir = dirs::document_dir()
-        .ok_or_else(|| "Could not find your Documents folder for clip output.".to_string())?;
-    Ok(documents_dir
-        .join("ClipOn")
-        .join(project_output_slug(project)))
+fn documents_project_dir(project: &Project, custom_dir: Option<&str>) -> Result<PathBuf, String> {
+    let base_dir = if let Some(dir) = custom_dir.filter(|d| !d.trim().is_empty()) {
+        let trimmed = dir.trim();
+        if trimmed.starts_with("~/") {
+            if let Some(home) = dirs::home_dir() {
+                home.join(&trimmed[2..])
+            } else {
+                PathBuf::from(trimmed)
+            }
+        } else {
+            PathBuf::from(trimmed)
+        }
+    } else if let Ok(env_dir) = std::env::var("CLIPON_CLIPS_DIR").or_else(|_| std::env::var("AUTOSHORTS_CLIPS_DIR")) {
+        let trimmed = env_dir.trim().to_string();
+        if trimmed.starts_with("~/") {
+            if let Some(home) = dirs::home_dir() {
+                home.join(&trimmed[2..])
+            } else {
+                PathBuf::from(trimmed)
+            }
+        } else {
+            PathBuf::from(trimmed)
+        }
+    } else {
+        dirs::document_dir()
+            .ok_or_else(|| "Could not find your Documents folder for clip output.".to_string())?
+            .join("ClipOn")
+    };
+
+    Ok(base_dir.join(project_output_slug(project)))
 }
 
 fn project_output_slug(project: &Project) -> String {
@@ -1031,6 +1167,41 @@ fn format_srt_time(start: f64, end: f64) -> String {
     format!("{} --> {}", format_time(start), format_time(end))
 }
 
+fn get_contextual_emoji(text: &str) -> Option<&'static str> {
+    let lower = text.to_lowercase();
+    if lower.contains("money") || lower.contains("dollar") || lower.contains("cash") || lower.contains("rich") || lower.contains("cost") || lower.contains("paid") || lower.contains("price") {
+        Some("💰")
+    } else if lower.contains("fire") || lower.contains("lit") || lower.contains("hot") || lower.contains("burn") {
+        Some("🔥")
+    } else if lower.contains("crazy") || lower.contains("mind") || lower.contains("insane") || lower.contains("shock") || lower.contains("unbelievable") {
+        Some("🤯")
+    } else if lower.contains("rocket") || lower.contains("fast") || lower.contains("speed") || lower.contains("growth") || lower.contains("explode") || lower.contains("scale") {
+        Some("🚀")
+    } else if lower.contains("laugh") || lower.contains("funny") || lower.contains("joke") || lower.contains("hilarious") || lower.contains("lol") {
+        Some("😂")
+    } else if lower.contains("party") || lower.contains("boat") || lower.contains("trip") || lower.contains("drink") || lower.contains("fun") || lower.contains("celebrat") {
+        Some("🥳")
+    } else if lower.contains("time") || lower.contains("late") || lower.contains("clock") || lower.contains("wait") || lower.contains("minute") || lower.contains("hour") || lower.contains("second") {
+        Some("⏱️")
+    } else if lower.contains("danger") || lower.contains("warn") || lower.contains("stop") || lower.contains("threat") || lower.contains("trouble") {
+        Some("⚠️")
+    } else if lower.contains("dead") || lower.contains("die") || lower.contains("kill") || lower.contains("skull") {
+        Some("💀")
+    } else if lower.contains("love") || lower.contains("heart") || lower.contains("best") || lower.contains("friend") {
+        Some("❤️")
+    } else if lower.contains("win") || lower.contains("won") || lower.contains("champ") || lower.contains("first") || lower.contains("trophy") {
+        Some("🏆")
+    } else if lower.contains("food") || lower.contains("eat") || lower.contains("dinner") || lower.contains("lunch") || lower.contains("cook") {
+        Some("🍔")
+    } else if lower.contains("look") || lower.contains("see") || lower.contains("watch") || lower.contains("eyes") {
+        Some("👀")
+    } else if lower.contains("secret") || lower.contains("quiet") || lower.contains("shh") {
+        Some("🤫")
+    } else {
+        None
+    }
+}
+
 fn build_drawtext_filters(
     words: &[TranscriptWord],
     start_sec: f64,
@@ -1117,7 +1288,35 @@ fn build_drawtext_filters(
         let padding = ((fontsize as f64) * 0.3).clamp(4.0, 24.0).round() as i64;
 
 
+        let emoji_suffix = get_contextual_emoji(&clean_text).unwrap_or("");
+        let display_text = if !emoji_suffix.is_empty() {
+            format!("{clean_text} {emoji_suffix}")
+        } else {
+            clean_text.clone()
+        };
+
         let drawtext = match caption_style {
+            "submagic-viral" => {
+                // Feature 3: Submagic style - high-visibility vibrant yellow with dark glass pillbox and emojis
+                format!(
+                    "drawtext={}text='{}':x=(w-text_w)/2:y=h*0.72:fontsize={}:fontcolor=0xFFE600:box=1:boxcolor=0x000000d0:boxborderw={}:shadowcolor=black@0.7:shadowx=2:shadowy=2:enable='between(t,{:.3},{:.3})'",
+                    font_option, display_text, fontsize, padding, start_rel, end_rel
+                )
+            }
+            "hormozi-punch" => {
+                // Feature 3: Hormozi punch - heavy black text on vibrant yellow pill with auto-emojis
+                format!(
+                    "drawtext={}text='{}':x=(w-text_w)/2:y=h*0.72:fontsize={}:fontcolor=black:box=1:boxcolor=0xFFE600f0:boxborderw={}:enable='between(t,{:.3},{:.3})'",
+                    font_option, display_text, fontsize, padding, start_rel, end_rel
+                )
+            }
+            "neon-glow" => {
+                // Feature 3: Cyberpunk neon cyan with dark shadow & auto-emojis
+                format!(
+                    "drawtext={}text='{}':x=(w-text_w)/2:y=h*0.7:fontsize={}:fontcolor=0x00FFFF:borderw=3:bordercolor=0x003366:shadowcolor=black@0.8:shadowx=3:shadowy=3:enable='between(t,{:.3},{:.3})'",
+                    font_option, display_text, fontsize, start_rel, end_rel
+                )
+            }
             "classic-outline" => {
                 // Classic yellow text with a bold outline (CapCut style)
                 let borderw = ((fontsize as f64) * 0.1).clamp(2.0, 8.0).round() as i64;
@@ -1209,4 +1408,255 @@ mod tests {
             assert!(!result.contains("\\:"));
         }
     }
+}
+
+#[tauri::command]
+async fn save_instagram_credentials(
+    state: tauri::State<'_, AppState>,
+    account_id: String,
+    access_token: String,
+) -> Result<(), String> {
+    let acc_id = account_id.trim();
+    let token = access_token.trim();
+
+    std::env::set_var("INSTAGRAM_ACCOUNT_ID", acc_id);
+    std::env::set_var("INSTAGRAM_ACCESS_TOKEN", token);
+
+    let paths = vec![
+        state.data_dir.join(".env"),
+        PathBuf::from("/Users/subhajitbepari/Desktop/AutoShorts/.env"),
+    ];
+
+    for path in paths {
+        let mut lines = Vec::new();
+        let mut id_found = false;
+        let mut token_found = false;
+
+        if path.exists() {
+            if let Ok(file_content) = std::fs::read_to_string(&path) {
+                for line in file_content.lines() {
+                    if line.starts_with("INSTAGRAM_ACCOUNT_ID=") {
+                        lines.push(format!("INSTAGRAM_ACCOUNT_ID={acc_id}"));
+                        id_found = true;
+                    } else if line.starts_with("INSTAGRAM_ACCESS_TOKEN=") {
+                        lines.push(format!("INSTAGRAM_ACCESS_TOKEN={token}"));
+                        token_found = true;
+                    } else {
+                        lines.push(line.to_string());
+                    }
+                }
+            }
+        }
+
+        if !id_found {
+            lines.push(format!("INSTAGRAM_ACCOUNT_ID={acc_id}"));
+        }
+        if !token_found {
+            lines.push(format!("INSTAGRAM_ACCESS_TOKEN={token}"));
+        }
+
+        let _ = std::fs::write(&path, lines.join("\n") + "\n");
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn test_instagram_connection(
+    provider: String,
+    account_id: Option<String>,
+    access_token: Option<String>,
+    webhook_url: Option<String>,
+) -> Result<String, String> {
+    instagram::test_connection(
+        &provider,
+        account_id.as_deref(),
+        access_token.as_deref(),
+        webhook_url.as_deref(),
+    )
+    .await
+    .map_err(to_command_error)
+}
+
+#[tauri::command]
+async fn publish_candidate_to_instagram(
+    state: tauri::State<'_, AppState>,
+    candidate_id: String,
+    caption_override: Option<String>,
+    provider: Option<String>,
+    account_id: Option<String>,
+    access_token: Option<String>,
+    webhook_url: Option<String>,
+) -> Result<models::InstagramPost, String> {
+    let db = state.db.clone();
+    let (candidate, project) = db
+        .get_candidate_with_project(&candidate_id)
+        .map_err(to_command_error)?;
+
+    let clip = db
+        .list_clips_for_project(&project.id)
+        .map_err(to_command_error)?
+        .into_iter()
+        .find(|c| c.candidate_id == candidate_id);
+
+    let output_path = match &clip {
+        Some(c) if c.status == "done" && c.output_path.is_some() => {
+            c.output_path.clone().unwrap()
+        }
+        _ => {
+            // Automatically render clip with 9:16 vertical blur and subtitles
+            render_flat_clip_for_candidate(
+                state.clone(),
+                candidate_id.clone(),
+                Some("vertical_crop".to_string()),
+                None,
+            )
+            .await
+            .map_err(|e| format!("Failed to automatically render clip for Instagram: {e}"))?
+        }
+    };
+
+    let active_provider = provider
+        .filter(|p| !p.trim().is_empty())
+        .unwrap_or_else(|| "graph_api".to_string());
+
+    let caption = if let Some(cap) = caption_override.filter(|c| !c.trim().is_empty()) {
+        cap
+    } else {
+        let mut transcript_text = candidate.hook.clone();
+        if let Ok(Some(transcript_record)) = db.latest_transcript(&project.id) {
+            if let Ok(normalized) = serde_json::from_str::<NormalizedTranscript>(&transcript_record.raw_json) {
+                let words: Vec<&str> = normalized
+                    .words
+                    .iter()
+                    .filter(|w| w.start >= candidate.start_sec && w.end <= candidate.end_sec)
+                    .map(|w| w.text.as_str())
+                    .collect();
+                if !words.is_empty() {
+                    transcript_text = words.join(" ");
+                }
+            }
+        }
+        let kit = llm::generate_social_kit(&candidate.id, &candidate.hook, &transcript_text).await;
+        let hashtags = kit.hashtags.join(" ");
+        format!(
+            "{}\n\n{}\n\n{}\n\n{}",
+            candidate.hook, kit.description, kit.call_to_action, hashtags
+        )
+    };
+
+    let _ = db.upsert_instagram_post(
+        &candidate_id,
+        clip.as_ref().map(|c| c.id.as_str()),
+        "publishing",
+        Some(&caption),
+        None,
+        None,
+    );
+
+    let post_result = match active_provider.as_str() {
+        "webhook" => {
+            let url = webhook_url
+                .or_else(|| std::env::var("INSTAGRAM_WEBHOOK_URL").ok())
+                .ok_or_else(|| "Instagram Webhook URL is required".to_string())?;
+
+            instagram::publish_reel_webhook(
+                &url,
+                &candidate_id,
+                &output_path,
+                &caption,
+                candidate.score,
+                &candidate.hook,
+            )
+            .await
+        }
+        _ => {
+            let ig_id = account_id
+                .or_else(|| std::env::var("INSTAGRAM_ACCOUNT_ID").ok())
+                .ok_or_else(|| "Instagram Account ID is required".to_string())?;
+            let token = access_token
+                .or_else(|| std::env::var("INSTAGRAM_ACCESS_TOKEN").ok())
+                .ok_or_else(|| "Instagram Meta Access Token is required".to_string())?;
+
+            instagram::publish_reel_graph_api(&ig_id, &token, &output_path, &caption).await
+        }
+    };
+
+    match post_result {
+        Ok(post_url) => {
+            let updated = db
+                .upsert_instagram_post(
+                    &candidate_id,
+                    clip.as_ref().map(|c| c.id.as_str()),
+                    "published",
+                    Some(&caption),
+                    Some(&post_url),
+                    None,
+                )
+                .map_err(to_command_error)?;
+            Ok(updated)
+        }
+        Err(err) => {
+            let err_msg = err.to_string();
+            let _ = db.upsert_instagram_post(
+                &candidate_id,
+                clip.as_ref().map(|c| c.id.as_str()),
+                "failed",
+                Some(&caption),
+                None,
+                Some(&err_msg),
+            );
+            Err(err_msg)
+        }
+    }
+}
+
+#[tauri::command]
+async fn auto_publish_eligible_candidates(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+    min_score: Option<f64>,
+    provider: Option<String>,
+    account_id: Option<String>,
+    access_token: Option<String>,
+    webhook_url: Option<String>,
+) -> Result<Vec<models::InstagramPost>, String> {
+    let db = state.db.clone();
+    let threshold = min_score.unwrap_or(0.90);
+    let candidates = db.list_candidates(&project_id).map_err(to_command_error)?;
+    let mut results = Vec::new();
+
+    for c in candidates {
+        let normalized_score = if c.score > 1.0 { c.score / 100.0 } else { c.score };
+        if normalized_score >= threshold || c.score >= (threshold * 100.0) {
+            let clip = db
+                .list_clips_for_project(&project_id)
+                .map_err(to_command_error)?
+                .into_iter()
+                .find(|cl| cl.candidate_id == c.id);
+
+            let is_rendered = clip.as_ref().map(|cl| cl.status == "done" && cl.output_path.is_some()).unwrap_or(false);
+            if !is_rendered {
+                let _ = render_flat_clip_for_candidate(state.clone(), c.id.clone(), Some("vertical_crop".to_string()), None).await;
+            }
+
+            match publish_candidate_to_instagram(
+                state.clone(),
+                c.id.clone(),
+                None,
+                provider.clone(),
+                account_id.clone(),
+                access_token.clone(),
+                webhook_url.clone(),
+            )
+            .await
+            {
+                Ok(post) => results.push(post),
+                Err(err) => {
+                    eprintln!("Auto-publish candidate {} failed: {}", c.id, err);
+                }
+            }
+        }
+    }
+    Ok(results)
 }

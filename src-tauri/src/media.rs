@@ -152,11 +152,8 @@ pub fn render_flat_clip(
 
     let probe = probe_media(source_path).ok();
     let has_video = probe.as_ref().map(|p| p.has_video).unwrap_or(false);
-    let width = probe.as_ref().and_then(|p| p.width).unwrap_or(1920);
-    let height = probe.as_ref().and_then(|p| p.height).unwrap_or(1080);
-    let is_already_portrait = height > width;
 
-    let mode = reframe_mode.unwrap_or("vertical_blur");
+    let mode = reframe_mode.unwrap_or("vertical_crop");
 
     let run_render = |use_videotoolbox: bool| -> Result<()> {
         let mut cmd = Command::new(resolve_binary("ffmpeg"));
@@ -182,29 +179,39 @@ pub fn render_flat_clip(
                     }
                     cmd.args(["-vf", &filter]);
                 }
-                _ => {
-                    // "vertical_blur" (Smart 9:16 with Blurred Mirror Background)
-                    if is_already_portrait {
-                        let mut filter = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920".to_string();
-                        if let Some(drawtext) = drawtext_filters {
-                            if !drawtext.is_empty() {
-                                filter = format!("{},{}", filter, drawtext);
-                            }
-                        }
-                        cmd.args(["-vf", &filter]);
-                    } else {
-                        let mut filter_graph = "[0:v]split=2[bg_in][fg_in];[bg_in]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5,eq=brightness=-0.08[bg];[fg_in]scale=1080:-2:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2".to_string();
-                        if let Some(drawtext) = drawtext_filters {
-                            if !drawtext.is_empty() {
-                                filter_graph = format!("{},{}[v_out]", filter_graph, drawtext);
-                            } else {
-                                filter_graph = format!("{}[v_out]", filter_graph);
-                            }
+                "podcast_split" => {
+                    // Feature 1: Host & Guest Stacked Split-Screen for Podcasts & Interviews
+                    let mut filter_graph = "[0:v]crop=iw/2:ih:0:0,scale=1080:960[top];[0:v]crop=iw/2:ih:iw/2:0,scale=1080:960[bot];[top][bot]vstack[stacked]".to_string();
+                    if let Some(drawtext) = drawtext_filters {
+                        if !drawtext.is_empty() {
+                            filter_graph = format!("{};[stacked]{}[v_out]", filter_graph, drawtext);
                         } else {
-                            filter_graph = format!("{}[v_out]", filter_graph);
+                            filter_graph = format!("{};[stacked]null[v_out]", filter_graph);
                         }
-                        cmd.args(["-filter_complex", &filter_graph, "-map", "[v_out]", "-map", "0:a?"]);
+                    } else {
+                        filter_graph = format!("{};[stacked]null[v_out]", filter_graph);
                     }
+                    cmd.args(["-filter_complex", &filter_graph, "-map", "[v_out]", "-map", "0:a?"]);
+                }
+                "punch_zoom" => {
+                    // Feature 1: Attention Retention Zoom Cuts (Subtle 1.12x punch zoom cut every 5.5s)
+                    let mut filter = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,crop=w='iw/if(lt(mod(t,5.5),1.6),1.14,1.0)':h='ih/if(lt(mod(t,5.5),1.6),1.14,1.0)':x='(iw-ow)/2':y='(ih-oh)/2',scale=1080:1920".to_string();
+                    if let Some(drawtext) = drawtext_filters {
+                        if !drawtext.is_empty() {
+                            filter = format!("{},{}", filter, drawtext);
+                        }
+                    }
+                    cmd.args(["-vf", &filter]);
+                }
+                _ => {
+                    // "vertical_crop" (9:16 Center Crop)
+                    let mut filter = "crop=w='2*trunc(min(iw,ih*9/16)/2)':h='2*trunc(min(ih,iw*16/9)/2)',scale=1080:1920".to_string();
+                    if let Some(drawtext) = drawtext_filters {
+                        if !drawtext.is_empty() {
+                            filter = format!("{},{}", filter, drawtext);
+                        }
+                    }
+                    cmd.args(["-vf", &filter]);
                 }
             }
 
@@ -217,7 +224,7 @@ pub fn render_flat_clip(
             cmd.arg("-vn");
         }
 
-        cmd.args(["-c:a", "aac", "-b:a", "192k"]);
+        cmd.args(["-af", "loudnorm=I=-14:TP=-1.5:LRA=11,afftdn=nf=-25", "-c:a", "aac", "-b:a", "192k"]);
         cmd.arg(output_path);
 
         let output = cmd.output().context("running ffmpeg clip render")?;
