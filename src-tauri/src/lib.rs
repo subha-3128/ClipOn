@@ -908,7 +908,6 @@ pub fn run() {
             generate_social_kit_for_candidate,
             test_instagram_connection,
             publish_candidate_to_instagram,
-            auto_publish_eligible_candidates,
             save_instagram_credentials,
             update_candidate_timing
         ])
@@ -1611,52 +1610,3 @@ async fn publish_candidate_to_instagram(
     }
 }
 
-#[tauri::command]
-async fn auto_publish_eligible_candidates(
-    state: tauri::State<'_, AppState>,
-    project_id: String,
-    min_score: Option<f64>,
-    provider: Option<String>,
-    account_id: Option<String>,
-    access_token: Option<String>,
-    webhook_url: Option<String>,
-) -> Result<Vec<models::InstagramPost>, String> {
-    let db = state.db.clone();
-    let threshold = min_score.unwrap_or(0.90);
-    let candidates = db.list_candidates(&project_id).map_err(to_command_error)?;
-    let mut results = Vec::new();
-
-    for c in candidates {
-        let normalized_score = if c.score > 1.0 { c.score / 100.0 } else { c.score };
-        if normalized_score >= threshold || c.score >= (threshold * 100.0) {
-            let clip = db
-                .list_clips_for_project(&project_id)
-                .map_err(to_command_error)?
-                .into_iter()
-                .find(|cl| cl.candidate_id == c.id);
-
-            let is_rendered = clip.as_ref().map(|cl| cl.status == "done" && cl.output_path.is_some()).unwrap_or(false);
-            if !is_rendered {
-                let _ = render_flat_clip_for_candidate(state.clone(), c.id.clone(), Some("vertical_crop".to_string()), None).await;
-            }
-
-            match publish_candidate_to_instagram(
-                state.clone(),
-                c.id.clone(),
-                None,
-                provider.clone(),
-                account_id.clone(),
-                access_token.clone(),
-                webhook_url.clone(),
-            )
-            .await
-            {
-                Ok(post) => results.push(post),
-                Err(err) => {
-                    eprintln!("Auto-publish candidate {} failed: {}", c.id, err);
-                }
-            }
-        }
-    }
-    Ok(results)
-}

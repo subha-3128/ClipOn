@@ -1405,19 +1405,6 @@ button:disabled {
   flex-shrink: 0;
 }
 
-.moment-viral-auto-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 10.5px;
-  font-weight: 700;
-  background: linear-gradient(135deg, rgba(244, 63, 94, 0.18) 0%, rgba(249, 115, 22, 0.18) 100%);
-  border: 1px solid rgba(244, 63, 94, 0.35);
-  padding: 2px 6px;
-  border-radius: var(--radius-xs);
-  color: #fda4af;
-  flex-shrink: 0;
-}
 
 .moment-duration-badge {
   font-size: 10.5px;
@@ -1985,6 +1972,23 @@ button:disabled {
 .input-with-button input {
   flex: 1;
   min-width: 0;
+}
+
+.settings-section-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 14px;
+  margin-top: 6px;
+  border-top: 1px solid var(--border-subtle);
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.settings-section-divider svg {
+  color: #e1306c;
 }
 
 /* Folder Settings */

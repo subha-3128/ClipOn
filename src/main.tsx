@@ -172,7 +172,7 @@ export type BusyState =
   | "cut";
 
 export type ReframeMode = "vertical_crop" | "podcast_split" | "punch_zoom" | "original";
-export type SettingsTab = "ai" | "storage" | "export" | "instagram" | "system";
+export type SettingsTab = "ai" | "storage" | "export" | "system";
 
 // ===== Utility Helpers =====
 function fileName(path: string): string {
@@ -281,13 +281,7 @@ function App() {
     return "vertical_crop";
   });
 
-  // Instagram Reels Automation State
-  const [autoInstagramEnabled, setAutoInstagramEnabled] = useState<boolean>(() => {
-    return localStorage.getItem("clipon_auto_instagram_enabled") === "true";
-  });
-  const [instagramMinScore, setInstagramMinScore] = useState<number>(() => {
-    return Number(localStorage.getItem("clipon_instagram_min_score")) || 90;
-  });
+  // Instagram Reels API State
   const [instagramProvider, setInstagramProvider] = useState<"graph_api" | "webhook">(() => {
     return (localStorage.getItem("clipon_instagram_provider") as any) || "graph_api";
   });
@@ -313,8 +307,6 @@ function App() {
   const [metaModalTesting, setMetaModalTesting] = useState(false);
   const [metaModalStatus, setMetaModalStatus] = useState<{ success: boolean; message: string } | null>(null);
 
-  useEffect(() => { localStorage.setItem("clipon_auto_instagram_enabled", String(autoInstagramEnabled)); }, [autoInstagramEnabled]);
-  useEffect(() => { localStorage.setItem("clipon_instagram_min_score", String(instagramMinScore)); }, [instagramMinScore]);
   useEffect(() => { localStorage.setItem("clipon_instagram_provider", instagramProvider); }, [instagramProvider]);
   useEffect(() => { localStorage.setItem("clipon_instagram_account_id", instagramAccountId); }, [instagramAccountId]);
   useEffect(() => { localStorage.setItem("clipon_instagram_access_token", instagramAccessToken); }, [instagramAccessToken]);
@@ -494,7 +486,19 @@ function App() {
       ""
     );
 
-    // Directly and automatically publish without asking for API!
+    if (instagramProvider === "graph_api" && (!currentAccId || !currentToken)) {
+      setSettingsTab("ai");
+      setShowSettings(true);
+      showToast("Configure your Instagram Reels API credentials in Settings");
+      return;
+    }
+    if (instagramProvider === "webhook" && !instagramWebhookUrl.trim()) {
+      setSettingsTab("ai");
+      setShowSettings(true);
+      showToast("Configure your Instagram Webhook URL in Settings");
+      return;
+    }
+
     await executeInstagramPublish(candidateId, currentAccId, currentToken);
   }
 
@@ -877,23 +881,6 @@ function App() {
       });
       await refresh(detail.project.id);
       showToast("Viral moments detected");
-
-      if (autoInstagramEnabled) {
-        try {
-          await invoke("auto_publish_eligible_candidates", {
-            projectId: detail.project.id,
-            minScore: instagramMinScore / 100.0,
-            provider: instagramProvider,
-            accountId: instagramAccountId.trim() || null,
-            accessToken: instagramAccessToken.trim() || null,
-            webhookUrl: instagramWebhookUrl.trim() || null,
-          });
-          await refresh(detail.project.id);
-          showToast("Eligible 90%+ moments auto-posted to Instagram!");
-        } catch (e) {
-          console.warn("Auto-publish to Instagram failed:", e);
-        }
-      }
     });
   }
 
@@ -1177,17 +1164,6 @@ function App() {
 
                 <div className="topbar-right">
                   <button
-                    className={`topbar-action-btn ${autoInstagramEnabled ? "instagram-active" : ""}`}
-                    onClick={() => {
-                      setSettingsTab("instagram");
-                      setShowSettings(true);
-                    }}
-                    title="Configure Auto-Post to Instagram (Score ≥ 90%)"
-                  >
-                    <Instagram size={15} />
-                    <span>Reels {autoInstagramEnabled ? "Auto-Post ON" : "Setup"}</span>
-                  </button>
-                  <button
                     className="topbar-action-btn"
                     onClick={() => {
                       // 1. If any candidate in this project has already been cut and has an output path, open that folder!
@@ -1368,25 +1344,6 @@ function App() {
 
                     <div className="panel-header-actions">
                       <button
-                        className={`studio-btn ${autoInstagramEnabled ? "instagram-active" : "secondary"}`}
-                        onClick={() => {
-                          if (!instagramAccountId && !instagramWebhookUrl) {
-                            setSettingsTab("instagram");
-                            setShowSettings(true);
-                            showToast("Configure your Instagram credentials to enable Auto-Post");
-                          } else {
-                            const next = !autoInstagramEnabled;
-                            setAutoInstagramEnabled(next);
-                            showToast(next ? "Auto-Post to Instagram (90%+) ENABLED" : "Auto-Post to Instagram DISABLED");
-                          }
-                        }}
-                        title="Toggle Auto-Post to Instagram for clips with viral score ≥ 90%"
-                      >
-                        <Instagram size={14} />
-                        <span>Auto-Post 90%: {autoInstagramEnabled ? "ON" : "OFF"}</span>
-                      </button>
-
-                      <button
                         className="studio-btn secondary"
                         onClick={moments}
                         disabled={busy !== "idle" || !detail.transcript || !canUseActiveLlm}
@@ -1490,11 +1447,6 @@ function App() {
                                 </button>
                                 <span className="moment-rank-badge">#{candidate.rank}</span>
                                 <span className="moment-score-badge">{Math.round(candidate.score * 100)}% Viral Score</span>
-                                {(candidate.score >= 0.90 || candidate.score >= 90) && (
-                                  <span className="moment-viral-auto-badge" title="Meets 90%+ threshold for automatic Instagram Reels posting">
-                                    <Flame size={12} /> Viral 90%+
-                                  </span>
-                                )}
                                 <span className="moment-duration-badge">
                                   {formatTime(candidate.startSec)} - {formatTime(candidate.endSec)} ({Math.round(candidate.endSec - candidate.startSec)}s)
                                 </span>
@@ -1645,16 +1597,6 @@ function App() {
                             {busy === "moments" ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
                             Find Viral Moments
                           </button>
-                          <button
-                            className={`studio-btn ${autoInstagramEnabled ? "instagram-active" : "secondary"}`}
-                            onClick={() => {
-                              setSettingsTab("instagram");
-                              setShowSettings(true);
-                            }}
-                          >
-                            <Instagram size={14} />
-                            <span>Auto-Post (90%+): {autoInstagramEnabled ? "ON" : "Configure"}</span>
-                          </button>
                         </div>
                       </div>
                     )}
@@ -1803,7 +1745,7 @@ function App() {
                 className={`settings-tab-btn ${settingsTab === "ai" ? "active" : ""}`}
                 onClick={() => setSettingsTab("ai")}
               >
-                <Cpu size={14} /> AI & Engines
+                <Cpu size={14} /> AI & API Keys
               </button>
               <button
                 className={`settings-tab-btn ${settingsTab === "storage" ? "active" : ""}`}
@@ -1816,12 +1758,6 @@ function App() {
                 onClick={() => setSettingsTab("export")}
               >
                 <SlidersHorizontal size={14} /> Video & Captions
-              </button>
-              <button
-                className={`settings-tab-btn ${settingsTab === "instagram" ? "active" : ""}`}
-                onClick={() => setSettingsTab("instagram")}
-              >
-                <Instagram size={14} /> Instagram Automation
               </button>
               <button
                 className={`settings-tab-btn ${settingsTab === "system" ? "active" : ""}`}
@@ -1966,6 +1902,81 @@ function App() {
                       />
                     </div>
                   )}
+
+                  {/* Instagram Reels API */}
+                  <div className="settings-section-divider">
+                    <Instagram size={14} />
+                    <span>Instagram Reels API</span>
+                  </div>
+
+                  <div className="settings-field-group">
+                    <label>Instagram Publishing Method</label>
+                    <select
+                      value={instagramProvider}
+                      onChange={(e) => setInstagramProvider(e.target.value as any)}
+                    >
+                      <option value="graph_api">Official Meta Graph API (Direct Instagram Reels)</option>
+                      <option value="webhook">Webhook Automation (Make.com, Zapier, n8n)</option>
+                    </select>
+                  </div>
+
+                  {instagramProvider === "graph_api" && (
+                    <>
+                      <div className="settings-field-group">
+                        <label>Instagram Professional / Creator Account ID</label>
+                        <input
+                          type="text"
+                          value={instagramAccountId}
+                          onChange={(e) => setInstagramAccountId(e.target.value)}
+                          placeholder="e.g. 17841400000000000"
+                        />
+                        <span className="folder-hint">Found in Meta Business Suite or via Graph API Explorer</span>
+                      </div>
+
+                      <div className="settings-field-group">
+                        <label>Meta Long-Lived Access Token</label>
+                        <input
+                          type="password"
+                          value={instagramAccessToken}
+                          onChange={(e) => setInstagramAccessToken(e.target.value)}
+                          placeholder="EAA... (Token with instagram_content_publish permission)"
+                        />
+                        <span className="folder-hint">Requires 'instagram_basic' and 'instagram_content_publish' scopes</span>
+                      </div>
+                    </>
+                  )}
+
+                  {instagramProvider === "webhook" && (
+                    <div className="settings-field-group">
+                      <label>Webhook URL (Make.com / Zapier / n8n)</label>
+                      <input
+                        type="text"
+                        value={instagramWebhookUrl}
+                        onChange={(e) => setInstagramWebhookUrl(e.target.value)}
+                        placeholder="https://hook.eu1.make.com/... or https://hooks.zapier.com/..."
+                      />
+                      <span className="folder-hint">Payload includes candidateId, videoPath, viralScore, hook, and formatted caption</span>
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: "4px", display: "flex", alignItems: "center", gap: "12px" }}>
+                    <button
+                      type="button"
+                      className="studio-btn secondary"
+                      onClick={testInstagramConnection}
+                      disabled={instagramTesting || (instagramProvider === "graph_api" ? !instagramAccountId.trim() || !instagramAccessToken.trim() : !instagramWebhookUrl.trim())}
+                    >
+                      {instagramTesting ? <Loader2 className="spin" size={14} /> : <Instagram size={14} />}
+                      <span>{instagramTesting ? "Verifying..." : "Test Connection"}</span>
+                    </button>
+                  </div>
+
+                  {instagramTestResult && (
+                    <div className={`connection-status-banner ${instagramTestResult.success ? "success" : "error"}`}>
+                      {instagramTestResult.success ? <BadgeCheck size={16} /> : <AlertTriangle size={16} />}
+                      <span>{instagramTestResult.message}</span>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -2050,115 +2061,7 @@ function App() {
                 </div>
               )}
 
-              {settingsTab === "instagram" && (
-                <div className="settings-form-stack">
-                  {/* Master Toggle */}
-                  <div className="settings-toggle-row">
-                    <div className="settings-toggle-info">
-                      <h4>Auto-Post Viral Clips (Score ≥ 90%)</h4>
-                      <p>Automatically render 9:16 vertical clips, generate AI caption/hashtags, and post directly to Instagram Reels when AI viral confidence meets your threshold.</p>
-                    </div>
-                    <label className="settings-switch">
-                      <input
-                        type="checkbox"
-                        checked={autoInstagramEnabled}
-                        onChange={(e) => setAutoInstagramEnabled(e.target.checked)}
-                      />
-                      <span className="switch-slider"></span>
-                    </label>
-                  </div>
 
-                  {/* Threshold setting */}
-                  <div className="settings-field-group">
-                    <label>Minimum Viral Score Threshold (%)</label>
-                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                      <input
-                        type="range"
-                        min="70"
-                        max="100"
-                        step="1"
-                        value={instagramMinScore}
-                        onChange={(e) => setInstagramMinScore(Number(e.target.value))}
-                        style={{ flex: 1 }}
-                      />
-                      <strong style={{ minWidth: "45px", fontFamily: "var(--font-mono)", fontSize: "14px" }}>
-                        {instagramMinScore}%
-                      </strong>
-                    </div>
-                    <span className="folder-hint">Clips scoring {instagramMinScore}% or higher will be eligible for automatic Reels posting</span>
-                  </div>
-
-                  {/* Provider selector */}
-                  <div className="settings-field-group">
-                    <label>Instagram Publishing Method</label>
-                    <select
-                      value={instagramProvider}
-                      onChange={(e) => setInstagramProvider(e.target.value as any)}
-                    >
-                      <option value="graph_api">Official Meta Graph API (Direct Instagram Reels)</option>
-                      <option value="webhook">Webhook Automation (Make.com, Zapier, n8n)</option>
-                    </select>
-                  </div>
-
-                  {instagramProvider === "graph_api" && (
-                    <>
-                      <div className="settings-field-group">
-                        <label>Instagram Professional / Creator Account ID</label>
-                        <input
-                          type="text"
-                          value={instagramAccountId}
-                          onChange={(e) => setInstagramAccountId(e.target.value)}
-                          placeholder="e.g. 17841400000000000"
-                        />
-                        <span className="folder-hint">Found in Meta Business Suite or via Graph API Explorer</span>
-                      </div>
-
-                      <div className="settings-field-group">
-                        <label>Meta Long-Lived Access Token</label>
-                        <input
-                          type="password"
-                          value={instagramAccessToken}
-                          onChange={(e) => setInstagramAccessToken(e.target.value)}
-                          placeholder="EAA... (Token with instagram_content_publish permission)"
-                        />
-                        <span className="folder-hint">Requires 'instagram_basic' and 'instagram_content_publish' scopes</span>
-                      </div>
-                    </>
-                  )}
-
-                  {instagramProvider === "webhook" && (
-                    <div className="settings-field-group">
-                      <label>Webhook URL (Make.com / Zapier / n8n)</label>
-                      <input
-                        type="text"
-                        value={instagramWebhookUrl}
-                        onChange={(e) => setInstagramWebhookUrl(e.target.value)}
-                        placeholder="https://hook.eu1.make.com/... or https://hooks.zapier.com/..."
-                      />
-                      <span className="folder-hint">Payload includes candidateId, videoPath, viralScore, hook, and formatted caption</span>
-                    </div>
-                  )}
-
-                  <div style={{ marginTop: "8px", display: "flex", alignItems: "center", gap: "12px" }}>
-                    <button
-                      type="button"
-                      className="studio-btn primary"
-                      onClick={testInstagramConnection}
-                      disabled={instagramTesting || (instagramProvider === "graph_api" ? !instagramAccountId.trim() || !instagramAccessToken.trim() : !instagramWebhookUrl.trim())}
-                    >
-                      {instagramTesting ? <Loader2 className="spin" size={14} /> : <Instagram size={14} />}
-                      <span>{instagramTesting ? "Verifying..." : "Test Connection"}</span>
-                    </button>
-                  </div>
-
-                  {instagramTestResult && (
-                    <div className={`connection-status-banner ${instagramTestResult.success ? "success" : "error"}`}>
-                      {instagramTestResult.success ? <BadgeCheck size={16} /> : <AlertTriangle size={16} />}
-                      <span>{instagramTestResult.message}</span>
-                    </div>
-                  )}
-                </div>
-              )}
 
               {settingsTab === "system" && (
                 <div className="settings-form-stack">
