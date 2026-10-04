@@ -1185,7 +1185,7 @@ function App() {
                     title="Configure Auto-Post to Instagram (Score ≥ 90%)"
                   >
                     <Instagram size={15} />
-                    <span>Auto-Post {autoInstagramEnabled ? "ON (90%+)" : "Setup"}</span>
+                    <span>Reels {autoInstagramEnabled ? "Auto-Post ON" : "Setup"}</span>
                   </button>
                   <button
                     className="topbar-action-btn"
@@ -1383,7 +1383,7 @@ function App() {
                         title="Toggle Auto-Post to Instagram for clips with viral score ≥ 90%"
                       >
                         <Instagram size={14} />
-                        <span>Auto-Post (90%+): {autoInstagramEnabled ? "ON" : "OFF"}</span>
+                        <span>Auto-Post 90%: {autoInstagramEnabled ? "ON" : "OFF"}</span>
                       </button>
 
                       <button
@@ -1630,7 +1630,7 @@ function App() {
                                         : "Cutting & Posting..."
                                       : igPost?.status === "published"
                                       ? "Re-post IG"
-                                      : "Post to Instagram"}
+                                      : "Post to Reels"}
                                   </span>
                                 </button>
                               </div>
