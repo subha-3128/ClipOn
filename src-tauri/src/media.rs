@@ -130,13 +130,90 @@ pub fn extract_audio(source_path: &str, project_dir: &Path) -> Result<PathBuf> {
     Ok(output_path)
 }
 
+/// Detect face horizontal center X in normalized coords [0.0, 1.0] using Apple Vision.
+pub fn detect_face_center_x(source_path: &str, start_sec: f64, duration_sec: f64) -> f64 {
+    let mut tracker_candidates = vec![
+        "/Users/subhajitbepari/Desktop/AutoShorts/src-tauri/bin/clipon-face-tracker".to_string(),
+        "/Applications/ClipOn.app/Contents/MacOS/clipon-face-tracker".to_string(),
+        "/Applications/ClipOn.app/Contents/Resources/bin/clipon-face-tracker".to_string(),
+    ];
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            tracker_candidates.push(parent.join("clipon-face-tracker").to_string_lossy().to_string());
+            tracker_candidates.push(parent.join("../Resources/bin/clipon-face-tracker").to_string_lossy().to_string());
+            tracker_candidates.push(parent.join("bin/clipon-face-tracker").to_string_lossy().to_string());
+        }
+    }
+
+    let mut tracker_bin = None;
+    for path in &tracker_candidates {
+        if Path::new(path).exists() {
+            tracker_bin = Some(path.clone());
+            break;
+        }
+    }
+
+    if let Some(bin) = tracker_bin {
+        if let Ok(output) = Command::new(bin)
+            .args([
+                source_path,
+                &format!("{start_sec:.3}"),
+                &format!("{duration_sec:.3}"),
+            ])
+            .output()
+        {
+            if output.status.success() {
+                if let Ok(v) = serde_json::from_slice::<Value>(&output.stdout) {
+                    if let Some(center) = v.get("avg_center_x").and_then(Value::as_f64) {
+                        return center.clamp(0.20, 0.80);
+                    }
+                }
+            }
+        }
+    }
+
+    0.50
+}
+
+/// Detect silences longer than 0.40s using FFmpeg silencedetect.
+pub fn detect_silences(source_path: &str, start_sec: f64, duration_sec: f64) -> Vec<(f64, f64)> {
+    let start = format!("{start_sec:.3}");
+    let duration = format!("{duration_sec:.3}");
+    let output = Command::new(resolve_binary("ffmpeg"))
+        .args([
+            "-y",
+            "-ss",
+            &start,
+            "-i",
+            source_path,
+            "-t",
+            &duration,
+            "-af",
+            "silencedetect=noise=-30dB:d=0.45",
+            "-f",
+            "null",
+            "-",
+        ])
+        .output();
+
+    if let Ok(out) = output {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        return crate::pro_editor::parse_silences_from_log(&stderr);
+    }
+
+    Vec::new()
+}
+
 pub fn render_flat_clip(
     source_path: &str,
     start_sec: f64,
     end_sec: f64,
     output_path: &Path,
     drawtext_filters: Option<&str>,
+    ass_subtitle_path: Option<&Path>,
     reframe_mode: Option<&str>,
+    remove_silence: bool,
 ) -> Result<PathBuf> {
     if !command_exists("ffmpeg") {
         return Err(anyhow!("ffmpeg is not installed or not available on PATH"));
@@ -155,6 +232,14 @@ pub fn render_flat_clip(
 
     let mode = reframe_mode.unwrap_or("vertical_crop");
 
+    // Optional dead-air jump-cut filter
+    let jump_cuts = if remove_silence {
+        let silences = detect_silences(source_path, start_sec, duration_sec);
+        crate::pro_editor::build_silence_jumpcut_filter(&silences, duration_sec)
+    } else {
+        None
+    };
+
     let run_render = |use_videotoolbox: bool| -> Result<()> {
         let mut cmd = Command::new(resolve_binary("ffmpeg"));
         cmd.args(["-y", "-ss", &start, "-i", source_path, "-t", &duration]);
@@ -163,53 +248,132 @@ pub fn render_flat_clip(
             match mode {
                 "original" => {
                     let mut filter = "scale='2*trunc(iw/2)':'2*trunc(ih/2)'".to_string();
-                    if let Some(drawtext) = drawtext_filters {
+                    if let Some(ass) = ass_subtitle_path {
+                        if ass.exists() {
+                            let escaped = ass
+                                .to_string_lossy()
+                                .replace('\\', "/")
+                                .replace(':', "\\:")
+                                .replace('\'', "'\\''");
+                            filter = format!("{},ass='{}'", filter, escaped);
+                        }
+                    } else if let Some(drawtext) = drawtext_filters {
                         if !drawtext.is_empty() {
                             filter = format!("{},{}", filter, drawtext);
                         }
                     }
+                    if let Some((ref v_jump, _)) = jump_cuts {
+                        filter = format!("{},{}", filter, v_jump);
+                    }
                     cmd.args(["-vf", &filter]);
                 }
-                "vertical_crop" => {
-                    let mut filter = "crop=w='2*trunc(min(iw,ih*9/16)/2)':h='2*trunc(min(ih,iw*16/9)/2)',scale=1080:1920".to_string();
-                    if let Some(drawtext) = drawtext_filters {
+                "smart_face_track" => {
+                    // Feature 5: Native Apple Vision Face Tracking Crop
+                    let center_x = detect_face_center_x(source_path, start_sec, duration_sec);
+                    let crop_x = format!("min(max(0,({:.3}*iw-ow/2)),iw-ow)", center_x);
+                    let mut filter = format!(
+                        "crop=w='2*trunc(min(iw,ih*9/16)/2)':h='2*trunc(min(ih,iw*16/9)/2)':x='{}':y='(ih-oh)/2',scale=1080:1920",
+                        crop_x
+                    );
+                    if let Some(ass) = ass_subtitle_path {
+                        if ass.exists() {
+                            let escaped = ass
+                                .to_string_lossy()
+                                .replace('\\', "/")
+                                .replace(':', "\\:")
+                                .replace('\'', "'\\''");
+                            filter = format!("{},ass='{}'", filter, escaped);
+                        }
+                    } else if let Some(drawtext) = drawtext_filters {
                         if !drawtext.is_empty() {
                             filter = format!("{},{}", filter, drawtext);
                         }
+                    }
+                    if let Some((ref v_jump, _)) = jump_cuts {
+                        filter = format!("{},{}", filter, v_jump);
                     }
                     cmd.args(["-vf", &filter]);
                 }
                 "podcast_split" => {
                     // Feature 1: Host & Guest Stacked Split-Screen for Podcasts & Interviews
                     let mut filter_graph = "[0:v]crop=iw/2:ih:0:0,scale=1080:960[top];[0:v]crop=iw/2:ih:iw/2:0,scale=1080:960[bot];[top][bot]vstack[stacked]".to_string();
-                    if let Some(drawtext) = drawtext_filters {
+                    if let Some(ass) = ass_subtitle_path {
+                        if ass.exists() {
+                            let escaped = ass
+                                .to_string_lossy()
+                                .replace('\\', "/")
+                                .replace(':', "\\:")
+                                .replace('\'', "'\\''");
+                            filter_graph = format!("{};[stacked]ass='{}'[v_sub]", filter_graph, escaped);
+                            if let Some((ref v_jump, _)) = jump_cuts {
+                                filter_graph = format!("{};[v_sub]{}[v_out]", filter_graph, v_jump);
+                            } else {
+                                filter_graph = format!("{};[v_sub]null[v_out]", filter_graph);
+                            }
+                        } else {
+                            filter_graph = format!("{};[stacked]null[v_out]", filter_graph);
+                        }
+                    } else if let Some(drawtext) = drawtext_filters {
                         if !drawtext.is_empty() {
-                            filter_graph = format!("{};[stacked]{}[v_out]", filter_graph, drawtext);
+                            filter_graph = format!("{};[stacked]{}[v_draw]", filter_graph, drawtext);
+                            if let Some((ref v_jump, _)) = jump_cuts {
+                                filter_graph = format!("{};[v_draw]{}[v_out]", filter_graph, v_jump);
+                            } else {
+                                filter_graph = format!("{};[v_draw]null[v_out]", filter_graph);
+                            }
                         } else {
                             filter_graph = format!("{};[stacked]null[v_out]", filter_graph);
                         }
                     } else {
-                        filter_graph = format!("{};[stacked]null[v_out]", filter_graph);
+                        if let Some((ref v_jump, _)) = jump_cuts {
+                            filter_graph = format!("{};[stacked]{}[v_out]", filter_graph, v_jump);
+                        } else {
+                            filter_graph = format!("{};[stacked]null[v_out]", filter_graph);
+                        }
                     }
                     cmd.args(["-filter_complex", &filter_graph, "-map", "[v_out]", "-map", "0:a?"]);
                 }
                 "punch_zoom" => {
                     // Feature 1: Attention Retention Zoom Cuts (Subtle 1.12x punch zoom cut every 5.5s)
                     let mut filter = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,crop=w='iw/if(lt(mod(t,5.5),1.6),1.14,1.0)':h='ih/if(lt(mod(t,5.5),1.6),1.14,1.0)':x='(iw-ow)/2':y='(ih-oh)/2',scale=1080:1920".to_string();
-                    if let Some(drawtext) = drawtext_filters {
+                    if let Some(ass) = ass_subtitle_path {
+                        if ass.exists() {
+                            let escaped = ass
+                                .to_string_lossy()
+                                .replace('\\', "/")
+                                .replace(':', "\\:")
+                                .replace('\'', "'\\''");
+                            filter = format!("{},ass='{}'", filter, escaped);
+                        }
+                    } else if let Some(drawtext) = drawtext_filters {
                         if !drawtext.is_empty() {
                             filter = format!("{},{}", filter, drawtext);
                         }
+                    }
+                    if let Some((ref v_jump, _)) = jump_cuts {
+                        filter = format!("{},{}", filter, v_jump);
                     }
                     cmd.args(["-vf", &filter]);
                 }
                 _ => {
                     // "vertical_crop" (9:16 Center Crop)
                     let mut filter = "crop=w='2*trunc(min(iw,ih*9/16)/2)':h='2*trunc(min(ih,iw*16/9)/2)',scale=1080:1920".to_string();
-                    if let Some(drawtext) = drawtext_filters {
+                    if let Some(ass) = ass_subtitle_path {
+                        if ass.exists() {
+                            let escaped = ass
+                                .to_string_lossy()
+                                .replace('\\', "/")
+                                .replace(':', "\\:")
+                                .replace('\'', "'\\''");
+                            filter = format!("{},ass='{}'", filter, escaped);
+                        }
+                    } else if let Some(drawtext) = drawtext_filters {
                         if !drawtext.is_empty() {
                             filter = format!("{},{}", filter, drawtext);
                         }
+                    }
+                    if let Some((ref v_jump, _)) = jump_cuts {
+                        filter = format!("{},{}", filter, v_jump);
                     }
                     cmd.args(["-vf", &filter]);
                 }
@@ -224,7 +388,12 @@ pub fn render_flat_clip(
             cmd.arg("-vn");
         }
 
-        cmd.args(["-af", "loudnorm=I=-14:TP=-1.5:LRA=11,afftdn=nf=-25", "-c:a", "aac", "-b:a", "192k"]);
+        let mut audio_filter = "loudnorm=I=-14:TP=-1.5:LRA=11,afftdn=nf=-25".to_string();
+        if let Some((_, ref a_jump)) = jump_cuts {
+            audio_filter = format!("{},{}", a_jump, audio_filter);
+        }
+
+        cmd.args(["-af", &audio_filter, "-c:a", "aac", "-b:a", "192k"]);
         cmd.arg(output_path);
 
         let output = cmd.output().context("running ffmpeg clip render")?;

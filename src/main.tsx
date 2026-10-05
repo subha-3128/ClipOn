@@ -171,7 +171,7 @@ export type BusyState =
   | "clipCount"
   | "cut";
 
-export type ReframeMode = "vertical_crop" | "podcast_split" | "punch_zoom" | "original";
+export type ReframeMode = "smart_face_track" | "vertical_crop" | "podcast_split" | "punch_zoom" | "original";
 export type SettingsTab = "ai" | "storage" | "export" | "system";
 
 // ===== Utility Helpers =====
@@ -275,6 +275,10 @@ function App() {
   const [defaultFolders, setDefaultFolders] = useState<{ youtubeSaveDir: string; clipsOutputDir: string } | null>(null);
 
   // Reframe Mode
+  const [removeSilence, setRemoveSilence] = useState<boolean>(() => {
+    return localStorage.getItem("clipon_remove_silence") === "true";
+  });
+
   const [reframeMode, setReframeMode] = useState<ReframeMode>(() => {
     const saved = (localStorage.getItem("clipon_reframe_mode") || localStorage.getItem("autoshorts_reframe_mode")) as any;
     if (saved && saved !== "vertical_blur") return saved as ReframeMode;
@@ -926,7 +930,7 @@ function App() {
     setBusy("cut");
     setError(null);
     try {
-      await invoke<string>("render_flat_clip_for_candidate", { candidateId, reframeMode, outputDir: clipsSaveDir.trim() || null });
+      await invoke<string>("render_flat_clip_for_candidate", { candidateId, reframeMode, outputDir: clipsSaveDir.trim() || null, removeSilence });
       showToast("Clip rendered successfully!");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -947,7 +951,7 @@ function App() {
     try {
       for (const candidate of selected) {
         setRenderingCandidateId(candidate.id);
-        await invoke<string>("render_flat_clip_for_candidate", { candidateId: candidate.id, reframeMode, outputDir: clipsSaveDir.trim() || null });
+        await invoke<string>("render_flat_clip_for_candidate", { candidateId: candidate.id, reframeMode, outputDir: clipsSaveDir.trim() || null, removeSilence });
       }
       showToast(`Finished rendering ${selected.length} clips!`);
     } catch (err) {
@@ -1406,12 +1410,26 @@ function App() {
                           onChange={(e) => setReframeMode(e.target.value as ReframeMode)}
                           title="Video Framing Aspect Ratio"
                         >
+                          <option value="smart_face_track">🤖 Smart Face-Tracking (Vision)</option>
                           <option value="vertical_crop">9:16 Center Crop</option>
                           <option value="podcast_split">9:16 Podcast Split-Screen</option>
                           <option value="punch_zoom">9:16 Retention Punch-Zoom</option>
                           <option value="original">16:9 Original</option>
                         </select>
                       </div>
+
+                      <button
+                        type="button"
+                        className={`silence-jump-toggle ${removeSilence ? "active" : ""}`}
+                        onClick={() => {
+                          const next = !removeSilence;
+                          setRemoveSilence(next);
+                          localStorage.setItem("clipon_remove_silence", String(next));
+                        }}
+                        title="Auto-Detect & Jump-Cut Dead Air / Pauses >0.45s for 20% Faster Clip Retention"
+                      >
+                        <Scissors size={12} /> {removeSilence ? "Dead-Air Cuts: ON" : "Dead-Air Cuts: OFF"}
+                      </button>
 
                       <span className="studio-audio-tag" title="Studio Sound Auto-Mastering active: -14 LUFS Broadcast Standard & AI Noise Suppression">
                         <AudioLines size={12} /> Studio Audio (-14 LUFS)
@@ -1446,7 +1464,14 @@ function App() {
                                   {candidate.selected ? <CheckSquare size={17} className="checked" /> : <Square size={17} />}
                                 </button>
                                 <span className="moment-rank-badge">#{candidate.rank}</span>
-                                <span className="moment-score-badge">{Math.round(candidate.score * 100)}% Viral Score</span>
+                                <span className="moment-score-badge">
+                                  {Math.round(candidate.score > 1 ? candidate.score : candidate.score * 100)}% Viral Score
+                                </span>
+                                {candidate.rationale.includes("High Audio Energy") && (
+                                  <span className="moment-audio-energy-badge" title="High-Energy Audio Hook & Vocal Surge">
+                                    ⚡ High Audio Energy
+                                  </span>
+                                )}
                                 <span className="moment-duration-badge">
                                   {formatTime(candidate.startSec)} - {formatTime(candidate.endSec)} ({Math.round(candidate.endSec - candidate.startSec)}s)
                                 </span>
@@ -2081,11 +2106,31 @@ function App() {
                       value={reframeMode}
                       onChange={(e) => setReframeMode(e.target.value as ReframeMode)}
                     >
-                      <option value="vertical_crop">9:16 Center Crop (Recommended for Shorts/Reels/TikTok)</option>
+                      <option value="smart_face_track">🤖 Smart Face-Tracking (Apple Vision Neural Engine)</option>
+                      <option value="vertical_crop">9:16 Center Crop (Standard 9:16)</option>
                       <option value="podcast_split">9:16 Podcast Split-Screen (Host on top, Guest on bottom)</option>
                       <option value="punch_zoom">9:16 Retention Punch-Zoom (Attention cuts every 5.5s)</option>
-                                            <option value="original">16:9 Original</option>
+                      <option value="original">16:9 Original</option>
                     </select>
+                  </div>
+
+                  <div className="settings-field-group">
+                    <label>Dead-Air Silence Jump Cutter</label>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4 }}>
+                      <input
+                        type="checkbox"
+                        id="setting_remove_silence"
+                        checked={removeSilence}
+                        onChange={(e) => {
+                          setRemoveSilence(e.target.checked);
+                          localStorage.setItem("clipon_remove_silence", String(e.target.checked));
+                        }}
+                        style={{ width: 16, height: 16, accentColor: "#10b981", cursor: "pointer" }}
+                      />
+                      <label htmlFor="setting_remove_silence" style={{ margin: 0, cursor: "pointer", fontSize: 13, color: "var(--text-secondary)" }}>
+                        Automatically skip pauses &amp; dead air &gt;0.45s (Boosts video retention by 20%)
+                      </label>
+                    </div>
                   </div>
                 </div>
               )}
@@ -2178,6 +2223,18 @@ function App() {
             </div>
 
             <div className="style-grid">
+              {/* Pro Feature: Hormozi Kinetic Karaoke */}
+              <div
+                className={`style-card ${selectedStyle === "hormozi-kinetic" ? "selected" : ""}`}
+                onClick={() => setSelectedStyle("hormozi-kinetic")}
+              >
+                <div className="style-preview-box">
+                  <span className="preview-text-hormozi" style={{ color: "#00E6FF" }}>KINETIC POP ⚡</span>
+                </div>
+                <div className="style-card-title">Hormozi Kinetic (Pro Karaoke)</div>
+                <div className="style-card-desc">Word-by-word active highlighting with vibrant yellow &amp; electric green keyword pops!</div>
+              </div>
+
               {/* Feature 3: Submagic Viral Style with Auto-Emoji */}
               <div
                 className={`style-card ${selectedStyle === "submagic-viral" ? "selected" : ""}`}

@@ -4,6 +4,7 @@ mod llm;
 mod media;
 mod models;
 mod transcription;
+mod pro_editor;
 
 use std::path::PathBuf;
 
@@ -530,8 +531,26 @@ async fn generate_candidates(
         return Err("No viable clip candidates were returned for this transcript.".to_string());
     }
 
+    // Pro-Editor Pipeline:
+    // 1. Algorithmic Sentence & Context Boundary Snapping
+    let snapped_drafts = pro_editor::snap_candidates_to_boundaries(&drafts, &normalized);
+
+    // 2. Multi-Modal Audio Energy & Viral Hook Scoring
+    let wav_path = state
+        .data_dir
+        .join("projects")
+        .join(&project_id)
+        .join("transcription_audio.wav");
+    let wav_opt = if wav_path.exists() {
+        Some(wav_path.as_path())
+    } else {
+        None
+    };
+    let scored_drafts =
+        pro_editor::calculate_audio_energy_scores(wav_opt, &snapped_drafts, &normalized);
+
     let candidates = db
-        .replace_candidates(&project_id, &drafts)
+        .replace_candidates(&project_id, &scored_drafts)
         .map_err(to_command_error)?;
     db.update_project_status(&project_id, "ready", None)
         .map_err(to_command_error)?;
@@ -572,11 +591,13 @@ async fn render_flat_clip_for_candidate(
     candidate_id: String,
     reframe_mode: Option<String>,
     output_dir: Option<String>,
+    remove_silence: Option<bool>,
 ) -> Result<String, String> {
     let db = state.db.clone();
     let data_dir = state.data_dir.clone();
     let mode = reframe_mode.clone();
     let out_dir = output_dir.clone();
+    let silence_removal = remove_silence;
 
     tokio::task::spawn_blocking(move || {
         let (candidate, project) = db
@@ -591,6 +612,7 @@ async fn render_flat_clip_for_candidate(
             .join(format!("clip-{:02}_flat.mp4", candidate.rank));
 
         let mut srt_path = None;
+        let mut ass_path = None;
         let mut drawtext_filters = None;
 
         let probe = media::probe_media(&project.source_path).ok();
@@ -610,7 +632,20 @@ async fn render_flat_clip_for_candidate(
                 if std::fs::write(&clip_srt_path, srt_content).is_ok() {
                     srt_path = Some(clip_srt_path);
                 }
-                let style = project.caption_style.as_deref().unwrap_or("modern-box");
+                let style = project.caption_style.as_deref().unwrap_or("hormozi-kinetic");
+
+                // Generate kinetic ASS subtitles
+                let ass_content = pro_editor::generate_kinetic_ass(
+                    &normalized.words,
+                    candidate.start_sec,
+                    candidate.end_sec,
+                    style,
+                );
+                let clip_ass_path = data_dir.join("projects").join(&project.id).join(format!("clip-{}.ass", candidate.id));
+                if std::fs::write(&clip_ass_path, ass_content).is_ok() {
+                    ass_path = Some(clip_ass_path);
+                }
+
                 let drawtext = build_drawtext_filters(
                     &normalized.words,
                     candidate.start_sec,
@@ -624,13 +659,17 @@ async fn render_flat_clip_for_candidate(
             }
         }
 
+        let should_remove_silence = silence_removal.unwrap_or(false);
+
         match media::render_flat_clip(
             &project.source_path,
             candidate.start_sec,
             candidate.end_sec,
             &output_path,
             drawtext_filters.as_deref(),
+            ass_path.as_deref(),
             mode.as_deref(),
+            should_remove_silence,
         ) {
             Ok(path) => {
                 let path_string = path.to_string_lossy().to_string();
@@ -655,7 +694,9 @@ async fn render_flat_clip_for_candidate(
                     candidate.end_sec,
                     &output_path,
                     None,
+                    None,
                     mode.as_deref(),
+                    false,
                 ) {
                     Ok(path) => {
                         let path_string = path.to_string_lossy().to_string();
@@ -1509,6 +1550,7 @@ async fn publish_candidate_to_instagram(
                 state.clone(),
                 candidate_id.clone(),
                 Some("vertical_crop".to_string()),
+                None,
                 None,
             )
             .await
