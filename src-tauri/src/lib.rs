@@ -909,7 +909,8 @@ pub fn run() {
             test_instagram_connection,
             publish_candidate_to_instagram,
             save_instagram_credentials,
-            update_candidate_timing
+            update_candidate_timing,
+            clear_all_storage
         ])
         .run(tauri::generate_context!())
         .expect("error while running ClipOn");
@@ -1608,5 +1609,39 @@ async fn publish_candidate_to_instagram(
             Err(err_msg)
         }
     }
+}
+
+#[tauri::command]
+async fn clear_all_storage(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    state.db.clear_all().map_err(to_command_error)?;
+
+    let projects_dir = state.data_dir.join("projects");
+    if projects_dir.exists() {
+        let _ = std::fs::remove_dir_all(&projects_dir);
+        let _ = std::fs::create_dir_all(&projects_dir);
+    }
+
+    if let Some(doc_dir) = dirs::document_dir() {
+        let clips_dir = doc_dir.join("ClipOn").join("Clips");
+        if clips_dir.exists() {
+            let _ = std::fs::remove_dir_all(&clips_dir);
+            let _ = std::fs::create_dir_all(&clips_dir);
+        }
+        let yt_dir = doc_dir.join("ClipOn").join("Youtube Video");
+        if yt_dir.exists() {
+            let _ = std::fs::remove_dir_all(&yt_dir);
+            let _ = std::fs::create_dir_all(&yt_dir);
+        }
+    }
+
+    if let Some(dl_dir) = dirs::download_dir() {
+        let dl_clipon = dl_dir.join("ClipOn");
+        if dl_clipon.exists() {
+            let _ = std::fs::remove_dir_all(&dl_clipon);
+            let _ = std::fs::create_dir_all(&dl_clipon);
+        }
+    }
+
+    Ok("All project storage, clips, cache, and database records cleared successfully.".to_string())
 }
 

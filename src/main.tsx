@@ -2041,6 +2041,35 @@ function App() {
                       </button>
                     </div>
                   </div>
+
+                  {/* Storage Cleanup */}
+                  <div className="settings-folder-group" style={{ borderColor: "rgba(239, 68, 68, 0.25)", background: "rgba(239, 68, 68, 0.03)" }}>
+                    <div className="folder-group-header">
+                      <label style={{ color: "#f87171" }}>🗑️ Project Storage Cleanup</label>
+                      <span className="folder-hint">Delete all rendered vertical clips, downloaded source videos, and clear database history to free up disk space</span>
+                    </div>
+                    <div style={{ marginTop: "4px" }}>
+                      <button
+                        type="button"
+                        className="studio-btn secondary"
+                        style={{ color: "#f87171", borderColor: "rgba(239, 68, 68, 0.4)" }}
+                        onClick={async () => {
+                          if (confirm("Are you sure you want to clear all project storage? All downloaded videos, rendered clips, and project records will be wiped.")) {
+                            try {
+                              const res = await invoke<string>("clear_all_storage");
+                              showToast(res);
+                              setProjects([]);
+                              setDetail(null);
+                            } catch (e) {
+                              showToast("Failed to clear storage: " + String(e));
+                            }
+                          }
+                        }}
+                      >
+                        <Trash2 size={14} /> Clear Full Storage
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
 

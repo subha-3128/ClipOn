@@ -565,6 +565,23 @@ impl Database {
         };
         Ok(post)
     }
+
+    pub fn clear_all(&self) -> Result<()> {
+        let conn = self.conn.lock().expect("database mutex poisoned");
+        conn.execute_batch(
+            "
+            DELETE FROM instagram_posts;
+            DELETE FROM schedule_entries;
+            DELETE FROM clip_copy;
+            DELETE FROM clips;
+            DELETE FROM candidates;
+            DELETE FROM transcripts;
+            DELETE FROM projects;
+            VACUUM;
+            ",
+        )?;
+        Ok(())
+    }
 }
 
 fn project_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {

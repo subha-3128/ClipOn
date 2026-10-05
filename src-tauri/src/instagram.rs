@@ -25,6 +25,7 @@ struct InitMediaResponse {
 struct StatusResponse {
     status_code: Option<String>,
     status: Option<String>,
+    error_message: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -62,7 +63,7 @@ struct UguuResponse {
 async fn upload_to_temp_stream_url(client: &reqwest::Client, video_path: &Path) -> Result<String> {
     let file_bytes = tokio::fs::read(video_path)
         .await
-        .map_err(|e| anyhow!("Failed to read video file: {e}"))?;
+        .map_err(|e| anyhow!("Failed to read video file at {:?}: {e}", video_path))?;
 
     let filename = video_path
         .file_name()
@@ -70,52 +71,93 @@ async fn upload_to_temp_stream_url(client: &reqwest::Client, video_path: &Path) 
         .unwrap_or("clip.mp4")
         .to_string();
 
-    // 1. Primary: Catbox.moe (fast, handles up to 200MB, full cloud CDN)
-    let catbox_part = reqwest::multipart::Part::bytes(file_bytes.clone())
+    eprintln!("[Instagram] Uploading video for Meta Reels ingest: {} ({} bytes)", filename, file_bytes.len());
+
+    // 1. Primary: Uguu.se (Proven compatibility with Meta video ingester)
+    let uguu_part = reqwest::multipart::Part::bytes(file_bytes.clone())
         .file_name(filename.clone())
+        .mime_str("video/mp4")?;
+
+    let uguu_form = reqwest::multipart::Form::new().part("files[]", uguu_part);
+
+    match client.post("https://uguu.se/upload.php").multipart(uguu_form).send().await {
+        Ok(res) if res.status().is_success() => {
+            if let Ok(uguu) = res.json::<UguuResponse>().await {
+                if let Some(files) = uguu.files {
+                    if let Some(first) = files.first() {
+                        eprintln!("[Instagram] Uguu upload successful: {}", first.url);
+                        return Ok(first.url.clone());
+                    }
+                }
+            }
+        }
+        Ok(res) => {
+            eprintln!("[Instagram] Uguu upload failed with status: {}", res.status());
+        }
+        Err(e) => {
+            eprintln!("[Instagram] Uguu request error: {}", e);
+        }
+    }
+
+    // 2. Secondary fallback: tmpfiles.org
+    #[derive(Deserialize)]
+    struct TmpData {
+        url: Option<String>,
+    }
+    #[derive(Deserialize)]
+    struct TmpResponse {
+        data: Option<TmpData>,
+    }
+
+    let tmp_part = reqwest::multipart::Part::bytes(file_bytes.clone())
+        .file_name(filename.clone())
+        .mime_str("video/mp4")?;
+    let tmp_form = reqwest::multipart::Form::new().part("file", tmp_part);
+
+    match client.post("https://tmpfiles.org/api/v1/upload").multipart(tmp_form).send().await {
+        Ok(res) if res.status().is_success() => {
+            if let Ok(json_res) = res.json::<TmpResponse>().await {
+                if let Some(data) = json_res.data {
+                    if let Some(raw_url) = data.url {
+                        let direct_url = raw_url.replace("https://tmpfiles.org/", "https://tmpfiles.org/dl/");
+                        eprintln!("[Instagram] tmpfiles upload successful: {}", direct_url);
+                        return Ok(direct_url);
+                    }
+                }
+            }
+        }
+        Ok(res) => {
+            eprintln!("[Instagram] tmpfiles upload returned status: {}", res.status());
+        }
+        Err(e) => {
+            eprintln!("[Instagram] tmpfiles request error: {}", e);
+        }
+    }
+
+    // 3. Third fallback: Catbox.moe
+    let catbox_part = reqwest::multipart::Part::bytes(file_bytes)
+        .file_name(filename)
         .mime_str("video/mp4")?;
 
     let catbox_form = reqwest::multipart::Form::new()
         .text("reqtype", "fileupload")
         .part("fileToUpload", catbox_part);
 
-    if let Ok(res) = client
-        .post("https://catbox.moe/user/api.php")
-        .multipart(catbox_form)
-        .send()
-        .await
-    {
-        if res.status().is_success() {
+    match client.post("https://catbox.moe/user/api.php").multipart(catbox_form).send().await {
+        Ok(res) if res.status().is_success() => {
             if let Ok(text) = res.text().await {
                 let trimmed = text.trim();
                 if trimmed.starts_with("http") {
+                    eprintln!("[Instagram] Catbox upload successful: {}", trimmed);
                     return Ok(trimmed.to_string());
                 }
             }
         }
-    }
-
-    // 2. Secondary fallback: Uguu.se
-    let uguu_part = reqwest::multipart::Part::bytes(file_bytes)
-        .file_name(filename)
-        .mime_str("video/mp4")?;
-
-    let uguu_form = reqwest::multipart::Form::new().part("files[]", uguu_part);
-
-    if let Ok(res) = client
-        .post("https://uguu.se/upload.php")
-        .multipart(uguu_form)
-        .send()
-        .await
-    {
-        if res.status().is_success() {
-            if let Ok(uguu) = res.json::<UguuResponse>().await {
-                if let Some(files) = uguu.files {
-                    if let Some(first) = files.first() {
-                        return Ok(first.url.clone());
-                    }
-                }
-            }
+        Ok(res) => {
+            eprintln!("[Instagram] Catbox upload returned status: {}", res.status());
+        }
+        Err(e) => {
+            eprintln!("[Instagram] Catbox request error: {}", e);
         }
     }
 
@@ -135,7 +177,12 @@ pub async fn test_connection(
                 .filter(|u| !u.trim().is_empty())
                 .ok_or_else(|| anyhow!("Webhook URL is required"))?;
 
-            let res = reqwest::Client::new()
+            let client = reqwest::Client::builder()
+                .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+                .timeout(Duration::from_secs(30))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new());
+            let res = client
                 .post(url)
                 .json(&json!({
                     "event": "clipon_ping",
@@ -204,7 +251,11 @@ pub async fn publish_reel_graph_api(
     video_path: &str,
     caption: &str,
 ) -> Result<String> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+        .timeout(Duration::from_secs(300))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
     let path = Path::new(video_path);
     if !path.exists() {
         return Err(anyhow!("Video file does not exist at: {video_path}"));
@@ -254,14 +305,14 @@ pub async fn publish_reel_graph_api(
 
         // 3. Poll container processing status
         let status_url = format!(
-            "https://graph.instagram.com/v20.0/{}?fields=status_code,status&access_token={}",
+            "https://graph.instagram.com/v20.0/{}?fields=status_code,status,error_message&access_token={}",
             container_id,
             access_token.trim()
         );
 
         let mut attempts = 0;
         let mut is_ready = false;
-        while attempts < 45 {
+        while attempts < 80 {
             sleep(Duration::from_secs(3)).await;
             attempts += 1;
 
@@ -271,15 +322,20 @@ pub async fn publish_reel_graph_api(
                         match code {
                             "FINISHED" => {
                                 is_ready = true;
+                                eprintln!("[Instagram] Container {} is FINISHED and ready to publish!", container_id);
                                 break;
                             }
                             "ERROR" => {
-                                return Err(anyhow!("Instagram failed to process video container"));
+                                let err_detail = st.error_message.unwrap_or_else(|| "Instagram rejected video format or processing failed".to_string());
+                                eprintln!("[Instagram] Container {} error: {}", container_id, err_detail);
+                                return Err(anyhow!("Instagram processing error: {err_detail}"));
                             }
                             "EXPIRED" => {
                                 return Err(anyhow!("Instagram container upload session expired"));
                             }
-                            _ => {} // IN_PROGRESS
+                            _ => {
+                                eprintln!("[Instagram] Container {} status: {} (attempt {}/80)", container_id, code, attempts);
+                            }
                         }
                     }
                 }
@@ -287,7 +343,7 @@ pub async fn publish_reel_graph_api(
         }
 
         if !is_ready {
-            return Err(anyhow!("Instagram video processing timed out after 135 seconds"));
+            return Err(anyhow!("Instagram video processing timed out after 4 minutes"));
         }
 
         // 4. Publish Media
@@ -388,7 +444,7 @@ pub async fn publish_reel_graph_api(
         }
 
         let status_url = format!(
-            "https://graph.facebook.com/v20.0/{}?fields=status_code,status&access_token={}",
+            "https://graph.facebook.com/v20.0/{}?fields=status_code,status,error_message&access_token={}",
             container_id,
             access_token.trim()
         );
@@ -396,7 +452,7 @@ pub async fn publish_reel_graph_api(
         let mut attempts = 0;
         let mut is_ready = false;
 
-        while attempts < 30 {
+        while attempts < 80 {
             sleep(Duration::from_secs(3)).await;
             attempts += 1;
 
@@ -406,15 +462,17 @@ pub async fn publish_reel_graph_api(
                         match code {
                             "FINISHED" => {
                                 is_ready = true;
+                                eprintln!("[Instagram FB] Container {} is FINISHED!", container_id);
                                 break;
                             }
                             "ERROR" => {
-                                return Err(anyhow!(
-                                    "Instagram failed to process video: {}",
-                                    st.status.unwrap_or_else(|| "Unknown processing error".to_string())
-                                ));
+                                let err_detail = st.error_message.unwrap_or_else(|| st.status.unwrap_or_else(|| "Unknown processing error".to_string()));
+                                eprintln!("[Instagram FB] Container {} error: {}", container_id, err_detail);
+                                return Err(anyhow!("Instagram failed to process video: {err_detail}"));
                             }
-                            _ => {}
+                            _ => {
+                                eprintln!("[Instagram FB] Container {} status: {} (attempt {}/80)", container_id, code, attempts);
+                            }
                         }
                     }
                 }
