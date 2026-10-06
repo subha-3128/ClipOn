@@ -592,12 +592,14 @@ async fn render_flat_clip_for_candidate(
     reframe_mode: Option<String>,
     output_dir: Option<String>,
     remove_silence: Option<bool>,
+    punch_zoom: Option<bool>,
 ) -> Result<String, String> {
     let db = state.db.clone();
     let data_dir = state.data_dir.clone();
     let mode = reframe_mode.clone();
     let out_dir = output_dir.clone();
     let silence_removal = remove_silence;
+    let punch = punch_zoom.unwrap_or(false);
 
     tokio::task::spawn_blocking(move || {
         let (candidate, project) = db
@@ -674,6 +676,7 @@ async fn render_flat_clip_for_candidate(
             ass_path.as_deref(),
             mode.as_deref(),
             should_remove_silence,
+            punch,
         ) {
             Ok(path) => {
                 let path_string = path.to_string_lossy().to_string();
@@ -701,6 +704,7 @@ async fn render_flat_clip_for_candidate(
                     None,
                     mode.as_deref(),
                     false,
+                    punch,
                 ) {
                     Ok(path) => {
                         let path_string = path.to_string_lossy().to_string();
@@ -1561,6 +1565,7 @@ async fn publish_candidate_to_instagram(
                 state.clone(),
                 candidate_id.clone(),
                 Some("vertical_crop".to_string()),
+                None,
                 None,
                 None,
             )

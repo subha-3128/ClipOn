@@ -513,6 +513,20 @@ pub fn build_silence_jumpcut_filter(
     Some((video_filter, audio_filter))
 }
 
+
+// =========================================================================
+// 5. ATTENTION RETENTION PUNCH-ZOOM ENGINE
+// =========================================================================
+
+/// Builds an FFmpeg attention retention punch-zoom filter for arbitrary canvas width and height.
+/// Punches 1.14x zoom for 1.6s every 5.5s interval to reset human visual attention.
+pub fn build_punch_zoom_filter(width: i64, height: i64) -> String {
+    format!(
+        "crop=w='2*trunc(({}/if(lt(mod(t,5.5),1.6),1.14,1.0))/2)':h='2*trunc(({}/if(lt(mod(t,5.5),1.6),1.14,1.0))/2)':x='({}-ow)/2':y='({}-oh)/2',scale={}:{}",
+        width, height, width, height, width, height
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -592,4 +606,16 @@ mod tests {
         assert!(ass.contains("Dialogue:"));
         assert!(ass.contains("MONEY"));
     }
+
+    #[test]
+    fn test_build_punch_zoom_filter() {
+        let f_9_16 = build_punch_zoom_filter(1080, 1920);
+        assert!(f_9_16.contains("1080/if(lt(mod(t,5.5),1.6),1.14,1.0)"));
+        assert!(f_9_16.contains("1920/if(lt(mod(t,5.5),1.6),1.14,1.0)"));
+        assert!(f_9_16.contains("scale=1080:1920"));
+
+        let f_16_9 = build_punch_zoom_filter(1920, 1080);
+        assert!(f_16_9.contains("scale=1920:1080"));
+    }
+
 }

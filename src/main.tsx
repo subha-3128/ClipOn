@@ -171,7 +171,7 @@ export type BusyState =
   | "clipCount"
   | "cut";
 
-export type ReframeMode = "smart_face_track" | "vertical_crop" | "podcast_split" | "punch_zoom" | "original";
+export type ReframeMode = "vertical_crop" | "podcast_split" | "original";
 export type SettingsTab = "ai" | "storage" | "export" | "system";
 
 // ===== Utility Helpers =====
@@ -274,14 +274,23 @@ function App() {
   const [clipsSaveDir, setClipsSaveDir] = useState(() => (localStorage.getItem("clipon_clips_dir") || localStorage.getItem("autoshorts_clips_dir")) || "");
   const [defaultFolders, setDefaultFolders] = useState<{ youtubeSaveDir: string; clipsOutputDir: string } | null>(null);
 
-  // Reframe Mode
+  // Reframe Mode & Modifiers
   const [removeSilence, setRemoveSilence] = useState<boolean>(() => {
     return localStorage.getItem("clipon_remove_silence") === "true";
   });
 
+  const [punchZoom, setPunchZoom] = useState<boolean>(() => {
+    const saved = localStorage.getItem("clipon_punch_zoom");
+    if (saved !== null) return saved === "true";
+    const oldMode = localStorage.getItem("clipon_reframe_mode");
+    return oldMode === "punch_zoom";
+  });
+
   const [reframeMode, setReframeMode] = useState<ReframeMode>(() => {
     const saved = (localStorage.getItem("clipon_reframe_mode") || localStorage.getItem("autoshorts_reframe_mode")) as any;
-    if (saved && saved !== "vertical_blur") return saved as ReframeMode;
+    if (saved === "podcast_split" || saved === "original" || saved === "vertical_crop") {
+      return saved as ReframeMode;
+    }
     return "vertical_crop";
   });
 
@@ -353,6 +362,7 @@ function App() {
   useEffect(() => { localStorage.setItem("clipon_youtube_dir", youtubeSaveDir); }, [youtubeSaveDir]);
   useEffect(() => { localStorage.setItem("clipon_clips_dir", clipsSaveDir); }, [clipsSaveDir]);
   useEffect(() => { localStorage.setItem("clipon_reframe_mode", reframeMode); }, [reframeMode]);
+  useEffect(() => { localStorage.setItem("clipon_punch_zoom", String(punchZoom)); }, [punchZoom]);
 
   // Initial load
   useEffect(() => {
@@ -930,7 +940,7 @@ function App() {
     setBusy("cut");
     setError(null);
     try {
-      await invoke<string>("render_flat_clip_for_candidate", { candidateId, reframeMode, outputDir: clipsSaveDir.trim() || null, removeSilence });
+      await invoke<string>("render_flat_clip_for_candidate", { candidateId, reframeMode, outputDir: clipsSaveDir.trim() || null, removeSilence, punchZoom });
       showToast("Clip rendered successfully!");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -951,7 +961,7 @@ function App() {
     try {
       for (const candidate of selected) {
         setRenderingCandidateId(candidate.id);
-        await invoke<string>("render_flat_clip_for_candidate", { candidateId: candidate.id, reframeMode, outputDir: clipsSaveDir.trim() || null, removeSilence });
+        await invoke<string>("render_flat_clip_for_candidate", { candidateId: candidate.id, reframeMode, outputDir: clipsSaveDir.trim() || null, removeSilence, punchZoom });
       }
       showToast(`Finished rendering ${selected.length} clips!`);
     } catch (err) {
@@ -1401,7 +1411,7 @@ function App() {
                       </div>
                     </div>
 
-                    {/* Bottom Row: Framing Aspect Ratio & Studio Sound Mastering */}
+                    {/* Bottom Row: Framing Aspect Ratio, Retention Punch Zoom, Dead-Air Cuts & Studio Audio */}
                     <div className="controls-row bottom-row">
                       <div className="reframe-picker">
                         <span className="reframe-label">Framing:</span>
@@ -1410,13 +1420,24 @@ function App() {
                           onChange={(e) => setReframeMode(e.target.value as ReframeMode)}
                           title="Video Framing Aspect Ratio"
                         >
-                          <option value="smart_face_track">🤖 Smart Face-Tracking (Vision)</option>
-                          <option value="vertical_crop">9:16 Center Crop</option>
-                          <option value="podcast_split">🎙️ Smart Podcast Split (Dual-Face Tracked)</option>
-                          <option value="punch_zoom">9:16 Retention Punch-Zoom</option>
-                          <option value="original">16:9 Original</option>
+                          <option value="vertical_crop">Center Crop (9:16)</option>
+                          <option value="podcast_split">Podcast Split Screen (9:16)</option>
+                          <option value="original">Original Aspect Ratio</option>
                         </select>
                       </div>
+
+                      <button
+                        type="button"
+                        className={`punch-zoom-toggle ${punchZoom ? "active" : ""}`}
+                        onClick={() => {
+                          const next = !punchZoom;
+                          setPunchZoom(next);
+                          localStorage.setItem("clipon_punch_zoom", String(next));
+                        }}
+                        title="Auto-Punch 1.14x Retention Zoom Cuts Every 5.5s to Reset Visual Focus Across Any Framing"
+                      >
+                        <Zap size={12} /> {punchZoom ? "Punch Zoom: ON" : "Punch Zoom: OFF"}
+                      </button>
 
                       <button
                         type="button"
@@ -2101,17 +2122,34 @@ function App() {
               {settingsTab === "export" && (
                 <div className="settings-form-stack">
                   <div className="settings-field-group">
-                    <label>Default Reframe Aspect Ratio</label>
+                    <label>Default Video Framing</label>
                     <select
                       value={reframeMode}
                       onChange={(e) => setReframeMode(e.target.value as ReframeMode)}
                     >
-                      <option value="smart_face_track">🤖 Smart Face-Tracking (Apple Vision Neural Engine)</option>
-                      <option value="vertical_crop">9:16 Center Crop (Standard 9:16)</option>
-                      <option value="podcast_split">🎙️ Smart Podcast Split (Host on top, Guest on bottom, Dual-Face Tracked)</option>
-                      <option value="punch_zoom">9:16 Retention Punch-Zoom (Attention cuts every 5.5s)</option>
-                      <option value="original">16:9 Original</option>
+                      <option value="vertical_crop">1. Center Crop (Standard 9:16)</option>
+                      <option value="podcast_split">2. Podcast Split Screen (Dual-Face Tracked 9:16)</option>
+                      <option value="original">3. Original Aspect Ratio</option>
                     </select>
+                  </div>
+
+                  <div className="settings-field-group">
+                    <label>Retention Punch Zoom</label>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4 }}>
+                      <input
+                        type="checkbox"
+                        id="setting_punch_zoom"
+                        checked={punchZoom}
+                        onChange={(e) => {
+                          setPunchZoom(e.target.checked);
+                          localStorage.setItem("clipon_punch_zoom", String(e.target.checked));
+                        }}
+                        style={{ width: 16, height: 16, accentColor: "#a855f7", cursor: "pointer" }}
+                      />
+                      <label htmlFor="setting_punch_zoom" style={{ margin: 0, cursor: "pointer", fontSize: 13, color: "var(--text-secondary)" }}>
+                        Retention Punch Zoom Cuts (Punches 1.14x visual zoom every 5.5s to maintain viewer attention across Center Crop, Podcast Split Screen, or Original)
+                      </label>
+                    </div>
                   </div>
 
                   <div className="settings-field-group">

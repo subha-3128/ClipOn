@@ -250,6 +250,7 @@ pub fn render_flat_clip(
     ass_subtitle_path: Option<&Path>,
     reframe_mode: Option<&str>,
     remove_silence: bool,
+    punch_zoom: bool,
 ) -> Result<PathBuf> {
     if !command_exists("ffmpeg") {
         return Err(anyhow!("ffmpeg is not installed or not available on PATH"));
@@ -267,6 +268,7 @@ pub fn render_flat_clip(
     let has_video = probe.as_ref().map(|p| p.has_video).unwrap_or(false);
 
     let mode = reframe_mode.unwrap_or("vertical_crop");
+    let effective_punch = punch_zoom || mode == "punch_zoom";
 
     // Optional dead-air jump-cut filter
     let jump_cuts = if remove_silence {
@@ -283,7 +285,16 @@ pub fn render_flat_clip(
         if has_video {
             match mode {
                 "original" => {
+                    let iw_i = probe.as_ref().and_then(|p| p.width).unwrap_or(1920) as i64;
+                    let ih_i = probe.as_ref().and_then(|p| p.height).unwrap_or(1080) as i64;
                     let mut filter = "scale='2*trunc(iw/2)':'2*trunc(ih/2)'".to_string();
+                    if effective_punch {
+                        filter = format!(
+                            "{},{}",
+                            filter,
+                            crate::pro_editor::build_punch_zoom_filter(iw_i, ih_i)
+                        );
+                    }
                     if let Some(ass) = ass_subtitle_path {
                         if ass.exists() {
                             let escaped = ass
@@ -311,6 +322,13 @@ pub fn render_flat_clip(
                         "crop=w='2*trunc(min(iw,ih*9/16)/2)':h='2*trunc(min(ih,iw*16/9)/2)':x='{}':y='(ih-oh)/2',scale=1080:1920",
                         crop_x
                     );
+                    if effective_punch {
+                        filter = format!(
+                            "{},{}",
+                            filter,
+                            crate::pro_editor::build_punch_zoom_filter(1080, 1920)
+                        );
+                    }
                     if let Some(ass) = ass_subtitle_path {
                         if ass.exists() {
                             let escaped = ass
@@ -382,6 +400,17 @@ pub fn render_flat_clip(
                         cw_i, ch_i, x_bot, y_bot,
                     );
 
+                    let pre_sub_stream = if effective_punch {
+                        filter_graph = format!(
+                            "{};[divided]{}[punched]",
+                            filter_graph,
+                            crate::pro_editor::build_punch_zoom_filter(1080, 1920)
+                        );
+                        "[punched]"
+                    } else {
+                        "[divided]"
+                    };
+
                     if let Some(ass) = ass_subtitle_path {
                         if ass.exists() {
                             let escaped = ass
@@ -389,60 +418,45 @@ pub fn render_flat_clip(
                                 .replace('\\', "/")
                                 .replace(':', "\\:")
                                 .replace('\'', "'\\''");
-                            filter_graph = format!("{};[divided]ass='{}'[v_sub]", filter_graph, escaped);
+                            filter_graph = format!("{};{}ass='{}'[v_sub]", filter_graph, pre_sub_stream, escaped);
                             if let Some((ref v_jump, _)) = jump_cuts {
                                 filter_graph = format!("{};[v_sub]{}[v_out]", filter_graph, v_jump);
                             } else {
                                 filter_graph = format!("{};[v_sub]null[v_out]", filter_graph);
                             }
                         } else {
-                            filter_graph = format!("{};[divided]null[v_out]", filter_graph);
+                            filter_graph = format!("{};{}null[v_out]", filter_graph, pre_sub_stream);
                         }
                     } else if let Some(drawtext) = drawtext_filters {
                         if !drawtext.is_empty() {
-                            filter_graph = format!("{};[divided]{}[v_draw]", filter_graph, drawtext);
+                            filter_graph = format!("{};{}{}[v_draw]", filter_graph, pre_sub_stream, drawtext);
                             if let Some((ref v_jump, _)) = jump_cuts {
                                 filter_graph = format!("{};[v_draw]{}[v_out]", filter_graph, v_jump);
                             } else {
                                 filter_graph = format!("{};[v_draw]null[v_out]", filter_graph);
                             }
                         } else {
-                            filter_graph = format!("{};[divided]null[v_out]", filter_graph);
+                            filter_graph = format!("{};{}null[v_out]", filter_graph, pre_sub_stream);
                         }
                     } else {
                         if let Some((ref v_jump, _)) = jump_cuts {
-                            filter_graph = format!("{};[divided]{}[v_out]", filter_graph, v_jump);
+                            filter_graph = format!("{};{}{}[v_out]", filter_graph, pre_sub_stream, v_jump);
                         } else {
-                            filter_graph = format!("{};[divided]null[v_out]", filter_graph);
+                            filter_graph = format!("{};{}null[v_out]", filter_graph, pre_sub_stream);
                         }
                     }
                     cmd.args(["-filter_complex", &filter_graph, "-map", "[v_out]", "-map", "0:a?"]);
                 }
-                "punch_zoom" => {
-                    // Feature 1: Attention Retention Zoom Cuts (Subtle 1.12x punch zoom cut every 5.5s)
-                    let mut filter = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,crop=w='iw/if(lt(mod(t,5.5),1.6),1.14,1.0)':h='ih/if(lt(mod(t,5.5),1.6),1.14,1.0)':x='(iw-ow)/2':y='(ih-oh)/2',scale=1080:1920".to_string();
-                    if let Some(ass) = ass_subtitle_path {
-                        if ass.exists() {
-                            let escaped = ass
-                                .to_string_lossy()
-                                .replace('\\', "/")
-                                .replace(':', "\\:")
-                                .replace('\'', "'\\''");
-                            filter = format!("{},ass='{}'", filter, escaped);
-                        }
-                    } else if let Some(drawtext) = drawtext_filters {
-                        if !drawtext.is_empty() {
-                            filter = format!("{},{}", filter, drawtext);
-                        }
-                    }
-                    if let Some((ref v_jump, _)) = jump_cuts {
-                        filter = format!("{},{}", filter, v_jump);
-                    }
-                    cmd.args(["-vf", &filter]);
-                }
                 _ => {
                     // "vertical_crop" (9:16 Center Crop)
                     let mut filter = "crop=w='2*trunc(min(iw,ih*9/16)/2)':h='2*trunc(min(ih,iw*16/9)/2)',scale=1080:1920".to_string();
+                    if effective_punch {
+                        filter = format!(
+                            "{},{}",
+                            filter,
+                            crate::pro_editor::build_punch_zoom_filter(1080, 1920)
+                        );
+                    }
                     if let Some(ass) = ass_subtitle_path {
                         if ass.exists() {
                             let escaped = ass
