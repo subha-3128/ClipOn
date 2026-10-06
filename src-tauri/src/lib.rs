@@ -5,6 +5,7 @@ mod media;
 mod models;
 mod transcription;
 mod pro_editor;
+pub mod dynamic_podcast_reframing;
 
 use std::path::PathBuf;
 
@@ -918,9 +919,15 @@ pub fn run() {
             std::fs::create_dir_all(data_dir.join("models")).context("creating models directory")?;
             let env_path = data_dir.join(".env");
             if !env_path.exists() {
-                let project_env = std::path::PathBuf::from("/Users/subhajitbepari/Desktop/AutoShorts/.env");
-                if project_env.exists() {
-                    let _ = std::fs::copy(&project_env, &env_path);
+                let candidates = [
+                    PathBuf::from(".env"),
+                    PathBuf::from("../.env"),
+                ];
+                for cand in &candidates {
+                    if cand.exists() {
+                        let _ = std::fs::copy(cand, &env_path);
+                        break;
+                    }
                 }
             }
             if env_path.exists() {
@@ -1482,10 +1489,10 @@ async fn save_instagram_credentials(
     std::env::set_var("INSTAGRAM_ACCOUNT_ID", acc_id);
     std::env::set_var("INSTAGRAM_ACCESS_TOKEN", token);
 
-    let paths = vec![
-        state.data_dir.join(".env"),
-        PathBuf::from("/Users/subhajitbepari/Desktop/AutoShorts/.env"),
-    ];
+    let mut paths = vec![state.data_dir.join(".env")];
+    if PathBuf::from(".env").exists() {
+        paths.push(PathBuf::from(".env"));
+    }
 
     for path in paths {
         let mut lines = Vec::new();

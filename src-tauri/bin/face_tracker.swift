@@ -3,6 +3,18 @@ import Vision
 import AppKit
 import Accelerate
 
+// =============================================================================
+// DynamicPodcastReframing Data Model
+// =============================================================================
+
+enum TrackingState: String, Codable {
+    case tentative          // First detected, needs enterThreshold confirmations
+    case visible            // Actively detected & matched in current frame
+    case temporarilyLost    // Missed in frame, within lostTimeout window (holds position)
+    case reappeared         // Recovered from temporarilyLost back to visible
+    case exited             // Absent for longer than lostTimeout (inactive)
+}
+
 struct PersonKeyframe: Codable {
     let t: Double
     let x: Double
@@ -11,6 +23,7 @@ struct PersonKeyframe: Codable {
     let height: Double
     let confidence: Double
     let visible: Bool
+    let state: String
 }
 
 struct PersonTrack: Codable {
@@ -27,12 +40,29 @@ struct LayoutSegment: Codable {
     let person_ids: [Int]
 }
 
-// Backward compatibility keyframe struct
 struct LegacyPodcastKeyframe: Codable {
     let t: Double
     let x: Double
     let y: Double
 }
+
+struct DetectedFace {
+    let x: Double
+    let y: Double
+    let width: Double
+    let height: Double
+    let embedding: [Float]
+    let confidence: Double
+}
+
+struct FrameSample {
+    let t: Double
+    let faces: [DetectedFace]
+}
+
+// =============================================================================
+// Helper Functions: Binary Lookup & Math
+// =============================================================================
 
 func findBinary(name: String) -> String {
     let candidates = [
@@ -46,36 +76,6 @@ func findBinary(name: String) -> String {
         }
     }
     return name
-}
-
-func extractFrames(videoPath: String, startSec: Double, durationSec: Double, count: Int, outDir: String) -> [String] {
-    let fm = FileManager.default
-    try? fm.createDirectory(atPath: outDir, withIntermediateDirectories: true, attributes: nil)
-    
-    let ffmpegPath = findBinary(name: "ffmpeg")
-    let fpsStr = String(format: "%.4f", Double(count) / max(1.0, durationSec))
-    let outPattern = "\(outDir)/frame_%03d.jpg"
-    
-    let p = Process()
-    p.executableURL = URL(fileURLWithPath: ffmpegPath)
-    p.arguments = [
-        "-nostdin",
-        "-y",
-        "-ss", String(format: "%.3f", startSec),
-        "-t", String(format: "%.3f", durationSec),
-        "-i", videoPath,
-        "-vf", "fps=\(fpsStr)",
-        "-vframes", "\(count)",
-        outPattern
-    ]
-    p.standardInput = FileHandle.nullDevice
-    p.standardOutput = FileHandle.nullDevice
-    p.standardError = FileHandle.nullDevice
-    try? p.run()
-    p.waitUntilExit()
-    
-    let files = (try? fm.contentsOfDirectory(atPath: outDir).filter { $0.hasSuffix(".jpg") }.sorted()) ?? []
-    return files.map { "\(outDir)/\($0)" }
 }
 
 func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
@@ -122,43 +122,65 @@ func extractFaceEmbedding(from observation: VNFaceObservation) -> [Float] {
     return signature
 }
 
-struct DetectedFace {
-    let x: Double
-    let y: Double
-    let width: Double
-    let height: Double
-    let yaw: Double
-    let embedding: [Float]
-    let confidence: Double
+func extractDenseFrames(videoPath: String, startSec: Double, durationSec: Double, fps: Double, outDir: String) -> [(Double, String)] {
+    let fm = FileManager.default
+    try? fm.createDirectory(atPath: outDir, withIntermediateDirectories: true, attributes: nil)
+    
+    let ffmpegPath = findBinary(name: "ffmpeg")
+    let outPattern = "\(outDir)/frame_%04d.jpg"
+    
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: ffmpegPath)
+    p.arguments = [
+        "-nostdin",
+        "-y",
+        "-ss", String(format: "%.3f", startSec),
+        "-t", String(format: "%.3f", durationSec),
+        "-i", videoPath,
+        "-vf", String(format: "fps=%.2f", fps),
+        outPattern
+    ]
+    p.standardInput = FileHandle.nullDevice
+    p.standardOutput = FileHandle.nullDevice
+    p.standardError = FileHandle.nullDevice
+    try? p.run()
+    p.waitUntilExit()
+    
+    let files = (try? fm.contentsOfDirectory(atPath: outDir).filter { $0.hasSuffix(".jpg") }.sorted()) ?? []
+    var result: [(Double, String)] = []
+    let frameInterval = 1.0 / fps
+    for (idx, file) in files.enumerated() {
+        let t = min(durationSec, Double(idx) * frameInterval)
+        result.append((t, "\(outDir)/\(file)"))
+    }
+    return result
 }
 
-struct FrameSample {
-    let t: Double
-    let faces: [DetectedFace]
-}
+// =============================================================================
+// PersonTrackInstance with State Machine
+// =============================================================================
 
-class KnownPerson {
+class PersonTrackInstance {
     let id: Int
-    var name: String
-    var homeX: Double
-    var homeY: Double
+    let name: String
+    var state: TrackingState = .tentative
     var embedding: [Float]
     var lastKnownX: Double
     var lastKnownY: Double
     var lastKnownW: Double
     var lastKnownH: Double
-    var lastSeenTime: Double = -999.0
-    var firstSeenTime: Double = -999.0
-    var detectionCount: Int = 0
     var smoothX: Double
     var smoothY: Double
+    var lastSeenTime: Double = -999.0
+    var firstConfirmedTime: Double = -999.0
+    var consecutiveHits: Int = 0
+    var consecutiveMisses: Int = 0
+    var totalDetections: Int = 0
     var keyframes: [PersonKeyframe] = []
-    
+
     init(id: Int, name: String, x: Double, y: Double, w: Double, h: Double, emb: [Float], t: Double) {
         self.id = id
         self.name = name
-        self.homeX = x
-        self.homeY = y
         self.embedding = emb
         self.lastKnownX = x
         self.lastKnownY = y
@@ -166,421 +188,383 @@ class KnownPerson {
         self.lastKnownH = h
         self.smoothX = x
         self.smoothY = y
-        self.lastSeenTime = -999.0
-        self.firstSeenTime = -999.0
-        self.detectionCount = 0
+        self.consecutiveHits = 1
+        self.totalDetections = 1
+        self.lastSeenTime = t
+    }
+
+    func updateMatched(face: DetectedFace, t: Double, enterThreshold: Int) {
+        consecutiveHits += 1
+        consecutiveMisses = 0
+        totalDetections += 1
+        lastSeenTime = t
+
+        // State transitions
+        switch state {
+        case .tentative:
+            if consecutiveHits >= enterThreshold {
+                state = .visible
+                if firstConfirmedTime < 0.0 {
+                    firstConfirmedTime = t
+                }
+            }
+        case .temporarilyLost:
+            state = .reappeared
+        case .reappeared, .visible:
+            state = .visible
+        case .exited:
+            if consecutiveHits >= enterThreshold {
+                state = .visible
+            }
+        }
+
+        lastKnownX = face.x
+        lastKnownY = face.y
+        lastKnownW = face.width
+        lastKnownH = face.height
+
+        // Exponential moving average for facial feature embedding
+        for i in 0..<embedding.count {
+            embedding[i] = 0.92 * embedding[i] + 0.08 * face.embedding[i]
+        }
+
+        // Smooth coordinate interpolation (alpha = 0.60)
+        let alpha = 0.60
+        smoothX = smoothX + alpha * (face.x - smoothX)
+        smoothY = smoothY + alpha * (face.y - smoothY)
+
+        keyframes.append(PersonKeyframe(
+            t: t,
+            x: smoothX,
+            y: smoothY,
+            width: face.width,
+            height: face.height,
+            confidence: face.confidence,
+            visible: true,
+            state: state.rawValue
+        ))
+    }
+
+    func updateMissed(t: Double, lostTimeout: Double) {
+        consecutiveMisses += 1
+        consecutiveHits = 0
+
+        let timeSinceSeen = t - lastSeenTime
+
+        // State transitions
+        switch state {
+        case .visible, .reappeared:
+            if timeSinceSeen <= lostTimeout {
+                state = .temporarilyLost
+            } else {
+                state = .exited
+            }
+        case .temporarilyLost:
+            if timeSinceSeen > lostTimeout {
+                state = .exited
+            }
+        case .tentative:
+            if timeSinceSeen > 1.5 {
+                state = .exited
+            }
+        case .exited:
+            break
+        }
+
+        // Hold last valid crop position with slight relaxation damping (alpha = 0.05)
+        keyframes.append(PersonKeyframe(
+            t: t,
+            x: smoothX,
+            y: smoothY,
+            width: lastKnownW,
+            height: lastKnownH,
+            confidence: 0.0,
+            visible: false,
+            state: state.rawValue
+        ))
+    }
+
+    var isActiveInScene: Bool {
+        return state == .visible || state == .temporarilyLost || state == .reappeared
     }
 }
 
-func runTracker() {
-    let args = CommandLine.arguments
-    guard args.count >= 4 else {
-        print("{\"avg_center_x\": 0.5, \"face_detected\": false, \"podcast\": {\"top_center_x\": 0.26, \"top_center_y\": 0.38, \"bottom_center_x\": 0.78, \"bottom_center_y\": 0.38, \"two_faces_detected\": false, \"people\": [], \"segments\": []}}")
-        return
-    }
+// =============================================================================
+// DynamicPodcastReframingEngine
+// =============================================================================
 
-    let videoPath = args[1]
-    let startSec = Double(args[2]) ?? 0.0
-    let durationSec = Double(args[3]) ?? 1.0
+class DynamicPodcastReframingEngine {
+    // Configuration thresholds
+    let sampleRateFps: Double = 3.5            // 3.5 samples/sec (285ms intervals)
+    let enterThresholdHits: Int = 3            // Require 3 consecutive hits (~0.85s) to confirm entry
+    let confidenceThreshold: Double = 0.45     // Minimum face detection confidence
+    let lostTimeoutSec: Double = 3.5           // 3.5s hysteresis for temporary occlusion / looking away
+    let minLayoutDurationSec: Double = 3.0      // Hysteresis: minimum duration a layout must persist
+    let maxSupportedPeople: Int = 3            // Up to 3 active people in 9:16 vertical canvas
 
-    let tempDir = NSTemporaryDirectory() + "clipon_trk_\(UUID().uuidString)"
-    defer {
-        try? FileManager.default.removeItem(atPath: tempDir)
-    }
-
-    // High frequency sampling (~1.0s interval, min 15, max 90 frames)
-    let step = 1.0
-    let frameCount = max(15, min(90, Int(ceil(durationSec / step)) + 1))
-    let frameFiles = extractFrames(videoPath: videoPath, startSec: startSec, durationSec: durationSec, count: frameCount, outDir: tempDir)
-
-    var samples: [FrameSample] = []
-    var allFaceCenters: [Double] = []
-
-    for (idx, filePath) in frameFiles.enumerated() {
-        let t = Double(idx) * (durationSec / Double(max(1, frameFiles.count - 1)))
-        guard let img = NSImage(contentsOfFile: filePath),
-              let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            samples.append(FrameSample(t: t, faces: []))
-            continue
+    func execute(videoPath: String, startSec: Double, durationSec: Double) -> String {
+        let tempDir = NSTemporaryDirectory() + "clipon_pod_\(UUID().uuidString)"
+        defer {
+            try? FileManager.default.removeItem(atPath: tempDir)
         }
 
-        let req = VNDetectFaceLandmarksRequest()
-        let handler = VNImageRequestHandler(cgImage: cg, options: [:])
-        try? handler.perform([req])
+        // Step 1: High-density temporal sampling (3.5 samples/sec)
+        let frameList = extractDenseFrames(
+            videoPath: videoPath,
+            startSec: startSec,
+            durationSec: durationSec,
+            fps: sampleRateFps,
+            outDir: tempDir
+        )
 
-        var detected: [DetectedFace] = []
-        for face in req.results ?? [] {
-            let x = face.boundingBox.midX
-            let y = 1.0 - face.boundingBox.midY
-            let w = face.boundingBox.width
-            let h = face.boundingBox.height
-            let yaw = face.yaw?.doubleValue ?? 0.0
-            let emb = extractFaceEmbedding(from: face)
-            let conf = Double(face.confidence)
-            detected.append(DetectedFace(x: x, y: y, width: w, height: h, yaw: yaw, embedding: emb, confidence: conf))
-            allFaceCenters.append(x)
-        }
-        // Sort left to right
-        detected.sort { $0.x < $1.x }
-        samples.append(FrameSample(t: t, faces: detected))
-    }
+        var samples: [FrameSample] = []
+        var allFaceCenters: [Double] = []
 
-    // =========================================================================
-    // PHASE 1: Discover Persistent Identities
-    // =========================================================================
-    var knownPersons: [KnownPerson] = []
-
-    // 1. Check for multi-face wide shots with distinct separated faces
-    let multiSamples = samples.filter { sample in
-        if sample.faces.count >= 2 {
-            // Ensure faces are well-separated
-            let sep = sample.faces.last!.x - sample.faces.first!.x
-            return sep > 0.12
-        }
-        return false
-    }
-
-    if let bestMulti = multiSamples.max(by: { $0.faces.count < $1.faces.count }) {
-        // We have a wide shot with 2 or 3+ people
-        for (idx, face) in bestMulti.faces.prefix(3).enumerated() {
-            let person = KnownPerson(
-                id: idx + 1,
-                name: "Person \(idx + 1)",
-                x: face.x,
-                y: face.y,
-                w: face.width,
-                h: face.height,
-                emb: face.embedding,
-                t: 0.0
-            )
-            knownPersons.append(person)
-        }
-    } else {
-        // Check single faces: distinguish Person 1 and Person 2 using yaw and X
-        var p1Faces: [DetectedFace] = []
-        var p2Faces: [DetectedFace] = []
-        for s in samples {
-            for f in s.faces {
-                if f.yaw > 0.10 || (f.yaw >= -0.05 && f.x < 0.45) {
-                    p1Faces.append(f)
-                } else if f.yaw < -0.10 || (f.yaw <= 0.05 && f.x > 0.55) {
-                    p2Faces.append(f)
-                }
+        for (t, filePath) in frameList {
+            guard let img = NSImage(contentsOfFile: filePath),
+                  let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                samples.append(FrameSample(t: t, faces: []))
+                continue
             }
+
+            let req = VNDetectFaceLandmarksRequest()
+            let handler = VNImageRequestHandler(cgImage: cg, options: [:])
+            try? handler.perform([req])
+
+            var detected: [DetectedFace] = []
+            for face in req.results ?? [] {
+                if Double(face.confidence) < confidenceThreshold { continue }
+                let x = face.boundingBox.midX
+                let y = 1.0 - face.boundingBox.midY
+                let w = face.boundingBox.width
+                let h = face.boundingBox.height
+                let emb = extractFaceEmbedding(from: face)
+                let conf = Double(face.confidence)
+                detected.append(DetectedFace(x: x, y: y, width: w, height: h, embedding: emb, confidence: conf))
+                allFaceCenters.append(x)
+            }
+            samples.append(FrameSample(t: t, faces: detected))
         }
-        if !p1Faces.isEmpty {
-            let f = p1Faces.first!
-            let avgX = min(0.40, p1Faces.map { $0.x }.reduce(0, +) / Double(p1Faces.count))
-            let avgY = p1Faces.map { $0.y }.reduce(0, +) / Double(p1Faces.count)
-            knownPersons.append(KnownPerson(id: 1, name: "Person 1", x: avgX, y: avgY, w: f.width, h: f.height, emb: f.embedding, t: 0.0))
+
+        // Step 2: Temporal Identity Discovery & Tracking
+        // Persistent identities: Track 1 = Person 1, Track 2 = Person 2, Track 3 = Person 3
+        // Discovered chronologically through face embedding similarity.
+        // Screen position (left/right) does NOT define or reorder person IDs!
+        var personTracks: [PersonTrackInstance] = []
+
+        struct FrameStateRecord {
+            let t: Double
+            let activePersonIds: [Int]
         }
-        if !p2Faces.isEmpty {
-            let f = p2Faces.first!
-            let avgX = max(0.60, p2Faces.map { $0.x }.reduce(0, +) / Double(p2Faces.count))
-            let avgY = p2Faces.map { $0.y }.reduce(0, +) / Double(p2Faces.count)
-            knownPersons.append(KnownPerson(id: 2, name: "Person 2", x: avgX, y: avgY, w: f.width, h: f.height, emb: f.embedding, t: 0.0))
-        }
-    }
 
-    if knownPersons.isEmpty {
-        // Fallback single person centered
-        let firstFace = samples.flatMap { $0.faces }.first
-        let x = firstFace?.x ?? 0.50
-        let y = firstFace?.y ?? 0.38
-        let emb = firstFace?.embedding ?? Array(repeating: 0.0, count: 64)
-        knownPersons.append(KnownPerson(id: 1, name: "Person 1", x: x, y: y, w: 0.2, h: 0.2, emb: emb, t: 0.0))
-    }
+        var frameRecords: [FrameStateRecord] = []
 
-    // Ensure sorted left-to-right home positions
-    knownPersons.sort { $0.homeX < $1.homeX }
-    for (i, p) in knownPersons.enumerated() {
-        p.name = "Person \(i + 1)"
-    }
+        for sample in samples {
+            let t = sample.t
+            var assignedFaceIndices = Set<Int>()
 
-    // =========================================================================
-    // PHASE 2: Dynamic Per-Frame Tracking with Identity Locking
-    // =========================================================================
-    struct SampleMatchRecord {
-        let t: Double
-        let matchedPersonIds: Set<Int>
-    }
+            // A. Match existing tracks to detected faces via appearance embeddings
+            for track in personTracks {
+                var bestFaceIdx = -1
+                var bestSim: Float = 0.38 // Similarity threshold
 
-    var sampleMatches: [SampleMatchRecord] = []
+                for (fIdx, face) in sample.faces.enumerated() {
+                    if assignedFaceIndices.contains(fIdx) { continue }
+                    let sim = cosineSimilarity(face.embedding, track.embedding)
+                    if sim > bestSim {
+                        bestSim = sim
+                        bestFaceIdx = fIdx
+                    }
+                }
 
-    for sample in samples {
-        let t = sample.t
-        var assignedFaces = Set<Int>()
-        var matchedPersonIds = Set<Int>()
-
-        // 1. Match each known person to detected faces
-        for person in knownPersons {
-            var bestIdx = -1
-            var bestScore: Float = -1.0
-            for (fIdx, face) in sample.faces.enumerated() {
-                if assignedFaces.contains(fIdx) { continue }
-                let sim = cosineSimilarity(face.embedding, person.embedding)
-                let refX = person.detectionCount > 0 ? person.lastKnownX : person.homeX
-                let refY = person.detectionCount > 0 ? person.lastKnownY : person.homeY
-                let dist = sqrt(pow(face.x - refX, 2) + pow(face.y - refY, 2))
-                let score = sim - Float(dist * 0.35)
-                if score > bestScore && sim >= 0.38 {
-                    bestScore = score
-                    bestIdx = fIdx
+                if bestFaceIdx != -1 {
+                    assignedFaceIndices.insert(bestFaceIdx)
+                    track.updateMatched(face: sample.faces[bestFaceIdx], t: t, enterThreshold: enterThresholdHits)
+                } else {
+                    track.updateMissed(t: t, lostTimeout: lostTimeoutSec)
                 }
             }
 
-            if bestIdx != -1 {
-                // Confirmed match
-                let face = sample.faces[bestIdx]
-                assignedFaces.insert(bestIdx)
-                matchedPersonIds.insert(person.id)
-
-                person.lastKnownX = face.x
-                person.lastKnownY = face.y
-                person.lastKnownW = face.width
-                person.lastKnownH = face.height
-                person.lastSeenTime = t
-                if person.firstSeenTime < 0.0 {
-                    person.firstSeenTime = t
+            // B. Unmatched faces discover new persistent individuals (up to maxSupportedPeople)
+            if sample.faces.count > assignedFaceIndices.count && personTracks.count < maxSupportedPeople {
+                for (fIdx, face) in sample.faces.enumerated() {
+                    if !assignedFaceIndices.contains(fIdx) && personTracks.count < maxSupportedPeople {
+                        let newId = personTracks.count + 1
+                        let newTrack = PersonTrackInstance(
+                            id: newId,
+                            name: "Person \(newId)",
+                            x: face.x,
+                            y: face.y,
+                            w: face.width,
+                            h: face.height,
+                            emb: face.embedding,
+                            t: t
+                        )
+                        personTracks.append(newTrack)
+                        assignedFaceIndices.insert(fIdx)
+                    }
                 }
-                person.detectionCount += 1
+            }
 
-                // EMA update embedding
-                for j in 0..<person.embedding.count {
-                    person.embedding[j] = 0.90 * person.embedding[j] + 0.10 * face.embedding[j]
+            // Collect active people in this frame
+            let activeIds = personTracks.filter { $0.isActiveInScene }.map { $0.id }
+            frameRecords.append(FrameStateRecord(t: t, activePersonIds: activeIds))
+        }
+
+        // Filter valid tracks (must have had at least enterThresholdHits or be the sole detected track)
+        let confirmedTracks = personTracks.filter {
+            $0.totalDetections >= enterThresholdHits || personTracks.count == 1
+        }
+
+        // Clamp early entries (< 2.5s) to t=0.0
+        for track in confirmedTracks {
+            if track.firstConfirmedTime >= 0.0 && track.firstConfirmedTime <= 2.5 {
+                track.firstConfirmedTime = 0.0
+            }
+        }
+
+        // Step 3: Layout State Machine with Minimum Layout Duration Hysteresis
+        var rawSegments: [LayoutSegment] = []
+
+        if !frameRecords.isEmpty {
+            var currentLayout = "single"
+            var currentPersonIds: [Int] = [1]
+            var currentStart = 0.0
+
+            let determineLayoutType = { (ids: [Int]) -> String in
+                switch ids.count {
+                case 1: return "single"
+                case 2: return "split_two"
+                case 3: return "split_three"
+                default: return ids.count >= 3 ? "split_three" : (ids.count == 2 ? "split_two" : "single")
                 }
+            }
 
-                // Smooth coordinate transition
-                let alpha = 0.65
-                person.smoothX = person.smoothX + alpha * (face.x - person.smoothX)
-                person.smoothY = person.smoothY + alpha * (face.y - person.smoothY)
+            // Initialize first frame layout
+            let firstIds = frameRecords[0].activePersonIds.filter { id in confirmedTracks.contains(where: { $0.id == id }) }
+            if !firstIds.isEmpty {
+                currentPersonIds = firstIds
+                currentLayout = determineLayoutType(currentPersonIds)
+            } else if let firstTrack = confirmedTracks.first {
+                currentPersonIds = [firstTrack.id]
+                currentLayout = "single"
+            }
 
-                person.keyframes.append(PersonKeyframe(
-                    t: t,
-                    x: person.smoothX,
-                    y: person.smoothY,
-                    width: face.width,
-                    height: face.height,
-                    confidence: face.confidence,
-                    visible: true
+            for rec in frameRecords {
+                let validIds = rec.activePersonIds.filter { id in confirmedTracks.contains(where: { $0.id == id }) }
+                let targetIds = validIds.isEmpty ? currentPersonIds : validIds
+                let targetLayout = determineLayoutType(targetIds)
+
+                let elapsedInLayout = rec.t - currentStart
+
+                // Layout transition triggers only when new state persists and min duration met
+                if (targetLayout != currentLayout || targetIds != currentPersonIds) && elapsedInLayout >= minLayoutDurationSec {
+                    rawSegments.append(LayoutSegment(
+                        start: currentStart,
+                        end: rec.t,
+                        number_of_people: currentPersonIds.count,
+                        layout_type: currentLayout,
+                        person_ids: currentPersonIds
+                    ))
+                    currentStart = rec.t
+                    currentLayout = targetLayout
+                    currentPersonIds = targetIds
+                }
+            }
+
+            rawSegments.append(LayoutSegment(
+                start: currentStart,
+                end: durationSec,
+                number_of_people: currentPersonIds.count,
+                layout_type: currentLayout,
+                person_ids: currentPersonIds
+            ))
+        }
+
+        // Step 4: Stabilize Segments (merge any residual segment < minLayoutDurationSec)
+        var stabilizedSegments: [LayoutSegment] = []
+        for seg in rawSegments {
+            let dur = seg.end - seg.start
+            if dur < minLayoutDurationSec && !stabilizedSegments.isEmpty {
+                let prev = stabilizedSegments.removeLast()
+                stabilizedSegments.append(LayoutSegment(
+                    start: prev.start,
+                    end: seg.end,
+                    number_of_people: prev.number_of_people,
+                    layout_type: prev.layout_type,
+                    person_ids: prev.person_ids
                 ))
             } else {
-                // Temporarily disappeared/absent: HOLD last valid or home position
-                let targetX = person.detectionCount > 0 ? person.lastKnownX : person.homeX
-                let targetY = person.detectionCount > 0 ? person.lastKnownY : person.homeY
-                let alpha = 0.30
-                person.smoothX = person.smoothX + alpha * (targetX - person.smoothX)
-                person.smoothY = person.smoothY + alpha * (targetY - person.smoothY)
-
-                person.keyframes.append(PersonKeyframe(
-                    t: t,
-                    x: person.smoothX,
-                    y: person.smoothY,
-                    width: person.lastKnownW,
-                    height: person.lastKnownH,
-                    confidence: 0.0,
-                    visible: false
-                ))
+                stabilizedSegments.append(seg)
             }
         }
 
-        // 2. Discover new persons appearing later in video (up to 3 total)
-        if sample.faces.count > assignedFaces.count && knownPersons.count < 3 {
-            for (fIdx, face) in sample.faces.enumerated() {
-                if !assignedFaces.contains(fIdx) {
-                    let newId = knownPersons.count + 1
-                    let newP = KnownPerson(
-                        id: newId,
-                        name: "Person \(newId)",
-                        x: face.x,
-                        y: face.y,
-                        w: face.width,
-                        h: face.height,
-                        emb: face.embedding,
-                        t: t
-                    )
-                    newP.smoothX = face.x
-                    newP.smoothY = face.y
-                    newP.firstSeenTime = t
-                    newP.lastSeenTime = t
-                    newP.detectionCount = 1
-                    newP.keyframes.append(PersonKeyframe(
-                        t: t,
-                        x: face.x,
-                        y: face.y,
-                        width: face.width,
-                        height: face.height,
-                        confidence: face.confidence,
-                        visible: true
-                    ))
-                    knownPersons.append(newP)
-                    assignedFaces.insert(fIdx)
-                    matchedPersonIds.insert(newId)
-                }
-            }
-        }
-
-        sampleMatches.append(SampleMatchRecord(t: t, matchedPersonIds: matchedPersonIds))
-    }
-
-    // Filter confirmed persons: ignore 1-frame transient noise unless only 1 person exists
-    let validPersons = knownPersons.filter { p in
-        p.detectionCount >= 2 || knownPersons.count == 1 || p.detectionCount == (knownPersons.map { $0.detectionCount }.max() ?? 1)
-    }
-
-    // Clamp early entries (< 3.0s) to clip start and late exits to clip end
-    for p in validPersons {
-        if p.firstSeenTime >= 0.0 && p.firstSeenTime <= 3.0 {
-            p.firstSeenTime = 0.0
-        }
-        if p.lastSeenTime >= (durationSec - 3.0) {
-            p.lastSeenTime = durationSec
-        }
-    }
-
-    struct FrameLayoutRecord {
-        let t: Double
-        let layoutType: String
-        let activePersonIds: [Int]
-    }
-
-    var frameRecords: [FrameLayoutRecord] = []
-
-    for match in sampleMatches {
-        let t = match.t
-        let activePersons = validPersons.filter { p in
-            guard p.firstSeenTime >= 0.0 && t >= p.firstSeenTime else { return false }
-            let timeSinceSeen = t - p.lastSeenTime
-            return match.matchedPersonIds.contains(p.id) || timeSinceSeen <= 3.5 || t <= p.lastSeenTime
-        }
-
-        let layoutType: String
-        let activeIds: [Int]
-        if activePersons.count == 1 {
-            layoutType = "single"
-            activeIds = [activePersons[0].id]
-        } else if activePersons.count == 2 {
-            layoutType = "split_two"
-            activeIds = [activePersons[0].id, activePersons[1].id]
-        } else if activePersons.count >= 3 {
-            layoutType = "split_three"
-            activeIds = Array(activePersons.prefix(3).map { $0.id })
-        } else {
-            layoutType = "single"
-            activeIds = [validPersons.first?.id ?? 1]
-        }
-
-        frameRecords.append(FrameLayoutRecord(t: t, layoutType: layoutType, activePersonIds: activeIds))
-    }
-
-    // =========================================================================
-    // PHASE 3: Build & Stabilize Layout Timeline Segments
-    // =========================================================================
-    var rawSegments: [LayoutSegment] = []
-    if !frameRecords.isEmpty {
-        var currType = frameRecords[0].layoutType
-        var currIds = frameRecords[0].activePersonIds
-        var currStart = 0.0
-
-        for i in 1..<frameRecords.count {
-            let rec = frameRecords[i]
-            if rec.layoutType != currType || rec.activePersonIds != currIds {
-                rawSegments.append(LayoutSegment(
-                    start: currStart,
-                    end: rec.t,
-                    number_of_people: currIds.count,
-                    layout_type: currType,
-                    person_ids: currIds
-                ))
-                currStart = rec.t
-                currType = rec.layoutType
-                currIds = rec.activePersonIds
-            }
-        }
-        rawSegments.append(LayoutSegment(
-            start: currStart,
-            end: durationSec,
-            number_of_people: currIds.count,
-            layout_type: currType,
-            person_ids: currIds
-        ))
-    }
-
-    // Stabilize segments (merge short glitches < 2.5s into neighboring segment)
-    var stabilizedSegments: [LayoutSegment] = []
-    for seg in rawSegments {
-        let dur = seg.end - seg.start
-        if dur < 2.5 && !stabilizedSegments.isEmpty {
-            // Merge with previous segment
-            let prev = stabilizedSegments.removeLast()
+        if stabilizedSegments.isEmpty {
+            let count = min(maxSupportedPeople, max(1, confirmedTracks.count))
+            let type = count == 1 ? "single" : (count == 2 ? "split_two" : "split_three")
+            let ids = Array(confirmedTracks.prefix(count).map { $0.id })
             stabilizedSegments.append(LayoutSegment(
-                start: prev.start,
-                end: seg.end,
-                number_of_people: prev.number_of_people,
-                layout_type: prev.layout_type,
-                person_ids: prev.person_ids
+                start: 0.0,
+                end: durationSec,
+                number_of_people: count,
+                layout_type: type,
+                person_ids: ids.isEmpty ? [1] : ids
             ))
-        } else {
-            stabilizedSegments.append(seg)
         }
+
+        // Step 5: JSON Output Generation
+        let encoder = JSONEncoder()
+
+        let tracksOutput: [PersonTrack] = confirmedTracks.map { track in
+            PersonTrack(id: track.id, name: track.name, keyframes: track.keyframes)
+        }
+
+        let peopleJson = (try? String(data: encoder.encode(tracksOutput), encoding: .utf8)) ?? "[]"
+        let segmentsJson = (try? String(data: encoder.encode(stabilizedSegments), encoding: .utf8)) ?? "[]"
+
+        let p1Kfs: [LegacyPodcastKeyframe] = (confirmedTracks.first?.keyframes ?? []).map {
+            LegacyPodcastKeyframe(t: $0.t, x: $0.x, y: $0.y)
+        }
+        let p2Kfs: [LegacyPodcastKeyframe] = (confirmedTracks.count > 1 ? confirmedTracks[1].keyframes : []).map {
+            LegacyPodcastKeyframe(t: $0.t, x: $0.x, y: $0.y)
+        }
+
+        let p1Json = (try? String(data: encoder.encode(p1Kfs), encoding: .utf8)) ?? "[]"
+        let p2Json = (try? String(data: encoder.encode(p2Kfs), encoding: .utf8)) ?? "[]"
+
+        let avgCenterX = allFaceCenters.isEmpty ? 0.5 : (allFaceCenters.reduce(0, +) / Double(allFaceCenters.count))
+        let p1HomeX = confirmedTracks.first?.lastKnownX ?? 0.26
+        let p1HomeY = confirmedTracks.first?.lastKnownY ?? 0.38
+        let p2HomeX = confirmedTracks.count > 1 ? confirmedTracks[1].lastKnownX : 0.78
+        let p2HomeY = confirmedTracks.count > 1 ? confirmedTracks[1].lastKnownY : 0.38
+        let twoFacesDetected = confirmedTracks.count >= 2
+
+        return String(
+            format: "{\"avg_center_x\": %.3f, \"face_detected\": %@, \"width\": 1920, \"height\": 1080, \"podcast\": {\"top_center_x\": %.3f, \"top_center_y\": %.3f, \"bottom_center_x\": %.3f, \"bottom_center_y\": %.3f, \"two_faces_detected\": %@, \"person_1_keyframes\": %@, \"person_2_keyframes\": %@, \"people\": %@, \"segments\": %@}}",
+            avgCenterX,
+            allFaceCenters.isEmpty ? "false" : "true",
+            p1HomeX, p1HomeY,
+            p2HomeX, p2HomeY,
+            twoFacesDetected ? "true" : "false",
+            p1Json,
+            p2Json,
+            peopleJson,
+            segmentsJson
+        )
     }
-
-    if stabilizedSegments.isEmpty {
-        let count = min(3, max(1, knownPersons.count))
-        let type = count == 1 ? "single" : (count == 2 ? "split_two" : "split_three")
-        let ids = Array(knownPersons.prefix(count).map { $0.id })
-        stabilizedSegments.append(LayoutSegment(
-            start: 0.0,
-            end: durationSec,
-            number_of_people: count,
-            layout_type: type,
-            person_ids: ids
-        ))
-    }
-
-    // =========================================================================
-    // PHASE 4: Format JSON Response
-    // =========================================================================
-    let encoder = JSONEncoder()
-
-    // Export PersonTrack collection
-    let personTracks: [PersonTrack] = knownPersons.map { p in
-        PersonTrack(id: p.id, name: p.name, keyframes: p.keyframes)
-    }
-
-    let peopleJson = (try? String(data: encoder.encode(personTracks), encoding: .utf8)) ?? "[]"
-    let segmentsJson = (try? String(data: encoder.encode(stabilizedSegments), encoding: .utf8)) ?? "[]"
-
-    // Backward compatibility keyframes
-    let p1Kfs: [LegacyPodcastKeyframe] = (knownPersons.first?.keyframes ?? []).map {
-        LegacyPodcastKeyframe(t: $0.t, x: $0.x, y: $0.y)
-    }
-    let p2Kfs: [LegacyPodcastKeyframe] = (knownPersons.count > 1 ? knownPersons[1].keyframes : []).map {
-        LegacyPodcastKeyframe(t: $0.t, x: $0.x, y: $0.y)
-    }
-
-    let p1Json = (try? String(data: encoder.encode(p1Kfs), encoding: .utf8)) ?? "[]"
-    let p2Json = (try? String(data: encoder.encode(p2Kfs), encoding: .utf8)) ?? "[]"
-
-    let avgCenterX = allFaceCenters.isEmpty ? 0.5 : (allFaceCenters.reduce(0, +) / Double(allFaceCenters.count))
-    let p1HomeX = knownPersons.first?.homeX ?? 0.26
-    let p1HomeY = knownPersons.first?.homeY ?? 0.38
-    let p2HomeX = knownPersons.count > 1 ? knownPersons[1].homeX : 0.78
-    let p2HomeY = knownPersons.count > 1 ? knownPersons[1].homeY : 0.38
-    let twoFacesDetected = knownPersons.count >= 2
-
-    print(String(
-        format: "{\"avg_center_x\": %.3f, \"face_detected\": %@, \"width\": 1920, \"height\": 1080, \"podcast\": {\"top_center_x\": %.3f, \"top_center_y\": %.3f, \"bottom_center_x\": %.3f, \"bottom_center_y\": %.3f, \"two_faces_detected\": %@, \"person_1_keyframes\": %@, \"person_2_keyframes\": %@, \"people\": %@, \"segments\": %@}}",
-        avgCenterX,
-        allFaceCenters.isEmpty ? "false" : "true",
-        p1HomeX, p1HomeY,
-        p2HomeX, p2HomeY,
-        twoFacesDetected ? "true" : "false",
-        p1Json,
-        p2Json,
-        peopleJson,
-        segmentsJson
-    ))
 }
 
-runTracker()
+// Entry Point
+let args = CommandLine.arguments
+if args.count < 4 {
+    print("{\"avg_center_x\": 0.5, \"face_detected\": false, \"podcast\": {\"top_center_x\": 0.26, \"top_center_y\": 0.38, \"bottom_center_x\": 0.78, \"bottom_center_y\": 0.38, \"two_faces_detected\": false, \"people\": [], \"segments\": []}}")
+    exit(0)
+}
+
+let videoPath = args[1]
+let startSec = Double(args[2]) ?? 0.0
+let durationSec = Double(args[3]) ?? 1.0
+
+let engine = DynamicPodcastReframingEngine()
+let output = engine.execute(videoPath: videoPath, startSec: startSec, durationSec: durationSec)
+print(output)

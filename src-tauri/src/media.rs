@@ -130,40 +130,11 @@ pub fn extract_audio(source_path: &str, project_dir: &Path) -> Result<PathBuf> {
     Ok(output_path)
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct PersonKeyframe {
-    pub t: f64,
-    pub x: f64,
-    pub y: f64,
-    #[serde(default)]
-    pub width: Option<f64>,
-    #[serde(default)]
-    pub height: Option<f64>,
-    #[serde(default)]
-    pub confidence: Option<f64>,
-    #[serde(default)]
-    pub visible: bool,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct PersonTrack {
-    pub id: usize,
-    #[serde(default)]
-    pub name: Option<String>,
-    pub keyframes: Vec<PersonKeyframe>,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct LayoutSegment {
-    pub start: f64,
-    pub end: f64,
-    pub number_of_people: usize,
-    pub layout_type: String, // "single", "split_two", "split_three"
-    pub person_ids: Vec<usize>,
-}
+#[allow(unused_imports)]
+pub use crate::dynamic_podcast_reframing::{
+    DynamicPodcastReframing, DynamicPodcastReframingResult, LayoutSegment, PersonKeyframe,
+    PersonTrack, PodcastFaceTracking,
+};
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -180,28 +151,6 @@ pub struct PodcastKeyframe {
     pub t: f64,
     pub x: f64,
     pub y: f64,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct PodcastFaceTracking {
-    pub top_center_x: f64,
-    pub top_center_y: f64,
-    pub bottom_center_x: f64,
-    pub bottom_center_y: f64,
-    pub solo_a_x: Option<f64>,
-    pub solo_a_y: Option<f64>,
-    pub solo_b_x: Option<f64>,
-    pub solo_b_y: Option<f64>,
-    pub top_reaction_t: Option<f64>,
-    pub bottom_reaction_t: Option<f64>,
-    pub is_multicam: Option<bool>,
-    pub two_faces_detected: bool,
-    pub shots: Option<Vec<PodcastShot>>,
-    pub person_1_keyframes: Option<Vec<PodcastKeyframe>>,
-    pub person_2_keyframes: Option<Vec<PodcastKeyframe>>,
-    pub people: Option<Vec<PersonTrack>>,
-    pub segments: Option<Vec<LayoutSegment>>,
 }
 
 pub fn build_dynamic_crop_expr(
@@ -426,81 +375,10 @@ pub fn build_segment_filter_graph(
     }
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct FaceTrackerResult {
-    pub avg_center_x: f64,
-    pub face_detected: bool,
-    pub width: Option<f64>,
-    pub height: Option<f64>,
-    pub podcast: Option<PodcastFaceTracking>,
-}
+pub type FaceTrackerResult = DynamicPodcastReframingResult;
 
 pub fn detect_faces_full(source_path: &str, start_sec: f64, duration_sec: f64) -> FaceTrackerResult {
-    let mut tracker_candidates = vec![
-        "/Users/subhajitbepari/Desktop/AutoShorts/src-tauri/bin/clipon-face-tracker".to_string(),
-        "/Applications/ClipOn.app/Contents/MacOS/clipon-face-tracker".to_string(),
-        "/Applications/ClipOn.app/Contents/Resources/bin/clipon-face-tracker".to_string(),
-    ];
-
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            tracker_candidates.push(parent.join("clipon-face-tracker").to_string_lossy().to_string());
-            tracker_candidates.push(parent.join("../Resources/bin/clipon-face-tracker").to_string_lossy().to_string());
-            tracker_candidates.push(parent.join("bin/clipon-face-tracker").to_string_lossy().to_string());
-        }
-    }
-
-    let mut tracker_bin = None;
-    for path in &tracker_candidates {
-        if Path::new(path).exists() {
-            tracker_bin = Some(path.clone());
-            break;
-        }
-    }
-
-    if let Some(bin) = tracker_bin {
-        if let Ok(output) = Command::new(bin)
-            .args([
-                source_path,
-                &format!("{start_sec:.3}"),
-                &format!("{duration_sec:.3}"),
-            ])
-            .output()
-        {
-            if output.status.success() {
-                if let Ok(res) = serde_json::from_slice::<FaceTrackerResult>(&output.stdout) {
-                    return res;
-                }
-            }
-        }
-    }
-
-    FaceTrackerResult {
-        avg_center_x: 0.50,
-        face_detected: false,
-        width: None,
-        height: None,
-        podcast: Some(PodcastFaceTracking {
-            top_center_x: 0.26,
-            top_center_y: 0.38,
-            bottom_center_x: 0.78,
-            bottom_center_y: 0.38,
-            solo_a_x: None,
-            solo_a_y: None,
-            solo_b_x: None,
-            solo_b_y: None,
-            top_reaction_t: None,
-            bottom_reaction_t: None,
-            is_multicam: Some(false),
-            two_faces_detected: false,
-            shots: None,
-            person_1_keyframes: None,
-            person_2_keyframes: None,
-            people: None,
-            segments: None,
-        }),
-    }
+    DynamicPodcastReframing::analyze(source_path, start_sec, duration_sec)
 }
 
 /// Detect face horizontal center X in normalized coords [0.0, 1.0] using Apple Vision.
@@ -984,15 +862,7 @@ mod tests {
         let people = vec![PersonTrack {
             id: 1,
             name: Some("Host".to_string()),
-            keyframes: vec![PersonKeyframe {
-                t: 0.0,
-                x: 0.5,
-                y: 0.38,
-                width: Some(0.2),
-                height: Some(0.2),
-                confidence: Some(1.0),
-                visible: true,
-            }],
+            keyframes: vec![PersonKeyframe::new(0.0, 0.5, 0.38)],
         }];
         let filter = build_segment_filter_graph("single", &[1], &people, 1920.0, 1080.0, 0.0, 10.0, 0.5, 0.38, 0.5, 0.38);
         assert!(filter.contains("crop="));
@@ -1005,12 +875,12 @@ mod tests {
             PersonTrack {
                 id: 1,
                 name: Some("P1".to_string()),
-                keyframes: vec![PersonKeyframe { t: 0.0, x: 0.26, y: 0.38, width: None, height: None, confidence: None, visible: true }],
+                keyframes: vec![PersonKeyframe::new(0.0, 0.26, 0.38)],
             },
             PersonTrack {
                 id: 2,
                 name: Some("P2".to_string()),
-                keyframes: vec![PersonKeyframe { t: 0.0, x: 0.78, y: 0.38, width: None, height: None, confidence: None, visible: true }],
+                keyframes: vec![PersonKeyframe::new(0.0, 0.78, 0.38)],
             },
         ];
         let filter = build_segment_filter_graph("split_two", &[1, 2], &people, 1920.0, 1080.0, 0.0, 10.0, 0.26, 0.38, 0.78, 0.38);
@@ -1025,17 +895,17 @@ mod tests {
             PersonTrack {
                 id: 1,
                 name: Some("P1".to_string()),
-                keyframes: vec![PersonKeyframe { t: 0.0, x: 0.25, y: 0.38, width: None, height: None, confidence: None, visible: true }],
+                keyframes: vec![PersonKeyframe::new(0.0, 0.25, 0.38)],
             },
             PersonTrack {
                 id: 2,
                 name: Some("P2".to_string()),
-                keyframes: vec![PersonKeyframe { t: 0.0, x: 0.75, y: 0.38, width: None, height: None, confidence: None, visible: true }],
+                keyframes: vec![PersonKeyframe::new(0.0, 0.75, 0.38)],
             },
             PersonTrack {
                 id: 3,
                 name: Some("P3".to_string()),
-                keyframes: vec![PersonKeyframe { t: 0.0, x: 0.50, y: 0.60, width: None, height: None, confidence: None, visible: true }],
+                keyframes: vec![PersonKeyframe::new(0.0, 0.50, 0.60)],
             },
         ];
         let filter = build_segment_filter_graph("split_three", &[1, 2, 3], &people, 1920.0, 1080.0, 0.0, 10.0, 0.26, 0.38, 0.78, 0.38);
