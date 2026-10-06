@@ -1424,32 +1424,32 @@ function App() {
                           <Mic size={14} />
                         </div>
                         <div>
-                          <div className="podcast-banner-title">Podcast Split-Screen Mode (16:9 → 9:16)</div>
+                          <div className="podcast-banner-title">Dynamic Podcast Reframing (16:9 → 9:16)</div>
                           <p className="podcast-banner-desc">
-                            Two-person table podcast reframing. Top section tracks Speaker 1 (Left), Bottom section tracks Speaker 2 (Right). Both speakers remain visible in their own sections throughout all cuts with synchronized captions.
+                            Adaptive multi-person timeline reframing: 1 Person (Full 9:16), 2 People (Top/Bottom Split), 3 People (2 Top + 1 Bottom). Dynamically tracks persistent identities, preserves framing during temporary absences, and keeps captions synchronized along dividing seams.
                           </p>
                         </div>
                       </div>
                       <div className="podcast-tracking-status-grid">
                         <div className="tracking-status-item">
                           <span className="dot dot-blue" />
-                          <span className="tracking-label">Top Section:</span>
-                          <span className="tracking-val">Speaker 1 (Left Table)</span>
+                          <span className="tracking-label">Layouts:</span>
+                          <span className="tracking-val">1P Full / 2P Split / 3P Dynamic</span>
                         </div>
                         <div className="tracking-status-item">
                           <span className="dot dot-purple" />
-                          <span className="tracking-label">Bottom Section:</span>
-                          <span className="tracking-val">Speaker 2 (Right Table)</span>
+                          <span className="tracking-label">Identities:</span>
+                          <span className="tracking-val">Persistent Face Tracking</span>
                         </div>
                         <div className="tracking-status-item">
                           <span className="dot dot-green" />
                           <span className="tracking-label">Synchronization:</span>
-                          <span className="tracking-val">1:1 Original Timestamps</span>
+                          <span className="tracking-val">1:1 Source Timestamps</span>
                         </div>
                         <div className="tracking-status-item">
                           <span className="dot dot-amber" />
                           <span className="tracking-label">Captions:</span>
-                          <span className="tracking-val">Divider Seam-Aligned</span>
+                          <span className="tracking-val">Seam Line Centered</span>
                         </div>
                       </div>
                     </div>
@@ -1526,7 +1526,7 @@ function App() {
                           title="Video Framing Aspect Ratio"
                         >
                           <option value="vertical_crop">Center Crop (9:16)</option>
-                          <option value="podcast_split">Podcast Split Screen (9:16 Dual-Person)</option>
+                          <option value="podcast_split">Podcast Studio (Dynamic 1P / 2P / 3P Split 9:16)</option>
                           <option value="original">Original Aspect Ratio</option>
                         </select>
                       </div>
@@ -1777,10 +1777,10 @@ function App() {
             <div className="home-dashboard">
               <header className="home-header">
                 <div className="home-header-info">
-                  <h2>{appSection === "podcast" ? "Podcast Studio (9:16 Split)" : "All Projects"}</h2>
+                  <h2>{appSection === "podcast" ? "Podcast Studio (Dynamic 9:16)" : "All Projects"}</h2>
                   <p>
                     {appSection === "podcast"
-                      ? "Transform 16:9 two-person table podcasts into 9:16 vertical split-screen clips for Instagram Reels."
+                      ? "Transform 16:9 podcasts into dynamic multi-person vertical clips (1, 2, or 3 people) for Instagram Reels."
                       : "Select a project below or import a new media file to get started."}
                   </p>
                 </div>
@@ -2254,7 +2254,7 @@ function App() {
                       onChange={(e) => setReframeMode(e.target.value as ReframeMode)}
                     >
                       <option value="vertical_crop">1. Center Crop (Standard 9:16)</option>
-                      <option value="podcast_split">2. Podcast Split Screen (Dual-Face Tracked 9:16)</option>
+                      <option value="podcast_split">2. Podcast Studio (Dynamic 1P / 2P / 3P Split 9:16)</option>
                       <option value="original">3. Original Aspect Ratio</option>
                     </select>
                   </div>

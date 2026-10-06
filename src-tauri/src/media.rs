@@ -131,7 +131,42 @@ pub fn extract_audio(source_path: &str, project_dir: &Path) -> Result<PathBuf> {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PersonKeyframe {
+    pub t: f64,
+    pub x: f64,
+    pub y: f64,
+    #[serde(default)]
+    pub width: Option<f64>,
+    #[serde(default)]
+    pub height: Option<f64>,
+    #[serde(default)]
+    pub confidence: Option<f64>,
+    #[serde(default)]
+    pub visible: bool,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PersonTrack {
+    pub id: usize,
+    #[serde(default)]
+    pub name: Option<String>,
+    pub keyframes: Vec<PersonKeyframe>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LayoutSegment {
+    pub start: f64,
+    pub end: f64,
+    pub number_of_people: usize,
+    pub layout_type: String, // "single", "split_two", "split_three"
+    pub person_ids: Vec<usize>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PodcastShot {
     pub start: f64,
     pub end: f64,
@@ -165,6 +200,8 @@ pub struct PodcastFaceTracking {
     pub shots: Option<Vec<PodcastShot>>,
     pub person_1_keyframes: Option<Vec<PodcastKeyframe>>,
     pub person_2_keyframes: Option<Vec<PodcastKeyframe>>,
+    pub people: Option<Vec<PersonTrack>>,
+    pub segments: Option<Vec<LayoutSegment>>,
 }
 
 pub fn build_dynamic_crop_expr(
@@ -262,6 +299,133 @@ pub fn build_dynamic_crop_expr(
     (build_expr(&pts_x, max_x), build_expr(&pts_y, max_y))
 }
 
+pub fn build_segment_filter_graph(
+    layout_type: &str,
+    assigned_person_ids: &[usize],
+    people: &[PersonTrack],
+    iw_f: f64,
+    ih_f: f64,
+    seg_start: f64,
+    seg_end: f64,
+    fallback_p1_x: f64,
+    fallback_p1_y: f64,
+    fallback_p2_x: f64,
+    fallback_p2_y: f64,
+) -> String {
+    let get_person_kfs = |person_id: usize| -> Vec<PodcastKeyframe> {
+        if let Some(p) = people.iter().find(|pt| pt.id == person_id) {
+            let mut out = Vec::new();
+            for kf in &p.keyframes {
+                if kf.t >= seg_start - 1.0 && kf.t <= seg_end + 1.0 {
+                    out.push(PodcastKeyframe {
+                        t: (kf.t - seg_start).max(0.0),
+                        x: kf.x,
+                        y: kf.y,
+                    });
+                }
+            }
+            if !out.is_empty() {
+                return out;
+            }
+            if let Some(first) = p.keyframes.first() {
+                return vec![PodcastKeyframe { t: 0.0, x: first.x, y: first.y }];
+            }
+        }
+        Vec::new()
+    };
+
+    match layout_type {
+        "single" => {
+            // Full 9:16 vertical crop centered/face-tracked on Person 1
+            let ch = ih_f;
+            let cw = ((ch * 9.0 / 16.0) / 2.0).round() * 2.0;
+            let p_id = assigned_person_ids.first().copied().unwrap_or(1);
+            let kfs = get_person_kfs(p_id);
+            let (fb_x, fb_y) = if p_id == 2 {
+                (fallback_p2_x, fallback_p2_y)
+            } else if p_id == 3 {
+                (0.50, fallback_p2_y)
+            } else {
+                (fallback_p1_x, fallback_p1_y)
+            };
+            let (x_expr, y_expr) = build_dynamic_crop_expr(
+                if kfs.is_empty() { None } else { Some(&kfs) },
+                iw_f,
+                ih_f,
+                cw,
+                ch,
+                fb_x,
+                fb_y,
+            );
+            format!(
+                "[0:v]crop={}:{}:{}:{},scale=1080:1920",
+                cw as i64, ch as i64, x_expr, y_expr
+            )
+        }
+        "split_three" => {
+            // Two people top (540x960 each), one person bottom (1080x960 full width)
+            let ch_top = ((ih_f * 0.60) / 2.0).round() * 2.0;
+            let cw_top = ((ch_top * 9.0 / 16.0) / 2.0).round() * 2.0;
+            let ch_bot = ((ih_f * 0.50) / 2.0).round() * 2.0;
+            let cw_bot = ((ch_bot * 9.0 / 8.0) / 2.0).round() * 2.0;
+
+            let p1_id = assigned_person_ids.get(0).copied().unwrap_or(1);
+            let p2_id = assigned_person_ids.get(1).copied().unwrap_or(2);
+            let p3_id = assigned_person_ids.get(2).copied().unwrap_or(3);
+
+            let p1_kfs = get_person_kfs(p1_id);
+            let p2_kfs = get_person_kfs(p2_id);
+            let p3_kfs = get_person_kfs(p3_id);
+
+            let (p1_x, p1_y) = build_dynamic_crop_expr(
+                if p1_kfs.is_empty() { None } else { Some(&p1_kfs) },
+                iw_f, ih_f, cw_top, ch_top, fallback_p1_x, fallback_p1_y,
+            );
+            let (p2_x, p2_y) = build_dynamic_crop_expr(
+                if p2_kfs.is_empty() { None } else { Some(&p2_kfs) },
+                iw_f, ih_f, cw_top, ch_top, fallback_p2_x, fallback_p2_y,
+            );
+            let (p3_x, p3_y) = build_dynamic_crop_expr(
+                if p3_kfs.is_empty() { None } else { Some(&p3_kfs) },
+                iw_f, ih_f, cw_bot, ch_bot, 0.50, fallback_p2_y,
+            );
+
+            format!(
+                "[0:v]crop={}:{}:{}:{},scale=540:960[p1];                 [0:v]crop={}:{}:{}:{},scale=540:960[p2];                 [p1][p2]hstack[top_row];                 [0:v]crop={}:{}:{}:{},scale=1080:960[bot];                 [top_row][bot]vstack[stacked];                 [stacked]drawbox=x=0:y=956:w=1080:h=8:color=0x0a0d14@0.95:t=fill,                          drawbox=x=0:y=958:w=1080:h=3:color=0x38bdf8@0.9:t=fill,                          drawbox=x=537:y=0:w=6:h=960:color=0x0a0d14@0.95:t=fill,                          drawbox=x=539:y=0:w=2:h=960:color=0x38bdf8@0.9:t=fill",
+                cw_top as i64, ch_top as i64, p1_x, p1_y,
+                cw_top as i64, ch_top as i64, p2_x, p2_y,
+                cw_bot as i64, ch_bot as i64, p3_x, p3_y,
+            )
+        }
+        _ => {
+            // Default "split_two": Two horizontal sections (Top = Person 1, Bottom = Person 2)
+            let ch = ((ih_f * 0.50) / 2.0).round() * 2.0;
+            let cw = ((ch * 9.0 / 8.0) / 2.0).round() * 2.0;
+
+            let p1_id = assigned_person_ids.get(0).copied().unwrap_or(1);
+            let p2_id = assigned_person_ids.get(1).copied().unwrap_or(2);
+
+            let p1_kfs = get_person_kfs(p1_id);
+            let p2_kfs = get_person_kfs(p2_id);
+
+            let (top_x, top_y) = build_dynamic_crop_expr(
+                if p1_kfs.is_empty() { None } else { Some(&p1_kfs) },
+                iw_f, ih_f, cw, ch, fallback_p1_x, fallback_p1_y,
+            );
+            let (bot_x, bot_y) = build_dynamic_crop_expr(
+                if p2_kfs.is_empty() { None } else { Some(&p2_kfs) },
+                iw_f, ih_f, cw, ch, fallback_p2_x, fallback_p2_y,
+            );
+
+            format!(
+                "[0:v]crop={}:{}:{}:{},scale=1080:960[top];                 [0:v]crop={}:{}:{}:{},scale=1080:960[bot];                 [top][bot]vstack[stacked];                 [stacked]drawbox=x=0:y=956:w=1080:h=8:color=0x0a0d14@0.95:t=fill,                          drawbox=x=0:y=958:w=1080:h=3:color=0x38bdf8@0.9:t=fill",
+                cw as i64, ch as i64, top_x, top_y,
+                cw as i64, ch as i64, bot_x, bot_y,
+            )
+        }
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct FaceTrackerResult {
@@ -333,6 +497,8 @@ pub fn detect_faces_full(source_path: &str, start_sec: f64, duration_sec: f64) -
             shots: None,
             person_1_keyframes: None,
             person_2_keyframes: None,
+            people: None,
+            segments: None,
         }),
     }
 }
@@ -462,53 +628,175 @@ pub fn render_flat_clip(
                     }
                     cmd.args(["-vf", &filter]);
                 }
-                "podcast_split" => {
-                    // Smart Two-Person Dynamic Face-Tracked Podcast Split-Screen (9:16)
+                                "podcast_split" => {
+                    // Dynamic Timeline-Based Multi-Person Podcast Reframing (9:16)
                     let iw_f = probe.as_ref().and_then(|p| p.width).unwrap_or(1920) as f64;
                     let ih_f = probe.as_ref().and_then(|p| p.height).unwrap_or(1080) as f64;
 
-                    // 9:8 box for each section (half of 9:16 vertical screen)
-                    let ch = ((ih_f * 0.50) / 2.0).round() * 2.0;
-                    let cw = ((ch * 9.0 / 8.0) / 2.0).round() * 2.0;
-                    let cw_i = cw as i64;
-                    let ch_i = ch as i64;
-
                     let pod = tracker_info.podcast.as_ref();
-                    let p1_kfs = pod.and_then(|p| p.person_1_keyframes.as_deref());
-                    let p2_kfs = pod.and_then(|p| p.person_2_keyframes.as_deref());
+                    let people = pod.and_then(|p| p.people.as_deref()).unwrap_or(&[]);
+                    let segments = pod.and_then(|p| p.segments.as_deref()).unwrap_or(&[]);
 
                     let top_fallback_x = pod.map(|p| p.top_center_x).unwrap_or(0.26);
                     let top_fallback_y = pod.map(|p| p.top_center_y).unwrap_or(0.38);
                     let bot_fallback_x = pod.map(|p| p.bottom_center_x).unwrap_or(0.78);
                     let bot_fallback_y = pod.map(|p| p.bottom_center_y).unwrap_or(0.38);
 
-                    let (top_x_expr, top_y_expr) = build_dynamic_crop_expr(
-                        p1_kfs,
+                    // Check if multiple layout transitions occur
+                    let has_multi_layout = segments.len() > 1 && {
+                        let first_type = &segments[0].layout_type;
+                        let first_ids = &segments[0].person_ids;
+                        segments.iter().any(|s| &s.layout_type != first_type || &s.person_ids != first_ids)
+                    };
+
+                    if has_multi_layout {
+                        // Multi-segment timeline execution:
+                        // Render each layout segment, concatenate seamlessly, then finish pipeline
+                        let temp_dir = std::env::temp_dir().join(format!("clipon_pod_{}", uuid::Uuid::new_v4()));
+                        let _ = std::fs::create_dir_all(&temp_dir);
+
+                        let mut seg_files = Vec::new();
+                        for (idx, seg) in segments.iter().enumerate() {
+                            let seg_dur = (seg.end - seg.start).max(0.1);
+                            let seg_abs_start = start_sec + seg.start;
+                            let seg_filter = format!(
+                                "{}[seg_out]",
+                                build_segment_filter_graph(
+                                    &seg.layout_type,
+                                    &seg.person_ids,
+                                    people,
+                                    iw_f,
+                                    ih_f,
+                                    seg.start,
+                                    seg.end,
+                                    top_fallback_x,
+                                    top_fallback_y,
+                                    bot_fallback_x,
+                                    bot_fallback_y,
+                                )
+                            );
+                            let seg_out_path = temp_dir.join(format!("seg_{:03}.mp4", idx));
+                            let mut seg_cmd = Command::new(resolve_binary("ffmpeg"));
+                            seg_cmd.arg("-nostdin");
+                            seg_cmd.args([
+                                "-y",
+                                "-ss", &format!("{seg_abs_start:.3}"),
+                                "-t", &format!("{seg_dur:.3}"),
+                                "-i", source_path,
+                                "-filter_complex", &seg_filter,
+                                "-map", "[seg_out]",
+                                "-an",
+                            ]);
+                            if use_videotoolbox {
+                                seg_cmd.args(["-c:v", "h264_videotoolbox", "-b:v", "6000k", "-pix_fmt", "yuv420p"]);
+                            } else {
+                                seg_cmd.args(["-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p"]);
+                            }
+                            seg_cmd.arg(&seg_out_path);
+                            if seg_cmd.output().map(|o| o.status.success()).unwrap_or(false) {
+                                seg_files.push(seg_out_path);
+                            }
+                        }
+
+                        if seg_files.len() == segments.len() {
+                            // Concat all segment clips
+                            let list_path = temp_dir.join("list.txt");
+                            let mut list_content = String::new();
+                            for f in &seg_files {
+                                list_content.push_str(&format!("file '{}'\n", f.to_string_lossy()));
+                            }
+                            let _ = std::fs::write(&list_path, list_content);
+                            let concat_out = temp_dir.join("concat_v.mp4");
+                            let mut concat_cmd = Command::new(resolve_binary("ffmpeg"));
+                            concat_cmd.args([
+                                "-nostdin", "-y",
+                                "-f", "concat", "-safe", "0",
+                                "-i", &list_path.to_string_lossy(),
+                                "-c", "copy",
+                                &concat_out.to_string_lossy(),
+                            ]);
+                            if concat_cmd.output().map(|o| o.status.success()).unwrap_or(false) {
+                                // Now build final filter on top of concatenated video
+                                let mut final_vf = Vec::new();
+                                if effective_punch {
+                                    final_vf.push(crate::pro_editor::build_punch_zoom_filter(1080, 1920));
+                                }
+                                if let Some(ass) = ass_subtitle_path {
+                                    if ass.exists() {
+                                        let escaped = ass
+                                            .to_string_lossy()
+                                            .replace('\\', "/")
+                                            .replace(':', "\\:")
+                                            .replace('\'', "'\\''");
+                                        final_vf.push(format!("ass='{}'", escaped));
+                                    }
+                                } else if let Some(drawtext) = drawtext_filters {
+                                    if !drawtext.is_empty() {
+                                        final_vf.push(drawtext.to_string());
+                                    }
+                                }
+
+                                let mut final_cmd = Command::new(resolve_binary("ffmpeg"));
+                                final_cmd.arg("-nostdin");
+                                final_cmd.args(["-y", "-i", &concat_out.to_string_lossy()]);
+                                final_cmd.args(["-ss", &start, "-t", &duration, "-i", source_path]);
+                                final_cmd.args(["-map", "0:v", "-map", "1:a?"]);
+
+                                if !final_vf.is_empty() {
+                                    final_cmd.args(["-vf", &final_vf.join(",")]);
+                                    if use_videotoolbox {
+                                        final_cmd.args(["-c:v", "h264_videotoolbox", "-b:v", "6000k", "-pix_fmt", "yuv420p"]);
+                                    } else {
+                                        final_cmd.args(["-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p"]);
+                                    }
+                                } else {
+                                    final_cmd.args(["-c:v", "copy"]);
+                                }
+
+                                let mut audio_filters = Vec::new();
+                                if let Some((_, ref a_jump)) = jump_cuts {
+                                    audio_filters.push(a_jump.clone());
+                                }
+                                if studio_audio {
+                                    audio_filters.push("loudnorm=I=-14:TP=-1.5:LRA=11,afftdn=nf=-25".to_string());
+                                }
+                                if !audio_filters.is_empty() {
+                                    final_cmd.args(["-af", &audio_filters.join(","), "-c:a", "aac", "-b:a", "192k"]);
+                                } else {
+                                    final_cmd.args(["-c:a", "aac", "-b:a", "192k"]);
+                                }
+                                final_cmd.arg(output_path);
+
+                                let res = final_cmd.output();
+                                let _ = std::fs::remove_dir_all(&temp_dir);
+                                if let Ok(out) = res {
+                                    if out.status.success() {
+                                        return Ok(());
+                                    }
+                                }
+                            }
+                        }
+                        let _ = std::fs::remove_dir_all(&temp_dir);
+                    }
+
+                    // Single-pass render (uniform layout across clip or fallback)
+                    let layout_type = segments.first().map(|s| s.layout_type.as_str()).unwrap_or("split_two");
+                    let assigned_ids = segments.first().map(|s| s.person_ids.as_slice()).unwrap_or(&[1, 2]);
+
+                    let base_filter = build_segment_filter_graph(
+                        layout_type,
+                        assigned_ids,
+                        people,
                         iw_f,
                         ih_f,
-                        cw,
-                        ch,
+                        0.0,
+                        duration_sec,
                         top_fallback_x,
                         top_fallback_y,
-                    );
-
-                    let (bot_x_expr, bot_y_expr) = build_dynamic_crop_expr(
-                        p2_kfs,
-                        iw_f,
-                        ih_f,
-                        cw,
-                        ch,
                         bot_fallback_x,
                         bot_fallback_y,
                     );
-
-                    // Top section = Person 1, Bottom section = Person 2
-                    // Both sections represent the EXACT SAME timestamp from the original 16:9 video [0:v]
-                    let mut filter_graph = format!(
-                        "[0:v]crop={}:{}:{}:{},scale=1080:960[top];                         [0:v]crop={}:{}:{}:{},scale=1080:960[bot];                         [top][bot]vstack[stacked];                         [stacked]drawbox=x=0:y=956:w=1080:h=8:color=0x0a0d14@0.95:t=fill,                                  drawbox=x=0:y=958:w=1080:h=3:color=0x38bdf8@0.9:t=fill[divided]",
-                        cw_i, ch_i, top_x_expr, top_y_expr,
-                        cw_i, ch_i, bot_x_expr, bot_y_expr,
-                    );
+                    let mut filter_graph = format!("{}[divided]", base_filter);
 
                     let pre_sub_stream = if effective_punch {
                         filter_graph = format!(
@@ -689,5 +977,71 @@ mod tests {
         assert!(expr_x.contains("if(lt(t,"));
         assert!(expr_x.contains("2*trunc("));
         assert!(expr_y.contains("2*trunc("));
+    }
+
+    #[test]
+    fn test_build_segment_filter_graph_single() {
+        let people = vec![PersonTrack {
+            id: 1,
+            name: Some("Host".to_string()),
+            keyframes: vec![PersonKeyframe {
+                t: 0.0,
+                x: 0.5,
+                y: 0.38,
+                width: Some(0.2),
+                height: Some(0.2),
+                confidence: Some(1.0),
+                visible: true,
+            }],
+        }];
+        let filter = build_segment_filter_graph("single", &[1], &people, 1920.0, 1080.0, 0.0, 10.0, 0.5, 0.38, 0.5, 0.38);
+        assert!(filter.contains("crop="));
+        assert!(filter.contains("scale=1080:1920"));
+    }
+
+    #[test]
+    fn test_build_segment_filter_graph_split_two() {
+        let people = vec![
+            PersonTrack {
+                id: 1,
+                name: Some("P1".to_string()),
+                keyframes: vec![PersonKeyframe { t: 0.0, x: 0.26, y: 0.38, width: None, height: None, confidence: None, visible: true }],
+            },
+            PersonTrack {
+                id: 2,
+                name: Some("P2".to_string()),
+                keyframes: vec![PersonKeyframe { t: 0.0, x: 0.78, y: 0.38, width: None, height: None, confidence: None, visible: true }],
+            },
+        ];
+        let filter = build_segment_filter_graph("split_two", &[1, 2], &people, 1920.0, 1080.0, 0.0, 10.0, 0.26, 0.38, 0.78, 0.38);
+        assert!(filter.contains("[top][bot]vstack"));
+        assert!(filter.contains("scale=1080:960"));
+        assert!(filter.contains("drawbox="));
+    }
+
+    #[test]
+    fn test_build_segment_filter_graph_split_three() {
+        let people = vec![
+            PersonTrack {
+                id: 1,
+                name: Some("P1".to_string()),
+                keyframes: vec![PersonKeyframe { t: 0.0, x: 0.25, y: 0.38, width: None, height: None, confidence: None, visible: true }],
+            },
+            PersonTrack {
+                id: 2,
+                name: Some("P2".to_string()),
+                keyframes: vec![PersonKeyframe { t: 0.0, x: 0.75, y: 0.38, width: None, height: None, confidence: None, visible: true }],
+            },
+            PersonTrack {
+                id: 3,
+                name: Some("P3".to_string()),
+                keyframes: vec![PersonKeyframe { t: 0.0, x: 0.50, y: 0.60, width: None, height: None, confidence: None, visible: true }],
+            },
+        ];
+        let filter = build_segment_filter_graph("split_three", &[1, 2, 3], &people, 1920.0, 1080.0, 0.0, 10.0, 0.26, 0.38, 0.78, 0.38);
+        assert!(filter.contains("scale=540:960"));
+        assert!(filter.contains("[p1][p2]hstack"));
+        assert!(filter.contains("[top_row][bot]vstack"));
+        assert!(filter.contains("drawbox="));
     }
 }
