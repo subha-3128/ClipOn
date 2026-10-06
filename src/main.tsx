@@ -171,7 +171,7 @@ export type BusyState =
   | "clipCount"
   | "cut";
 
-export type ReframeMode = "vertical_crop" | "podcast_split" | "original";
+export type ReframeMode = "vertical_crop" | "original";
 export type SettingsTab = "ai" | "storage" | "export" | "system";
 
 // ===== Utility Helpers =====
@@ -292,7 +292,7 @@ function App() {
 
   const [reframeMode, setReframeMode] = useState<ReframeMode>(() => {
     const saved = (localStorage.getItem("clipon_reframe_mode") || localStorage.getItem("autoshorts_reframe_mode")) as any;
-    if (saved === "podcast_split" || saved === "original" || saved === "vertical_crop") {
+    if (saved === "original" || saved === "vertical_crop") {
       return saved as ReframeMode;
     }
     return "vertical_crop";
@@ -1426,7 +1426,6 @@ function App() {
                           title="Video Framing Aspect Ratio"
                         >
                           <option value="vertical_crop">Center Crop (9:16)</option>
-                          <option value="podcast_split">Podcast Split Screen (9:16)</option>
                           <option value="original">Original Aspect Ratio</option>
                         </select>
                       </div>
@@ -2145,8 +2144,7 @@ function App() {
                       onChange={(e) => setReframeMode(e.target.value as ReframeMode)}
                     >
                       <option value="vertical_crop">1. Center Crop (Standard 9:16)</option>
-                      <option value="podcast_split">2. Podcast Split Screen (Dual-Face Tracked 9:16)</option>
-                      <option value="original">3. Original Aspect Ratio</option>
+                      <option value="original">2. Original Aspect Ratio</option>
                     </select>
                   </div>
 
@@ -2164,7 +2162,7 @@ function App() {
                         style={{ width: 16, height: 16, accentColor: "#a855f7", cursor: "pointer" }}
                       />
                       <label htmlFor="setting_punch_zoom" style={{ margin: 0, cursor: "pointer", fontSize: 13, color: "var(--text-secondary)" }}>
-                        Retention Punch Zoom Cuts (Punches 1.14x visual zoom every 5.5s to maintain viewer attention across Center Crop, Podcast Split Screen, or Original)
+                        Retention Punch Zoom Cuts (Punches 1.14x visual zoom every 5.5s to maintain viewer attention across Center Crop or Original)
                       </label>
                     </div>
                   </div>

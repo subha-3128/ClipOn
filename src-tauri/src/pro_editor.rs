@@ -321,7 +321,6 @@ pub fn generate_kinetic_ass(
     start_sec: f64,
     end_sec: f64,
     style: &str,
-    is_podcast_split: bool,
 ) -> String {
     let candidate_words: Vec<&TranscriptWord> = words
         .iter()
@@ -332,7 +331,7 @@ pub fn generate_kinetic_ass(
     let is_neon = style == "neon-glow";
     let is_submagic = style == "submagic-viral";
 
-    let (font_name, mut font_size, primary_color, highlight_color, border_color, border_w, shadow_w) =
+    let (font_name, font_size, primary_color, highlight_color, border_color, border_w, shadow_w) =
         if is_hormozi {
             ("Arial", 84, "&H00FFFFFF", "&H0000E6FF", "&H00000000", 6, 3)
         } else if is_neon {
@@ -343,12 +342,7 @@ pub fn generate_kinetic_ass(
             ("Arial", 78, "&H00FFFFFF", "&H0000E6FF", "&H00000000", 5, 2)
         };
 
-    let (alignment, margin_v) = if is_podcast_split {
-        font_size = 72; // Sleek centered size along the divider line
-        (5, 0) // Middle-center anchor (aligned on the seam)
-    } else {
-        (2, 380) // Standard lower third
-    };
+    let (alignment, margin_v) = (2, 380); // Standard lower third
 
     let mut ass = String::new();
     ass.push_str("[Script Info]\n");
@@ -373,11 +367,7 @@ pub fn generate_kinetic_ass(
         "always", "warning", "danger", "hack", "free", "rich", "power", "truth", "mistake", "fast",
     ];
 
-    let pos_prefix = if is_podcast_split {
-        r"{\an5\pos(540,960)}"
-    } else {
-        ""
-    };
+
 
     // Group into 2 or 3 words per line for high-velocity retention
     for chunk in candidate_words.chunks(3) {
@@ -425,8 +415,8 @@ pub fn generate_kinetic_ass(
             }
 
             ass.push_str(&format!(
-                "Dialogue: 0,{},{},Default,,0,0,0,,{}{}\n",
-                start_formatted, end_formatted, pos_prefix, line_text
+                "Dialogue: 0,{},{},Default,,0,0,0,,{}\n",
+                start_formatted, end_formatted, line_text
             ));
         }
     }
@@ -599,9 +589,7 @@ mod tests {
             TranscriptWord { text: "Insane".to_string(), start: 0.0, end: 0.5, speaker: None },
             TranscriptWord { text: "Money".to_string(), start: 0.6, end: 1.1, speaker: None },
         ];
-        let ass = generate_kinetic_ass(&words, 0.0, 2.0, "hormozi-kinetic", false);
-        let ass_split = generate_kinetic_ass(&words, 0.0, 2.0, "hormozi-kinetic", true);
-        assert!(ass_split.contains(r"\an5\pos(540,960)"));
+        let ass = generate_kinetic_ass(&words, 0.0, 2.0, "hormozi-kinetic");
         assert!(ass.contains("[Script Info]"));
         assert!(ass.contains("Dialogue:"));
         assert!(ass.contains("MONEY"));
