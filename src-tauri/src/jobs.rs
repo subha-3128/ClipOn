@@ -144,6 +144,27 @@ impl JobManager {
         }
     }
 
+    fn prune_finished_jobs(jobs: &mut HashMap<String, JobInfo>, max_history: usize) {
+        let mut finished: Vec<(String, u64)> = jobs
+            .iter()
+            .filter(|(_, j)| {
+                matches!(
+                    j.state,
+                    JobState::Completed | JobState::Failed | JobState::Cancelled
+                )
+            })
+            .map(|(id, j)| (id.clone(), j.completed_at_ms.unwrap_or(j.created_at_ms)))
+            .collect();
+
+        if finished.len() > max_history {
+            finished.sort_by_key(|(_, t)| *t);
+            let to_remove = finished.len() - max_history;
+            for (id, _) in finished.into_iter().take(to_remove) {
+                jobs.remove(&id);
+            }
+        }
+    }
+
     pub fn complete_job(&self, job_id: &str, app: Option<&tauri::AppHandle>) {
         let mut emit_info = None;
         if let Ok(mut lock) = self.jobs.lock() {
@@ -156,6 +177,7 @@ impl JobManager {
                     emit_info = Some(job.clone());
                 }
             }
+            Self::prune_finished_jobs(&mut lock, 50);
         }
 
         if let (Some(info), Some(handle)) = (emit_info, app) {
@@ -176,6 +198,7 @@ impl JobManager {
                     emit_info = Some(job.clone());
                 }
             }
+            Self::prune_finished_jobs(&mut lock, 50);
         }
 
         if let (Some(info), Some(handle)) = (emit_info, app) {
@@ -218,6 +241,7 @@ impl JobManager {
             } else {
                 return Err(format!("Job '{job_id}' not found"));
             }
+            Self::prune_finished_jobs(&mut lock, 50);
         }
 
         if let Ok(mut p_lock) = self.pids.lock() {
@@ -226,12 +250,24 @@ impl JobManager {
             }
         }
 
-        // Terminate all registered child processes
+        // Terminate all registered child processes gracefully
         for pid in pids_to_kill {
             #[cfg(unix)]
             {
+                // Send SIGTERM (15) first to allow graceful cleanup
                 let _ = Command::new("kill").args(["-15", &pid.to_string()]).output();
-                let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
+                // Spawn a quick asynchronous thread to verify exit before escalating to SIGKILL (9)
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(300));
+                    let is_alive = Command::new("kill")
+                        .args(["-0", &pid.to_string()])
+                        .output()
+                        .map(|o| o.status.success())
+                        .unwrap_or(false);
+                    if is_alive {
+                        let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
+                    }
+                });
             }
             #[cfg(windows)]
             {
@@ -343,5 +379,20 @@ mod tests {
         drop(p2);
         drop(_p3);
         assert_eq!(sem.available_permits(), 2);
+    }
+
+    #[test]
+    fn test_bounded_finished_jobs_pruning() {
+        let mgr = JobManager::new();
+
+        // Create 60 jobs and complete them
+        for i in 0..60 {
+            let jid = mgr.create_job("proj_prune", &format!("Stage {i}"));
+            mgr.complete_job(&jid, None);
+        }
+
+        // Must be pruned to at most 50 completed jobs
+        let all_jobs_count = mgr.jobs.lock().unwrap().len();
+        assert_eq!(all_jobs_count, 50, "Completed jobs should be pruned to at most 50");
     }
 }

@@ -18,10 +18,13 @@ ClipOn incorporates a multi-tiered test suite ensuring correctness across databa
 ## 2. Running the Test Suites
 
 ### Unit Tests
+
 ```bash
 cargo test --manifest-path src-tauri/Cargo.toml --lib
 ```
+
 Runs unit tests for:
+
 - Database versioned migrations (001, 002) and foreign key cascades.
 - Analysis cache key computation and cache invalidation.
 - Bounded job queue semaphore concurrency and cancellation lifecycle.
@@ -31,25 +34,32 @@ Runs unit tests for:
 - RenderPlan, TimelineSegment, and ReframePlan validation.
 
 ### Golden Reframe Integration Tests
+
 ```bash
 cargo test --manifest-path src-tauri/Cargo.toml --test reframe_golden
 ```
+
 Verifies rendering across all 4 modes on real video footage:
+
 1. `Original`: Preserves source aspect ratio and audio stream.
 2. `VerticalCrop`: Produces 1080x1920 9:16 video with audio.
 3. `SmartFaceTrack`: Produces 1080x1920 9:16 video centered on speaker face.
 4. `PodcastSplit`: Produces 1080x1920 9:16 split screen with audio.
 
 ### Dynamic Podcast Layout Continuity Tests
+
 ```bash
 cargo test --manifest-path src-tauri/Cargo.toml --test podcast_layouts
 ```
+
 Validates continuous face tracking, layout confirmation hysteresis, minimum segment durations, and seam-line centered ASS captions.
 
 ### Frontend Typechecking & Production Build
+
 ```bash
 npm run build
 ```
+
 Executes `tsc` and `vite build` to guarantee zero TypeScript or bundle errors.
 
 ---
@@ -57,10 +67,13 @@ Executes `tsc` and `vite build` to guarantee zero TypeScript or bundle errors.
 ## 3. End-to-End Smoke Test Script (Issue #36)
 
 To execute an automated smoke test across the entire pipeline:
+
 ```bash
 bash scripts/smoke_test.sh
 ```
+
 This script:
+
 1. Validates prerequisites (`ffmpeg`, `ffprobe`, Node.js, Rust/Cargo).
 2. Verifies frontend build.
 3. Runs all Rust unit tests.

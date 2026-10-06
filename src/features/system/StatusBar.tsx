@@ -13,19 +13,42 @@ export function StatusBar({ environment, canUseCloudKey }: StatusBarProps) {
         <span className="system-dot" />
         <span className="system-text">System Ready</span>
         {environment?.hasHardwareAccel && (
-          <span className="accel-pill" title="Apple Silicon VideoToolbox Hardware Acceleration">
+          <span
+            className="accel-pill"
+            title="Apple Silicon VideoToolbox Hardware Acceleration"
+          >
             <Zap size={11} /> VideoToolbox GPU Active
           </span>
         )}
       </div>
 
       <div className="status-bar-right">
-        <span className={`status-tag ${environment?.hasFfmpeg ? "active" : ""}`}>ffmpeg</span>
-        <span className={`status-tag ${environment?.hasFfprobe ? "active" : ""}`}>ffprobe</span>
-        <span className={`status-tag ${environment?.hasYtdlp ? "active" : ""}`}>yt-dlp</span>
-        <span className={`status-tag ${environment?.hasLocalWhisperModel ? "active" : ""}`}>Whisper</span>
-        <span className={`status-tag ${environment?.hasOllama ? "active" : ""}`}>Ollama</span>
-        <span className={`status-tag ${canUseCloudKey ? "active" : ""}`}>Deepgram</span>
+        <span
+          className={`status-tag ${environment?.hasFfmpeg ? "active" : ""}`}
+        >
+          ffmpeg
+        </span>
+        <span
+          className={`status-tag ${environment?.hasFfprobe ? "active" : ""}`}
+        >
+          ffprobe
+        </span>
+        <span className={`status-tag ${environment?.hasYtdlp ? "active" : ""}`}>
+          yt-dlp
+        </span>
+        <span
+          className={`status-tag ${environment?.hasLocalWhisperModel ? "active" : ""}`}
+        >
+          Whisper
+        </span>
+        <span
+          className={`status-tag ${environment?.hasOllama ? "active" : ""}`}
+        >
+          Ollama
+        </span>
+        <span className={`status-tag ${canUseCloudKey ? "active" : ""}`}>
+          Deepgram
+        </span>
       </div>
     </footer>
   );

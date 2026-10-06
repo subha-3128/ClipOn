@@ -28,7 +28,13 @@ fn repo_root() -> PathBuf {
 
 fn testvideo2() -> Option<PathBuf> {
     let p = repo_root().join("testvideo2.mp4");
-    p.exists().then_some(p)
+    if p.exists() {
+        return Some(p);
+    }
+    if std::env::var("CI").is_ok() || std::env::var("REQUIRE_FIXTURES").is_ok() {
+        panic!("CI FAILURE: testvideo2.mp4 fixture is missing in CI environment. Integration tests must not silently pass in CI!");
+    }
+    None
 }
 
 fn out_dir() -> PathBuf {

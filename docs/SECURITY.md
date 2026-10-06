@@ -9,11 +9,13 @@ ClipOn is built with a defense-in-depth security model to ensure user data, medi
 ## 2. Credential Management & OS Keyring
 
 All sensitive credentials are stored securely via operating system credential stores:
+
 - **macOS**: Apple Keychain Services via `keyring` crate.
 - **Windows**: Windows Credential Manager.
 - **Linux**: Secret Service API.
 
 ### IPC Protection
+
 - API keys are **never** passed from the frontend to the backend as arguments in long-running job operations.
 - The backend resolves keys directly from the OS Keyring when executing cloud transcription or LLM calls.
 - Keys are sanitized and redacted from all debug and error logging outputs.
@@ -23,6 +25,7 @@ All sensitive credentials are stored securely via operating system credential st
 ## 3. Safe Process & Command Execution
 
 ClipOn strictly forbids executing commands through shell interpreters (`sh -c` or `bash -c`).
+
 - All external tool invocations (`ffmpeg`, `ffprobe`, `yt-dlp`, `clipon-face-tracker`) use direct `std::process::Command::new(binary).args(&[...])`.
 - Arguments are passed as individual array elements, completely eliminating shell argument injection and command injection vulnerabilities.
 
@@ -47,6 +50,7 @@ ClipOn strictly forbids executing commands through shell interpreters (`sh -c` o
 ## 6. Secrets & Git Repository Hygiene
 
 The following items are strictly excluded from version control:
+
 - `.env` files and environment dumps.
 - Application databases (`clipon.db`, `autoshorts.db`).
 - Rendered video exports and downloaded source files.

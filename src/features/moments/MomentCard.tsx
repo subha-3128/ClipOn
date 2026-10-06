@@ -9,7 +9,13 @@ import {
   Scissors,
   FolderOpen,
 } from "lucide-react";
-import { Candidate, Clip, InstagramPost, AppSection, ReframeMode } from "../../types";
+import {
+  Candidate,
+  Clip,
+  InstagramPost,
+  AppSection,
+  ReframeMode,
+} from "../../types";
 import { PodcastTimelinePreview } from "../podcast/PodcastTimelinePreview";
 
 interface MomentCardProps {
@@ -27,6 +33,10 @@ interface MomentCardProps {
   onCutCandidate: (candidateId: string) => void;
   onOpenFolder: (path: string) => void;
   onPublishToInstagram: (candidateId: string) => void;
+  onLayoutOverride?: (
+    candidateId: string,
+    layout: "auto" | "single" | "split_two" | "split_three"
+  ) => void;
   hasFfmpeg: boolean;
   isBusy: boolean;
 }
@@ -46,13 +56,16 @@ export function MomentCard({
   onCutCandidate,
   onOpenFolder,
   onPublishToInstagram,
+  onLayoutOverride,
   hasFfmpeg,
   isBusy,
 }: MomentCardProps) {
   const isCut = clip?.status === "done" && Boolean(clip.outputPath);
 
   return (
-    <article className={`moment-candidate-card ${candidate.selected ? "selected" : ""}`}>
+    <article
+      className={`moment-candidate-card ${candidate.selected ? "selected" : ""}`}
+    >
       <div className="moment-card-header">
         <div className="moment-card-header-left">
           <button
@@ -60,19 +73,32 @@ export function MomentCard({
             onClick={() => onToggleSelect(candidate.id)}
             title="Toggle clip selection"
           >
-            {candidate.selected ? <CheckSquare size={17} className="checked" /> : <Square size={17} />}
+            {candidate.selected ? (
+              <CheckSquare size={17} className="checked" />
+            ) : (
+              <Square size={17} />
+            )}
           </button>
           <span className="moment-rank-badge">#{candidate.rank}</span>
           <span className="moment-score-badge">
-            {Math.round(candidate.score > 1 ? candidate.score : candidate.score * 100)}% Viral Score
+            {Math.round(
+              candidate.score > 1 ? candidate.score : candidate.score * 100
+            )}
+            % Viral Score
           </span>
           {candidate.rationale.includes("High Audio Energy") && (
-            <span className="moment-audio-energy-badge" title="High-Energy Audio Hook & Vocal Surge">
+            <span
+              className="moment-audio-energy-badge"
+              title="High-Energy Audio Hook & Vocal Surge"
+            >
               ⚡ High Audio Energy
             </span>
           )}
           {reframeMode === "podcast_split" && (
-            <span className="candidate-podcast-pill" title="9:16 Two-Person Table Split Screen">
+            <span
+              className="candidate-podcast-pill"
+              title="9:16 Two-Person Table Split Screen"
+            >
               <Users size={11} /> 2-Person Split
             </span>
           )}
@@ -114,7 +140,10 @@ export function MomentCard({
             }
             if (igPost?.status === "failed") {
               return (
-                <span className="instagram-status-pill failed" title={igPost.errorMessage || "Failed"}>
+                <span
+                  className="instagram-status-pill failed"
+                  title={igPost.errorMessage || "Failed"}
+                >
                   <AlertTriangle size={11} />
                   <span>IG Failed</span>
                 </span>
@@ -127,7 +156,13 @@ export function MomentCard({
               isCut ? "ready" : clip?.status === "error" ? "error" : "pending"
             }`}
           >
-            {isCuttingThis ? "Rendering..." : isCut ? "Ready" : clip?.status === "error" ? "Failed" : "Pending"}
+            {isCuttingThis
+              ? "Rendering..."
+              : isCut
+                ? "Ready"
+                : clip?.status === "error"
+                  ? "Failed"
+                  : "Pending"}
           </span>
         </div>
       </div>
@@ -148,6 +183,11 @@ export function MomentCard({
             sourcePath={sourcePath}
             startSec={candidate.startSec}
             durationSec={candidate.endSec - candidate.startSec}
+            initialLayoutOverride={candidate.layoutOverride}
+            onLayoutOverride={(layout) =>
+              onLayoutOverride?.(candidate.id, layout)
+            }
+            autoLoad={candidate.selected}
           />
         )}
       </div>
@@ -167,10 +207,20 @@ export function MomentCard({
             className="action-pill-btn cut-action"
             onClick={() => onCutCandidate(candidate.id)}
             disabled={isBusy || !hasFfmpeg}
-            title={isCut ? "Re-cut this 9:16 vertical clip" : "Cut 9:16 vertical clip with stylized captions"}
+            title={
+              isCut
+                ? "Re-cut this 9:16 vertical clip"
+                : "Cut 9:16 vertical clip with stylized captions"
+            }
           >
-            {isCuttingThis ? <Loader2 className="spin" size={13} /> : <Scissors size={13} />}
-            <span>{isCuttingThis ? "Cutting..." : isCut ? "Re-cut" : "Cut Clip"}</span>
+            {isCuttingThis ? (
+              <Loader2 className="spin" size={13} />
+            ) : (
+              <Scissors size={13} />
+            )}
+            <span>
+              {isCuttingThis ? "Cutting..." : isCut ? "Re-cut" : "Cut Clip"}
+            </span>
           </button>
 
           {isCut && clip?.outputPath && (
@@ -194,19 +244,23 @@ export function MomentCard({
               isPublishingThis
                 ? "Publishing clip to Instagram Reels..."
                 : igPost?.status === "published"
-                ? "Re-post this clip to Instagram Reels"
-                : "Automatically cut clip, generate AI caption/hashtags, and post to Instagram Reels"
+                  ? "Re-post this clip to Instagram Reels"
+                  : "Automatically cut clip, generate AI caption/hashtags, and post to Instagram Reels"
             }
           >
-            {isPublishingThis ? <Loader2 className="spin" size={13} /> : <Instagram size={13} />}
+            {isPublishingThis ? (
+              <Loader2 className="spin" size={13} />
+            ) : (
+              <Instagram size={13} />
+            )}
             <span>
               {isPublishingThis
                 ? isCut
                   ? "Posting..."
                   : "Cutting & Posting..."
                 : igPost?.status === "published"
-                ? "Re-post IG"
-                : "Post to Reels"}
+                  ? "Re-post IG"
+                  : "Post to Reels"}
             </span>
           </button>
         </div>

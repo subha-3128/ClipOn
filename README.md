@@ -2,7 +2,7 @@
 
 [![GitHub](https://img.shields.io/badge/Creator-subha--3128-181717?style=flat&logo=github)](https://github.com/subha-3128)
 [![Repository](https://img.shields.io/badge/GitHub-subha--3128%2FClipOn-10b981?style=flat&logo=github)](https://github.com/subha-3128/ClipOn)
-[![Platform](https://img.shields.io/badge/Platform-macOS%20(Apple%20Silicon)-blue?style=flat&logo=apple)](https://github.com/subha-3128/ClipOn)
+[![Platform](<https://img.shields.io/badge/Platform-macOS%20(Apple%20Silicon)-blue?style=flat&logo=apple>)](https://github.com/subha-3128/ClipOn)
 
 > **Created & Maintained by [@subha-3128](https://github.com/subha-3128)**  
 > 🔗 **Official Repository**: [https://github.com/subha-3128/ClipOn](https://github.com/subha-3128/ClipOn)
@@ -55,11 +55,13 @@ Built with **Tauri 2 + React 19 + TypeScript + Rust + SQLite + Apple Silicon Vid
 ## 🛠️ System Prerequisites & Platform Support
 
 ### Supported Platforms
+
 - **macOS (Apple Silicon M1/M2/M3/M4 recommended)**: Fully supported with hardware-accelerated VideoToolbox rendering and Apple Vision framework multi-person tracking.
 - **macOS (Intel x86_64)**: Supported with CPU fallback or Intel QuickSync.
-- *Windows / Linux*: Dynamic podcast tracking requires Apple Vision; standard vertical cropping and local Whisper/Ollama are platform-agnostic.
+- _Windows / Linux_: Dynamic podcast tracking requires Apple Vision; standard vertical cropping and local Whisper/Ollama are platform-agnostic.
 
 ### Required Binaries
+
 ClipOn requires **FFmpeg & FFprobe** on your system `PATH`:
 
 ```bash
@@ -68,6 +70,7 @@ brew install ffmpeg yt-dlp
 ```
 
 ### Optional Offline Engines:
+
 - **Local Whisper**: `pip3 install -U openai-whisper`
 - **Local LLM**: Install [Ollama](https://ollama.com) (`ollama run llama3.2`)
 
@@ -120,25 +123,31 @@ ClipOn/
 ## 🚀 Getting Started
 
 ### 1. Install Dependencies
+
 ```bash
 npm install
 ```
 
 ### 2. Configure Environment (Optional)
+
 Copy `.env.example` to `.env` or configure keys directly via in-app Settings:
+
 ```bash
 cp .env.example .env
 ```
 
 ### 3. Run in Development Mode
+
 ```bash
 npm run tauri:dev
 ```
 
 ### 4. Build Standalone Installer (`.dmg` / `.app`)
+
 ```bash
 npm run tauri:build
 ```
+
 Your package will be created in `src-tauri/target/release/bundle/dmg/`.
 
 ---
@@ -167,4 +176,5 @@ npm run build
 - **GitHub Repository**: [https://github.com/subha-3128/ClipOn](https://github.com/subha-3128/ClipOn)
 
 ## 📄 License
+
 MIT License. Created for high-velocity video creators and editors.

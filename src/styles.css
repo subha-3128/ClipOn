@@ -41,8 +41,17 @@
   --accent-destructive: #ef4444;
 
   /* Instagram Reels Identity */
-  --instagram-gradient: linear-gradient(135deg, #e1306c 0%, #c13584 50%, #833ab4 100%);
-  --instagram-subtle: linear-gradient(135deg, rgba(225, 48, 108, 0.16) 0%, rgba(131, 58, 180, 0.16) 100%);
+  --instagram-gradient: linear-gradient(
+    135deg,
+    #e1306c 0%,
+    #c13584 50%,
+    #833ab4 100%
+  );
+  --instagram-subtle: linear-gradient(
+    135deg,
+    rgba(225, 48, 108, 0.16) 0%,
+    rgba(131, 58, 180, 0.16) 100%
+  );
   --instagram-border: rgba(225, 48, 108, 0.45);
   --instagram-text: #fb7185;
 
@@ -71,8 +80,11 @@
   --shadow-glow: 0 0 24px var(--accent-glow);
 
   /* Font Families */
-  --font-heading: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-sans: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-heading:
+    "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-sans:
+    "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* A11y Ring */
@@ -82,7 +94,9 @@
 /* ==========================================================================
    Universal Reset & Box Sizing
    ========================================================================== */
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box !important;
   margin: 0;
   padding: 0;
@@ -101,7 +115,12 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   font-family: var(--font-heading);
   letter-spacing: -0.025em;
   color: #ffffff;
@@ -121,7 +140,9 @@ a:focus-visible,
 
 /* Reduced Motion */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
@@ -146,7 +167,10 @@ a:focus-visible,
 }
 
 /* Global Button & Control Standards */
-button, input, select, textarea {
+button,
+input,
+select,
+textarea {
   font: inherit;
   color: inherit;
   outline: none;
@@ -201,8 +225,12 @@ button:disabled {
   animation: spin 1s linear infinite;
 }
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Toast Notifications */
@@ -220,13 +248,21 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.75), 0 2px 8px rgba(0, 0, 0, 0.4);
+  box-shadow:
+    0 12px 36px rgba(0, 0, 0, 0.75),
+    0 2px 8px rgba(0, 0, 0, 0.4);
   z-index: 99999;
   animation: toastIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 @keyframes toastIn {
-  from { opacity: 0; transform: translate(-50%, -10px) scale(0.96); }
-  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  from {
+    opacity: 0;
+    transform: translate(-50%, -10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
 }
 
 /* ==========================================================================
@@ -237,7 +273,13 @@ button:disabled {
   flex-direction: column;
   height: 100vh;
   width: 100vw;
-  background: radial-gradient(circle at 50% 0%, rgba(16, 185, 129, 0.02) 0%, transparent 60%), var(--bg-base);
+  background:
+    radial-gradient(
+      circle at 50% 0%,
+      rgba(16, 185, 129, 0.02) 0%,
+      transparent 60%
+    ),
+    var(--bg-base);
   overflow: hidden;
   box-sizing: border-box;
 }
@@ -287,7 +329,11 @@ button:disabled {
   width: 32px;
   height: 32px;
   border-radius: var(--radius-md);
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.04) 100%);
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.14) 0%,
+    rgba(255, 255, 255, 0.04) 100%
+  );
   border: 1px solid rgba(255, 255, 255, 0.16);
   display: flex;
   align-items: center;
@@ -715,7 +761,8 @@ button:disabled {
   background: rgba(255, 255, 255, 0.16);
   border-color: rgba(255, 255, 255, 0.25);
 }
-.rename-btn, .delete-btn {
+.rename-btn,
+.delete-btn {
   background: transparent;
   border: 1px solid var(--border-subtle);
   color: var(--text-secondary);
@@ -899,7 +946,11 @@ button:disabled {
   color: var(--instagram-text);
 }
 .topbar-action-btn.instagram-active:hover {
-  background: linear-gradient(135deg, rgba(225, 48, 108, 0.28) 0%, rgba(131, 58, 180, 0.28) 100%);
+  background: linear-gradient(
+    135deg,
+    rgba(225, 48, 108, 0.28) 0%,
+    rgba(131, 58, 180, 0.28) 100%
+  );
   border-color: rgba(225, 48, 108, 0.6);
   color: #ffffff;
 }
@@ -1311,7 +1362,9 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  box-shadow:
+    var(--shadow-sm),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
   transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   min-width: 0;
   width: 100%;
@@ -1322,7 +1375,9 @@ button:disabled {
 .moment-candidate-card:hover {
   background: var(--bg-card-hover);
   border-color: var(--border-hover);
-  box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  box-shadow:
+    var(--shadow-md),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
   transform: translateY(-1.5px);
 }
 
@@ -1330,7 +1385,9 @@ button:disabled {
   background: var(--bg-card-selected);
   border-color: rgba(16, 185, 129, 0.45);
   border-left: 3px solid var(--accent-primary);
-  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  box-shadow:
+    0 4px 16px rgba(16, 185, 129, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .moment-card-header {
@@ -1404,7 +1461,6 @@ button:disabled {
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
-
 
 .moment-duration-badge {
   font-size: 10.5px;
@@ -1593,7 +1649,11 @@ button:disabled {
 }
 
 .action-pill-btn.instagram-view-btn {
-  background: linear-gradient(135deg, rgba(225, 48, 108, 0.15) 0%, rgba(131, 58, 180, 0.15) 100%);
+  background: linear-gradient(
+    135deg,
+    rgba(225, 48, 108, 0.15) 0%,
+    rgba(131, 58, 180, 0.15) 100%
+  );
   border: 1px solid rgba(225, 48, 108, 0.38);
   color: #fb7185;
 }
@@ -1605,7 +1665,11 @@ button:disabled {
 }
 
 .action-pill-btn.instagram-publish-btn {
-  background: linear-gradient(135deg, rgba(225, 48, 108, 0.18) 0%, rgba(131, 58, 180, 0.18) 100%);
+  background: linear-gradient(
+    135deg,
+    rgba(225, 48, 108, 0.18) 0%,
+    rgba(131, 58, 180, 0.18) 100%
+  );
   border: 1px solid rgba(225, 48, 108, 0.4);
   color: #fb7185;
 }
@@ -1695,12 +1759,20 @@ button:disabled {
 }
 
 .studio-btn.instagram-active {
-  background: linear-gradient(135deg, rgba(225, 48, 108, 0.2) 0%, rgba(131, 58, 180, 0.2) 100%);
+  background: linear-gradient(
+    135deg,
+    rgba(225, 48, 108, 0.2) 0%,
+    rgba(131, 58, 180, 0.2) 100%
+  );
   border: 1px solid rgba(225, 48, 108, 0.45);
   color: #f472b6;
 }
 .studio-btn.instagram-active:hover:not(:disabled) {
-  background: linear-gradient(135deg, rgba(225, 48, 108, 0.3) 0%, rgba(131, 58, 180, 0.3) 100%);
+  background: linear-gradient(
+    135deg,
+    rgba(225, 48, 108, 0.3) 0%,
+    rgba(131, 58, 180, 0.3) 100%
+  );
   border-color: rgba(225, 48, 108, 0.6);
   color: #ffffff;
 }
@@ -1808,15 +1880,26 @@ button:disabled {
   animation: modalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 @keyframes modalFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
-.settings-modal, .youtube-modal, .style-modal, .social-kit-modal, .onboarding-card, .download-modal {
+.settings-modal,
+.youtube-modal,
+.style-modal,
+.social-kit-modal,
+.onboarding-card,
+.download-modal {
   background: var(--bg-modal);
   border: 1px solid var(--border-medium);
   border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-xl), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  box-shadow:
+    var(--shadow-xl),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
   display: flex;
   flex-direction: column;
   max-height: 90vh;
@@ -1825,16 +1908,36 @@ button:disabled {
   animation: modalSlideUp 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 @keyframes modalSlideUp {
-  from { transform: translateY(14px) scale(0.98); }
-  to { transform: translateY(0) scale(1); }
+  from {
+    transform: translateY(14px) scale(0.98);
+  }
+  to {
+    transform: translateY(0) scale(1);
+  }
 }
 
-.settings-modal { width: min(640px, 94vw); }
-.youtube-modal { width: min(500px, 92vw); }
-.style-modal { width: min(680px, 94vw); }
-.social-kit-modal { width: min(600px, 94vw); }
-.onboarding-card { width: min(600px, 94vw); padding: 26px; }
-.download-modal { width: min(440px, 90vw); padding: 22px; text-align: center; gap: 12px; }
+.settings-modal {
+  width: min(640px, 94vw);
+}
+.youtube-modal {
+  width: min(500px, 92vw);
+}
+.style-modal {
+  width: min(680px, 94vw);
+}
+.social-kit-modal {
+  width: min(600px, 94vw);
+}
+.onboarding-card {
+  width: min(600px, 94vw);
+  padding: 26px;
+}
+.download-modal {
+  width: min(440px, 90vw);
+  padding: 22px;
+  text-align: center;
+  gap: 12px;
+}
 
 .modal-header {
   padding: 14px 18px;
@@ -2140,15 +2243,19 @@ button:disabled {
 }
 .preview-text-outline {
   color: #facc15;
-  text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+  text-shadow:
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000,
+    1px 1px 0 #000;
 }
 .preview-text-shadow {
   color: #ffffff;
-  text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
 }
 .preview-text-cyan {
   color: #22d3ee;
-  text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
 }
 .preview-text-yellow-box {
   background: #facc15;
@@ -2158,11 +2265,19 @@ button:disabled {
 }
 .preview-text-green {
   color: #4ade80;
-  text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+  text-shadow:
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000,
+    1px 1px 0 #000;
 }
 .preview-text-red {
   color: #f87171;
-  text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+  text-shadow:
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000,
+    1px 1px 0 #000;
 }
 .style-card-title {
   font-size: 12px;
@@ -2603,7 +2718,10 @@ button:disabled {
 .switch-slider {
   position: absolute;
   cursor: pointer;
-  top: 0; left: 0; right: 0; bottom: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   background-color: rgba(255, 255, 255, 0.12);
   transition: 0.22s ease;
   border-radius: 24px;
@@ -2716,7 +2834,9 @@ button:disabled {
   color: #00ffff;
   font-weight: 800;
   font-size: 13.5px;
-  text-shadow: 0 0 10px rgba(0, 255, 255, 0.6), 0 2px 4px rgba(0, 0, 0, 0.8);
+  text-shadow:
+    0 0 10px rgba(0, 255, 255, 0.6),
+    0 2px 4px rgba(0, 0, 0, 0.8);
   letter-spacing: 0.5px;
 }
 
@@ -2751,13 +2871,13 @@ button:disabled {
   .app-shell {
     grid-template-columns: 210px 1fr;
   }
-  
+
   .studio-grid {
     grid-template-columns: 1fr;
     grid-template-rows: auto 1fr;
     gap: 14px;
   }
-  
+
   .dashboard-search-container {
     width: 220px;
   }
@@ -2837,7 +2957,11 @@ button:disabled {
     padding: 10px;
   }
 
-  .settings-modal, .youtube-modal, .style-modal, .social-kit-modal, .onboarding-card {
+  .settings-modal,
+  .youtube-modal,
+  .style-modal,
+  .social-kit-modal,
+  .onboarding-card {
     width: 100%;
     max-height: 94vh;
   }
@@ -3073,7 +3197,11 @@ button:disabled {
 }
 
 .sidebar-mode-btn.podcast.active {
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.15), rgba(168, 85, 247, 0.15));
+  background: linear-gradient(
+    135deg,
+    rgba(56, 189, 248, 0.15),
+    rgba(168, 85, 247, 0.15)
+  );
   border-color: rgba(56, 189, 248, 0.45);
   color: #38bdf8;
   box-shadow: 0 0 18px rgba(56, 189, 248, 0.15);
@@ -3130,19 +3258,29 @@ button:disabled {
 }
 
 .topbar-mode-tab.podcast.active {
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(168, 85, 247, 0.25));
+  background: linear-gradient(
+    135deg,
+    rgba(56, 189, 248, 0.25),
+    rgba(168, 85, 247, 0.25)
+  );
   color: #38bdf8;
   box-shadow: 0 0 10px rgba(56, 189, 248, 0.2);
 }
 
 /* Podcast Studio Live Banner */
 .podcast-studio-banner {
-  background: linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(30, 27, 75, 0.7));
+  background: linear-gradient(
+    135deg,
+    rgba(15, 23, 42, 0.9),
+    rgba(30, 27, 75, 0.7)
+  );
   border: 1px solid rgba(56, 189, 248, 0.25);
   border-radius: var(--radius-md);
   padding: 12px 16px;
   margin-bottom: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .podcast-banner-header {
@@ -3216,10 +3354,22 @@ button:disabled {
   flex-shrink: 0;
 }
 
-.dot-blue { background: #38bdf8; box-shadow: 0 0 6px #38bdf8; }
-.dot-purple { background: #a855f7; box-shadow: 0 0 6px #a855f7; }
-.dot-green { background: #34d399; box-shadow: 0 0 6px #34d399; }
-.dot-amber { background: #fbbf24; box-shadow: 0 0 6px #fbbf24; }
+.dot-blue {
+  background: #38bdf8;
+  box-shadow: 0 0 6px #38bdf8;
+}
+.dot-purple {
+  background: #a855f7;
+  box-shadow: 0 0 6px #a855f7;
+}
+.dot-green {
+  background: #34d399;
+  box-shadow: 0 0 6px #34d399;
+}
+.dot-amber {
+  background: #fbbf24;
+  box-shadow: 0 0 6px #fbbf24;
+}
 
 .candidate-podcast-pill {
   display: inline-flex;

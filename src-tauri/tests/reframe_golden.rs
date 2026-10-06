@@ -35,6 +35,44 @@ fn test_video() -> Option<PathBuf> {
     if p1.exists() {
         return Some(p1);
     }
+
+    // Attempt to generate synthetic test fixture if ffmpeg is available
+    let synthetic_path = out_dir().join("synthetic_golden_fixture.mp4");
+    if synthetic_path.exists()
+        && std::fs::metadata(&synthetic_path).map(|m| m.len() > 1000).unwrap_or(false)
+    {
+        return Some(synthetic_path);
+    }
+
+    if clipon_lib::media::command_exists("ffmpeg") {
+        let ffmpeg = clipon_lib::media::resolve_binary("ffmpeg");
+        let gen_status = std::process::Command::new(ffmpeg)
+            .args(&[
+                "-y",
+                "-f", "lavfi",
+                "-i", "testsrc=duration=5:size=1920x1080:rate=30",
+                "-f", "lavfi",
+                "-i", "sine=frequency=1000:duration=5",
+                "-c:v", "libx264",
+                "-pix_fmt", "yuv420p",
+                "-c:a", "aac",
+                "-shortest",
+                synthetic_path.to_str().unwrap(),
+            ])
+            .output();
+
+        if let Ok(out) = gen_status {
+            if out.status.success() && synthetic_path.exists() {
+                return Some(synthetic_path);
+            }
+        }
+    }
+
+    // In CI or when fixtures are strictly required, fail the test instead of silently passing!
+    if std::env::var("CI").is_ok() || std::env::var("REQUIRE_FIXTURES").is_ok() {
+        panic!("CI FAILURE: Video fixture absent and could not be generated. Integration tests must not silently pass in CI!");
+    }
+
     None
 }
 
@@ -149,10 +187,20 @@ fn test_reframe_golden_podcast_split() {
     let out = out_dir().join("golden_podcast_split.mp4");
     let _ = std::fs::remove_file(&out);
 
+    let duration = probe_media(source.to_str().unwrap())
+        .ok()
+        .and_then(|p| p.duration_sec)
+        .unwrap_or(2.0);
+    let (start_sec, end_sec) = if duration >= 198.0 {
+        (196.0, 198.0)
+    } else {
+        (0.0, 2.0_f64.min(duration))
+    };
+
     let res = render_flat_clip(
         source.to_str().unwrap(),
-        196.0,
-        198.0,
+        start_sec,
+        end_sec,
         &out,
         None,
         None,

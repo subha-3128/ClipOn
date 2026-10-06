@@ -47,154 +47,6 @@ struct UserResponse {
     account_type: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-struct UguuFile {
-    url: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-struct UguuResponse {
-    success: bool,
-    files: Option<Vec<UguuFile>>,
-}
-
-/// Helper: Upload local video to a temporary public HTTPS stream URL for Meta to ingest
-async fn upload_to_temp_stream_url(client: &reqwest::Client, video_path: &Path) -> Result<String> {
-    let file_bytes = tokio::fs::read(video_path)
-        .await
-        .map_err(|e| anyhow!("Failed to read video file at {:?}: {e}", video_path))?;
-
-    let filename = video_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("clip.mp4")
-        .to_string();
-
-    eprintln!(
-        "[Instagram] Uploading video for Meta Reels ingest: {} ({} bytes)",
-        filename,
-        file_bytes.len()
-    );
-
-    // 1. Primary: Uguu.se (Proven compatibility with Meta video ingester)
-    let uguu_part = reqwest::multipart::Part::bytes(file_bytes.clone())
-        .file_name(filename.clone())
-        .mime_str("video/mp4")?;
-
-    let uguu_form = reqwest::multipart::Form::new().part("files[]", uguu_part);
-
-    match client
-        .post("https://uguu.se/upload.php")
-        .multipart(uguu_form)
-        .send()
-        .await
-    {
-        Ok(res) if res.status().is_success() => {
-            if let Ok(uguu) = res.json::<UguuResponse>().await {
-                if let Some(files) = uguu.files {
-                    if let Some(first) = files.first() {
-                        eprintln!("[Instagram] Uguu upload successful: {}", first.url);
-                        return Ok(first.url.clone());
-                    }
-                }
-            }
-        }
-        Ok(res) => {
-            eprintln!(
-                "[Instagram] Uguu upload failed with status: {}",
-                res.status()
-            );
-        }
-        Err(e) => {
-            eprintln!("[Instagram] Uguu request error: {}", e);
-        }
-    }
-
-    // 2. Secondary fallback: tmpfiles.org
-    #[derive(Deserialize)]
-    struct TmpData {
-        url: Option<String>,
-    }
-    #[derive(Deserialize)]
-    struct TmpResponse {
-        data: Option<TmpData>,
-    }
-
-    let tmp_part = reqwest::multipart::Part::bytes(file_bytes.clone())
-        .file_name(filename.clone())
-        .mime_str("video/mp4")?;
-    let tmp_form = reqwest::multipart::Form::new().part("file", tmp_part);
-
-    match client
-        .post("https://tmpfiles.org/api/v1/upload")
-        .multipart(tmp_form)
-        .send()
-        .await
-    {
-        Ok(res) if res.status().is_success() => {
-            if let Ok(json_res) = res.json::<TmpResponse>().await {
-                if let Some(data) = json_res.data {
-                    if let Some(raw_url) = data.url {
-                        let direct_url =
-                            raw_url.replace("https://tmpfiles.org/", "https://tmpfiles.org/dl/");
-                        eprintln!("[Instagram] tmpfiles upload successful: {}", direct_url);
-                        return Ok(direct_url);
-                    }
-                }
-            }
-        }
-        Ok(res) => {
-            eprintln!(
-                "[Instagram] tmpfiles upload returned status: {}",
-                res.status()
-            );
-        }
-        Err(e) => {
-            eprintln!("[Instagram] tmpfiles request error: {}", e);
-        }
-    }
-
-    // 3. Third fallback: Catbox.moe
-    let catbox_part = reqwest::multipart::Part::bytes(file_bytes)
-        .file_name(filename)
-        .mime_str("video/mp4")?;
-
-    let catbox_form = reqwest::multipart::Form::new()
-        .text("reqtype", "fileupload")
-        .part("fileToUpload", catbox_part);
-
-    match client
-        .post("https://catbox.moe/user/api.php")
-        .multipart(catbox_form)
-        .send()
-        .await
-    {
-        Ok(res) if res.status().is_success() => {
-            if let Ok(text) = res.text().await {
-                let trimmed = text.trim();
-                if trimmed.starts_with("http") {
-                    eprintln!("[Instagram] Catbox upload successful: {}", trimmed);
-                    return Ok(trimmed.to_string());
-                }
-            }
-        }
-        Ok(res) => {
-            eprintln!(
-                "[Instagram] Catbox upload returned status: {}",
-                res.status()
-            );
-        }
-        Err(e) => {
-            eprintln!("[Instagram] Catbox request error: {}", e);
-        }
-    }
-
-    Err(anyhow!(
-        "Failed to prepare video for Instagram ingest. Please check internet connection."
-    ))
-}
-
 /// Test connection to Instagram (Graph API or Webhook)
 pub async fn test_connection(
     provider: &str,
@@ -237,23 +89,20 @@ pub async fn test_connection(
 
             let is_ig_platform = token.trim().starts_with("IGA") || token.trim().starts_with("IGQ");
             let url = if is_ig_platform {
-                format!(
-                    "https://graph.instagram.com/v20.0/me?fields=id,username,name,account_type&access_token={}",
-                    token.trim()
-                )
+                "https://graph.instagram.com/v20.0/me?fields=id,username,name,account_type".to_string()
             } else {
                 let user_id = account_id
                     .filter(|id| !id.trim().is_empty())
                     .ok_or_else(|| anyhow!("Instagram Account ID is required"))?;
                 format!(
-                    "https://graph.facebook.com/v20.0/{}?fields=id,username,name&access_token={}",
-                    user_id.trim(),
-                    token.trim()
+                    "https://graph.facebook.com/v20.0/{}?fields=id,username,name",
+                    user_id.trim()
                 )
             };
 
             let res = reqwest::Client::new()
                 .get(&url)
+                .header("Authorization", format!("Bearer {}", token.trim()))
                 .send()
                 .await
                 .map_err(|e| anyhow!("Network error verifying Instagram credentials: {e}"))?;
@@ -280,7 +129,7 @@ pub async fn test_connection(
     }
 }
 
-/// Publish video to Instagram Reels using official Meta Graph API
+/// Publish video to Instagram Reels using official Meta Graph API (Direct Resumable Upload)
 pub async fn publish_reel_graph_api(
     account_id: &str,
     access_token: &str,
@@ -297,18 +146,21 @@ pub async fn publish_reel_graph_api(
         return Err(anyhow!("Video file does not exist at: {video_path}"));
     }
 
+    let file_bytes = tokio::fs::read(path)
+        .await
+        .map_err(|e| anyhow!("Failed to read video file: {e}"))?;
+    let file_size = file_bytes.len();
+
     let is_ig_platform =
         access_token.trim().starts_with("IGA") || access_token.trim().starts_with("IGQ");
 
     if is_ig_platform {
         // Resolve account ID if missing
         let resolved_account_id = if account_id.trim().is_empty() || account_id == "me" {
-            let me_url = format!(
-                "https://graph.instagram.com/v20.0/me?fields=id&access_token={}",
-                access_token.trim()
-            );
+            let me_url = "https://graph.instagram.com/v20.0/me?fields=id";
             let me_res = client
-                .get(&me_url)
+                .get(me_url)
+                .header("Authorization", format!("Bearer {}", access_token.trim()))
                 .send()
                 .await
                 .map_err(|e| anyhow!("Failed to fetch account info: {e}"))?;
@@ -324,19 +176,16 @@ pub async fn publish_reel_graph_api(
             account_id.trim().to_string()
         };
 
-        // 1. Upload video to stream server to get direct public HTTPS URL
-        let stream_url = upload_to_temp_stream_url(&client, path).await?;
-
-        // 2. Initialize Reel container
+        // 1. Initialize Reel container with official Resumable Upload
         let init_url = format!("https://graph.instagram.com/v20.0/{resolved_account_id}/media");
         let init_res = client
             .post(&init_url)
-            .form(&[
-                ("media_type", "REELS"),
-                ("video_url", &stream_url),
-                ("caption", caption),
-                ("access_token", access_token.trim()),
-            ])
+            .header("Authorization", format!("Bearer {}", access_token.trim()))
+            .json(&json!({
+                "media_type": "REELS",
+                "upload_type": "resumable",
+                "caption": caption
+            }))
             .send()
             .await
             .map_err(|e| anyhow!("Failed to start Instagram media container session: {e}"))?;
@@ -352,12 +201,31 @@ pub async fn publish_reel_graph_api(
             .map_err(|e| anyhow!("Invalid media session response: {e}"))?;
 
         let container_id = init_data.id;
+        let upload_uri = init_data.uri.unwrap_or_else(|| {
+            format!("https://rupload.facebook.com/ig-reels-upload/{}", container_id)
+        });
 
-        // 3. Poll container processing status
+        // 2. Direct binary upload to Meta's rupload endpoint
+        let upload_res = client
+            .post(&upload_uri)
+            .header("Authorization", format!("OAuth {}", access_token.trim()))
+            .header("offset", "0")
+            .header("file_size", file_size.to_string())
+            .header("Content-Type", "application/octet-stream")
+            .body(file_bytes)
+            .send()
+            .await
+            .map_err(|e| anyhow!("Failed to upload video bytes to Instagram: {e}"))?;
+
+        if !upload_res.status().is_success() {
+            let err = upload_res.text().await.unwrap_or_default();
+            return Err(anyhow!("Instagram video binary upload failed: {err}"));
+        }
+
+        // 3. Poll container processing status using Authorization header
         let status_url = format!(
-            "https://graph.instagram.com/v20.0/{}?fields=status_code,status,error_message&access_token={}",
-            container_id,
-            access_token.trim()
+            "https://graph.instagram.com/v20.0/{}?fields=status_code,status,error_message",
+            container_id
         );
 
         let mut attempts = 0;
@@ -366,7 +234,12 @@ pub async fn publish_reel_graph_api(
             sleep(Duration::from_secs(3)).await;
             attempts += 1;
 
-            if let Ok(res) = client.get(&status_url).send().await {
+            if let Ok(res) = client
+                .get(&status_url)
+                .header("Authorization", format!("Bearer {}", access_token.trim()))
+                .send()
+                .await
+            {
                 if let Ok(st) = res.json::<StatusResponse>().await {
                     if let Some(code) = st.status_code.as_deref() {
                         match code {
@@ -412,14 +285,16 @@ pub async fn publish_reel_graph_api(
 
         // 4. Publish Media
         let publish_url = format!(
-            "https://graph.instagram.com/v20.0/{}/media_publish?creation_id={}&access_token={}",
-            resolved_account_id,
-            container_id,
-            access_token.trim()
+            "https://graph.instagram.com/v20.0/{}/media_publish",
+            resolved_account_id
         );
 
         let pub_res = client
             .post(&publish_url)
+            .header("Authorization", format!("Bearer {}", access_token.trim()))
+            .json(&json!({
+                "creation_id": container_id
+            }))
             .send()
             .await
             .map_err(|e| anyhow!("Failed to send publish command to Instagram: {e}"))?;
@@ -438,12 +313,16 @@ pub async fn publish_reel_graph_api(
 
         // 5. Retrieve live permalink
         let permalink_url = format!(
-            "https://graph.instagram.com/v20.0/{}?fields=permalink&access_token={}",
-            media_id,
-            access_token.trim()
+            "https://graph.instagram.com/v20.0/{}?fields=permalink",
+            media_id
         );
 
-        if let Ok(res) = client.get(&permalink_url).send().await {
+        if let Ok(res) = client
+            .get(&permalink_url)
+            .header("Authorization", format!("Bearer {}", access_token.trim()))
+            .send()
+            .await
+        {
             if let Ok(data) = res.json::<PermalinkResponse>().await {
                 if let Some(link) = data.permalink {
                     return Ok(link);
@@ -454,11 +333,6 @@ pub async fn publish_reel_graph_api(
         Ok(format!("https://www.instagram.com/reel/{media_id}"))
     } else {
         // Standard Facebook Login / Meta Resumable Upload
-        let file_bytes = tokio::fs::read(path)
-            .await
-            .map_err(|e| anyhow!("Failed to read video file: {e}"))?;
-        let file_size = file_bytes.len();
-
         let init_url = format!(
             "https://graph.facebook.com/v20.0/{}/media",
             account_id.trim()
@@ -508,9 +382,8 @@ pub async fn publish_reel_graph_api(
         }
 
         let status_url = format!(
-            "https://graph.facebook.com/v20.0/{}?fields=status_code,status,error_message&access_token={}",
-            container_id,
-            access_token.trim()
+            "https://graph.facebook.com/v20.0/{}?fields=status_code,status,error_message",
+            container_id
         );
 
         let mut attempts = 0;
@@ -520,7 +393,12 @@ pub async fn publish_reel_graph_api(
             sleep(Duration::from_secs(3)).await;
             attempts += 1;
 
-            if let Ok(res) = client.get(&status_url).send().await {
+            if let Ok(res) = client
+                .get(&status_url)
+                .header("Authorization", format!("Bearer {}", access_token.trim()))
+                .send()
+                .await
+            {
                 if let Ok(st) = res.json::<StatusResponse>().await {
                     if let Some(code) = st.status_code.as_deref() {
                         match code {
@@ -588,12 +466,16 @@ pub async fn publish_reel_graph_api(
         let media_id = pub_data.id;
 
         let permalink_url = format!(
-            "https://graph.facebook.com/v20.0/{}?fields=permalink&access_token={}",
-            media_id,
-            access_token.trim()
+            "https://graph.facebook.com/v20.0/{}?fields=permalink",
+            media_id
         );
 
-        if let Ok(link_res) = client.get(&permalink_url).send().await {
+        if let Ok(link_res) = client
+            .get(&permalink_url)
+            .header("Authorization", format!("Bearer {}", access_token.trim()))
+            .send()
+            .await
+        {
             if let Ok(link_data) = link_res.json::<PermalinkResponse>().await {
                 if let Some(link) = link_data.permalink {
                     return Ok(link);

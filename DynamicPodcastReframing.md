@@ -25,8 +25,9 @@ Do NOT decide the layout from the first frame only.
 The system must continuously analyze frames throughout the entire selected video/clip.
 
 ==================================================
+
 1. CONTINUOUS PEOPLE DETECTION
-==================================================
+   \==================================================
 
 Analyze the video throughout the entire timeline.
 
@@ -57,8 +58,7 @@ For example:
 
 The output layout must follow these changes automatically.
 
-==================================================
-2. PERSISTENT PERSON IDENTITY
+================================================== 2. PERSISTENT PERSON IDENTITY
 ==================================================
 
 Do not treat every face detection as a new person.
@@ -93,8 +93,7 @@ Never allow:
 - A speaking person to replace a silent person
 - A temporary detection to create an incorrect new identity
 
-==================================================
-3. TRACKING DATA MODEL
+================================================== 3. TRACKING DATA MODEL
 ==================================================
 
 The current implementation uses data such as:
@@ -109,10 +108,10 @@ Change the tracking architecture to support a dynamic collection of people.
 Conceptually, the tracking result should support:
 
 PersonTrack[]
-    PersonTrack 1
-    PersonTrack 2
-    PersonTrack 3
-    ...
+PersonTrack 1
+PersonTrack 2
+PersonTrack 3
+...
 
 Each person should have time-based tracking information containing at least:
 
@@ -125,8 +124,7 @@ Each person should have time-based tracking information containing at least:
 
 Do not hardcode the renderer to only Person 1 and Person 2.
 
-==================================================
-4. DYNAMIC LAYOUT SEGMENTS
+================================================== 4. DYNAMIC LAYOUT SEGMENTS
 ==================================================
 
 Create a timeline of layout segments.
@@ -134,11 +132,11 @@ Create a timeline of layout segments.
 Conceptually:
 
 LayoutSegment {
-    start
-    end
-    number_of_people
-    person assignments
-    layout type
+start
+end
+number_of_people
+person assignments
+layout type
 }
 
 For example:
@@ -160,8 +158,7 @@ Single(Person 1)
 
 The renderer must consume this timeline instead of assuming one layout for the entire video.
 
-==================================================
-5. ONE PERSON LAYOUT
+================================================== 5. ONE PERSON LAYOUT
 ==================================================
 
 When only one person is present:
@@ -171,18 +168,17 @@ Use the entire 9:16 output.
 Example:
 
 ┌─────────────────┐
-│                 │
-│                 │
-│     PERSON 1    │
-│                 │
-│                 │
-│                 │
+│ │
+│ │
+│ PERSON 1 │
+│ │
+│ │
+│ │
 └─────────────────┘
 
 Track the person's face and dynamically position the crop so the person remains properly framed.
 
-==================================================
-6. TWO PERSON LAYOUT
+================================================== 6. TWO PERSON LAYOUT
 ==================================================
 
 When two people are present:
@@ -190,13 +186,13 @@ When two people are present:
 Split the 9:16 frame horizontally into two equal sections.
 
 ┌─────────────────┐
-│                 │
-│     PERSON 1    │
-│                 │
+│ │
+│ PERSON 1 │
+│ │
 ├─────────────────┤
-│                 │
-│     PERSON 2    │
-│                 │
+│ │
+│ PERSON 2 │
+│ │
 └─────────────────┘
 
 Top section → Person 1
@@ -208,8 +204,7 @@ Both sections must represent the exact same timestamp from the original 16:9 vid
 
 Never show the same person in both sections.
 
-==================================================
-7. THREE PERSON LAYOUT
+================================================== 7. THREE PERSON LAYOUT
 ==================================================
 
 When three people are present, DO NOT create three horizontal rows.
@@ -217,20 +212,22 @@ When three people are present, DO NOT create three horizontal rows.
 Use this layout:
 
 ┌─────────┬─────────┐
-│         │         │
+│ │ │
 │ PERSON1 │ PERSON2 │
-│         │         │
+│ │ │
 ├─────────┴─────────┤
-│                   │
-│      PERSON 3     │
-│                   │
+│ │
+│ PERSON 3 │
+│ │
 └───────────────────┘
 
 Top half:
+
 - Person 1 → left
 - Person 2 → right
 
 Bottom half:
+
 - Person 3 → full width
 
 The two top sections should have equal width.
@@ -239,8 +236,7 @@ The bottom person should occupy the full width.
 
 This layout must match the provided reference screenshots.
 
-==================================================
-8. TEMPORARY DISAPPEARANCE
+================================================== 8. TEMPORARY DISAPPEARANCE
 ==================================================
 
 A temporary disappearance must NOT immediately trigger a layout change.
@@ -267,8 +263,7 @@ Apply the same behavior to every tracked person.
 
 Only change the layout when there is sufficient evidence that the actual composition of people has changed.
 
-==================================================
-9. FACE TRACKING
+================================================== 9. FACE TRACKING
 ==================================================
 
 The current static/average crop positions are not sufficient.
@@ -288,8 +283,7 @@ Smoothly interpolate between tracking positions to avoid:
 
 The face should remain properly framed within the person's assigned output section.
 
-==================================================
-10. TRACKING FREQUENCY
+================================================== 10. TRACKING FREQUENCY
 ==================================================
 
 The existing tracking approach is too sparse for reliable dynamic layout changes.
@@ -300,8 +294,7 @@ Use an efficient analysis rate rather than unnecessarily processing every full-r
 
 The important requirement is that the tracking timeline is dense enough to capture meaningful changes and that rendering remains smooth through interpolation.
 
-==================================================
-11. SPEECH RECOGNITION / DIARIZATION
+================================================== 11. SPEECH RECOGNITION / DIARIZATION
 ==================================================
 
 Use the existing transcription/speaker diarization system where appropriate.
@@ -323,8 +316,7 @@ A silent person must remain visible in their assigned section.
 
 Use the existing transcription infrastructure instead of creating an unnecessary duplicate transcription system.
 
-==================================================
-12. SAME TIMESTAMP
+================================================== 12. SAME TIMESTAMP
 ==================================================
 
 Every section must represent the exact same timestamp from the original video.
@@ -343,8 +335,7 @@ Never allow the sections to use different timestamps.
 
 Audio and video must remain synchronized.
 
-==================================================
-13. CAPTIONS
+================================================== 13. CAPTIONS
 ==================================================
 
 Keep captions synchronized with the original speech timestamps.
@@ -363,8 +354,7 @@ For three people, position captions so they remain readable without unnecessaril
 
 Do not break caption timing when the layout changes.
 
-==================================================
-14. MEDIA.RS / FFMPEG
+================================================== 14. MEDIA.RS / FFMPEG
 ==================================================
 
 Update the existing Rust media/rendering pipeline.
@@ -390,25 +380,24 @@ Do not create one huge unmaintainable FFmpeg expression if a segment-based rende
 A suitable architecture is:
 
 Original video
-    ↓
+↓
 Tracking timeline
-    ↓
+↓
 Layout segments
-    ↓
+↓
 Render each segment using the correct layout
-    ↓
+↓
 Concatenate segments
-    ↓
+↓
 Apply remaining processing
-    ↓
+↓
 Captions
-    ↓
+↓
 Final 9:16 video
 
 Make the implementation efficient and compatible with the existing Apple Silicon/VideoToolbox rendering pipeline.
 
-==================================================
-15. EXISTING FEATURES MUST CONTINUE WORKING
+================================================== 15. EXISTING FEATURES MUST CONTINUE WORKING
 ==================================================
 
 Do not break existing ClipOn functionality.
@@ -432,8 +421,7 @@ Keep working:
 
 Podcast should be an additional processing mode.
 
-==================================================
-16. PUNCH ZOOM / DEAD AIR / STUDIO AUDIO
+================================================== 16. PUNCH ZOOM / DEAD AIR / STUDIO AUDIO
 ==================================================
 
 Keep:
@@ -452,8 +440,7 @@ Punch Zoom should remain usable with:
 - Two-person layout
 - Three-person layout
 
-==================================================
-17. FILES TO INSPECT AND UPDATE
+================================================== 17. FILES TO INSPECT AND UPDATE
 ==================================================
 
 Inspect the existing implementation first.
@@ -478,8 +465,7 @@ Do not blindly overwrite existing code.
 
 Understand the existing flow and extend it cleanly.
 
-==================================================
-18. IMPORTANT ARCHITECTURAL CHANGE
+================================================== 18. IMPORTANT ARCHITECTURAL CHANGE
 ==================================================
 
 The current system is essentially built around:
@@ -499,8 +485,7 @@ This is the core requirement.
 
 The system must become a general multi-person timeline-based system rather than a fixed two-person system.
 
-==================================================
-19. TESTING
+================================================== 19. TESTING
 ==================================================
 
 After implementation, test:
@@ -554,31 +539,31 @@ Actually modify the existing ClipOn codebase and implement the feature.
 The final Podcast system should behave like this:
 
 16:9 source
-    ↓
+↓
 Continuously analyze frames
-    ↓
+↓
 Track persistent people
-    ↓
+↓
 Determine current people throughout the timeline
-    ↓
+↓
 1 person → FULL 9:16
-    ↓
+↓
 2 people → TOP + BOTTOM
-    ↓
+↓
 3 people → TWO TOP + ONE BOTTOM
-    ↓
+↓
 People enter/leave → layout changes accordingly
-    ↓
+↓
 Temporary disappearance → preserve identity
-    ↓
+↓
 Dynamic face tracking
-    ↓
+↓
 Same source timestamp for every section
-    ↓
+↓
 Synchronized captions
-    ↓
+↓
 Punch Zoom / Dead Air Cut / Studio Audio
-    ↓
+↓
 Final Instagram/YouTube-ready 9:16 video
 
 Use the provided reference screenshots as the visual reference for the 2-person and 3-person compositions.

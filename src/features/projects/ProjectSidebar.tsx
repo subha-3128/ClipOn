@@ -41,7 +41,11 @@ export function ProjectSidebar({
   return (
     <aside className="sidebar">
       {/* Brand mark */}
-      <div className="brand-row" onClick={() => onSelectProject(null)} title="Go to All Projects">
+      <div
+        className="brand-row"
+        onClick={() => onSelectProject(null)}
+        title="Go to All Projects"
+      >
         <div className="brand-mark">
           <Clapperboard size={18} />
         </div>
@@ -80,15 +84,27 @@ export function ProjectSidebar({
 
       {/* Quick Actions */}
       <div className="sidebar-actions">
-        <button className="sidebar-action-btn primary" onClick={onImportMedia} disabled={busy !== "idle"}>
-          {busy === "import" ? <Loader2 className="spin" size={15} /> : <FileVideo size={15} />}
-          {appSection === "podcast" ? "Import Podcast Video" : "Import Recording"}
+        <button
+          className="sidebar-action-btn primary"
+          onClick={onImportMedia}
+          disabled={busy !== "idle"}
+        >
+          {busy === "import" ? (
+            <Loader2 className="spin" size={15} />
+          ) : (
+            <FileVideo size={15} />
+          )}
+          {appSection === "podcast"
+            ? "Import Podcast Video"
+            : "Import Recording"}
         </button>
         <button
           className="sidebar-action-btn secondary"
           onClick={onOpenYoutubeModal}
           disabled={busy !== "idle" || !environment?.hasYtdlp}
-          title={!environment?.hasYtdlp ? "yt-dlp required" : "Import from YouTube"}
+          title={
+            !environment?.hasYtdlp ? "yt-dlp required" : "Import from YouTube"
+          }
         >
           <Youtube size={15} />
           {appSection === "podcast" ? "Podcast YouTube URL" : "Import YouTube"}
@@ -117,7 +133,9 @@ export function ProjectSidebar({
             onClick={() => void onSelectProject(project.id)}
           >
             <FileVideo size={14} />
-            <span className="truncate">{project.name || fileName(project.sourcePath)}</span>
+            <span className="truncate">
+              {project.name || fileName(project.sourcePath)}
+            </span>
             <ChevronRight size={13} className="nav-arrow" />
           </button>
         ))}

@@ -24,6 +24,11 @@ impl Database {
         }
 
         let conn = Connection::open(path).context("opening SQLite database")?;
+        conn.busy_timeout(std::time::Duration::from_millis(5000))?;
+        let _ = conn.pragma_update(None, "journal_mode", "WAL");
+        let _ = conn.pragma_update(None, "synchronous", "NORMAL");
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+
         let db = Self {
             conn: Arc::new(Mutex::new(conn)),
         };
@@ -124,6 +129,10 @@ impl Database {
                 CREATE INDEX IF NOT EXISTS idx_clips_candidate_id ON clips(candidate_id);
                 CREATE INDEX IF NOT EXISTS idx_instagram_candidate_id ON instagram_posts(candidate_id);",
             ),
+            (
+                3,
+                "ALTER TABLE candidates ADD COLUMN layout_override TEXT;",
+            ),
         ];
 
         for (ver, sql) in migrations {
@@ -146,8 +155,9 @@ impl Database {
         }
 
         // Backward compatibility for pre-existing installations
-        let _ = conn.execute("ALTER TABLE projects ADD COLUMN name TEXT", []);
-        let _ = conn.execute("ALTER TABLE projects ADD COLUMN caption_style TEXT", []);
+        execute_migration_alter(&conn, "ALTER TABLE projects ADD COLUMN name TEXT")?;
+        execute_migration_alter(&conn, "ALTER TABLE projects ADD COLUMN caption_style TEXT")?;
+        execute_migration_alter(&conn, "ALTER TABLE candidates ADD COLUMN layout_override TEXT")?;
         Ok(())
     }
 
@@ -263,12 +273,13 @@ impl Database {
             created_at: Utc::now().to_rfc3339(),
         };
 
-        let conn = self.conn.lock().expect("database mutex poisoned");
-        conn.execute(
+        let mut conn = self.conn.lock().expect("database mutex poisoned");
+        let tx = conn.transaction()?;
+        tx.execute(
             "DELETE FROM transcripts WHERE project_id = ?1",
             params![project_id],
         )?;
-        conn.execute(
+        tx.execute(
             "INSERT INTO transcripts (id, project_id, engine, raw_json, language, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
@@ -280,6 +291,7 @@ impl Database {
                 transcript.created_at
             ],
         )?;
+        tx.commit()?;
         Ok(transcript)
     }
 
@@ -309,16 +321,50 @@ impl Database {
         project_id: &str,
         drafts: &[CandidateDraft],
     ) -> Result<Vec<Candidate>> {
-        let conn = self.conn.lock().expect("database mutex poisoned");
-        conn.execute(
-            "DELETE FROM candidates WHERE project_id = ?1",
+        let mut conn = self.conn.lock().expect("database mutex poisoned");
+        let tx = conn.transaction()?;
+
+        // Delete only unrendered/uncommitted candidate drafts.
+        // Candidates that have completed rendered clips or instagram posts are strictly preserved.
+        tx.execute(
+            "DELETE FROM candidates 
+             WHERE project_id = ?1 
+               AND id NOT IN (
+                   SELECT candidate_id FROM clips WHERE status = 'done' OR output_path IS NOT NULL
+               )
+               AND id NOT IN (
+                   SELECT candidate_id FROM instagram_posts
+               )",
             params![project_id],
         )?;
 
-        let selected_cutoff = drafts.len().min(6).max(3).min(drafts.len());
-        let mut candidates = Vec::with_capacity(drafts.len());
+        // Fetch remaining preserved candidates to determine rank and avoid duplicates
+        let mut preserved = Vec::new();
+        {
+            let mut preserved_stmt = tx.prepare(
+                "SELECT id, project_id, start_sec, end_sec, score, hook, rationale, rank, selected, layout_override
+                 FROM candidates WHERE project_id = ?1 ORDER BY rank ASC",
+            )?;
+            let preserved_rows = preserved_stmt.query_map(params![project_id], candidate_from_row)?;
+            for row in preserved_rows {
+                preserved.push(row?);
+            }
+        }
 
+        let max_rank = preserved.iter().map(|c| c.rank).max().unwrap_or(0);
+        let selected_cutoff = drafts.len().min(6).max(3).min(drafts.len());
+
+        let mut next_rank = max_rank;
         for (index, draft) in drafts.iter().enumerate() {
+            // Check if draft closely matches an already preserved candidate
+            let is_duplicate = preserved.iter().any(|p| {
+                (p.start_sec - draft.start).abs() < 1.5 && (p.end_sec - draft.end).abs() < 1.5
+            });
+            if is_duplicate {
+                continue;
+            }
+
+            next_rank += 1;
             let candidate = Candidate {
                 id: Uuid::new_v4().to_string(),
                 project_id: project_id.to_string(),
@@ -327,13 +373,14 @@ impl Database {
                 score: draft.score,
                 hook: draft.hook.clone(),
                 rationale: draft.rationale.clone(),
-                rank: (index + 1) as i64,
+                rank: next_rank,
                 selected: index < selected_cutoff,
+                layout_override: None,
             };
 
-            conn.execute(
-                "INSERT INTO candidates (id, project_id, start_sec, end_sec, score, hook, rationale, rank, selected)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            tx.execute(
+                "INSERT INTO candidates (id, project_id, start_sec, end_sec, score, hook, rationale, rank, selected, layout_override)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                 params![
                     &candidate.id,
                     &candidate.project_id,
@@ -343,19 +390,20 @@ impl Database {
                     &candidate.hook,
                     &candidate.rationale,
                     candidate.rank,
-                    if candidate.selected { 1 } else { 0 }
+                    if candidate.selected { 1 } else { 0 },
+                    &candidate.layout_override
                 ],
             )?;
 
-            conn.execute(
+            tx.execute(
                 "INSERT INTO clips (id, candidate_id, status) VALUES (?1, ?2, 'pending')",
                 params![Uuid::new_v4().to_string(), &candidate.id],
             )?;
-
-            candidates.push(candidate);
         }
 
-        Ok(candidates)
+        tx.commit()?;
+        drop(conn);
+        self.list_candidates(project_id)
     }
 
     pub fn update_candidate_timing(
@@ -372,10 +420,23 @@ impl Database {
         Ok(())
     }
 
+    pub fn update_candidate_layout_override(
+        &self,
+        candidate_id: &str,
+        layout_override: Option<&str>,
+    ) -> Result<()> {
+        let conn = self.conn.lock().expect("database mutex poisoned");
+        conn.execute(
+            "UPDATE candidates SET layout_override = ?1 WHERE id = ?2",
+            params![layout_override, candidate_id],
+        )?;
+        Ok(())
+    }
+
     pub fn list_candidates(&self, project_id: &str) -> Result<Vec<Candidate>> {
         let conn = self.conn.lock().expect("database mutex poisoned");
         let mut stmt = conn.prepare(
-            "SELECT id, project_id, start_sec, end_sec, score, hook, rationale, rank, selected
+            "SELECT id, project_id, start_sec, end_sec, score, hook, rationale, rank, selected, layout_override
              FROM candidates WHERE project_id = ?1 ORDER BY rank ASC",
         )?;
         let rows = stmt.query_map(params![project_id], candidate_from_row)?;
@@ -389,6 +450,7 @@ impl Database {
             "SELECT
                 candidates.id, candidates.project_id, candidates.start_sec, candidates.end_sec,
                 candidates.score, candidates.hook, candidates.rationale, candidates.rank, candidates.selected,
+                candidates.layout_override,
                 projects.id, projects.name, projects.source_path, projects.source_duration, projects.status,
                 projects.transcription_mode, projects.created_at, projects.updated_at, projects.caption_style
              FROM candidates
@@ -407,17 +469,18 @@ impl Database {
                     rationale: row.get(6)?,
                     rank: row.get(7)?,
                     selected: selected == 1,
+                    layout_override: row.get(9).ok(),
                 };
                 let project = Project {
-                    id: row.get(9)?,
-                    name: row.get(10)?,
-                    source_path: row.get(11)?,
-                    source_duration: row.get(12)?,
-                    status: row.get(13)?,
-                    transcription_mode: row.get(14)?,
-                    created_at: row.get(15)?,
-                    updated_at: row.get(16)?,
-                    caption_style: row.get(17)?,
+                    id: row.get(10)?,
+                    name: row.get(11)?,
+                    source_path: row.get(12)?,
+                    source_duration: row.get(13)?,
+                    status: row.get(14)?,
+                    transcription_mode: row.get(15)?,
+                    created_at: row.get(16)?,
+                    updated_at: row.get(17)?,
+                    caption_style: row.get(18)?,
                 };
                 Ok((candidate, project))
             },
@@ -638,6 +701,19 @@ impl Database {
     }
 }
 
+fn execute_migration_alter(conn: &Connection, sql: &str) -> Result<()> {
+    if let Err(e) = conn.execute(sql, []) {
+        let err_msg = e.to_string().to_lowercase();
+        if err_msg.contains("duplicate column") {
+            Ok(())
+        } else {
+            Err(e).with_context(|| format!("failed migration statement: {sql}"))
+        }
+    } else {
+        Ok(())
+    }
+}
+
 fn project_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
     Ok(Project {
         id: row.get(0)?,
@@ -654,6 +730,7 @@ fn project_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
 
 fn candidate_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Candidate> {
     let selected: i64 = row.get(8)?;
+    let layout_override: Option<String> = row.get(9).ok();
     Ok(Candidate {
         id: row.get(0)?,
         project_id: row.get(1)?,
@@ -664,6 +741,7 @@ fn candidate_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Candidate> {
         rationale: row.get(6)?,
         rank: row.get(7)?,
         selected: selected == 1,
+        layout_override,
     })
 }
 
@@ -733,5 +811,153 @@ mod tests {
             params!["cand_orphan", "non_existent_project_id"],
         );
         assert!(res.is_err(), "foreign key constraint must reject orphan candidate");
+    }
+
+    #[test]
+    fn test_candidate_layout_override_persistence() {
+        let db = temp_db();
+        let proj = db
+            .create_project("/dummy/path.mp4", "local", "modern-box", Some(60.0))
+            .expect("create project");
+
+        let drafts = vec![CandidateDraft {
+            start: 0.0,
+            end: 15.0,
+            score: 9.0,
+            hook: "Test hook".into(),
+            rationale: "Rationale".into(),
+        }];
+
+        let candidates = db.replace_candidates(&proj.id, &drafts).expect("replace candidates");
+        let cand_id = &candidates[0].id;
+        assert_eq!(candidates[0].layout_override, None);
+
+        db.update_candidate_layout_override(cand_id, Some("split_two"))
+            .expect("update override");
+        let (updated, _) = db.get_candidate_with_project(cand_id).expect("get candidate");
+        assert_eq!(updated.layout_override.as_deref(), Some("split_two"));
+
+        db.update_candidate_layout_override(cand_id, None)
+            .expect("clear override");
+        let (cleared, _) = db.get_candidate_with_project(cand_id).expect("get candidate");
+        assert_eq!(cleared.layout_override, None);
+    }
+
+    #[test]
+    fn test_replace_candidates_preserves_rendered_clips_and_posts() {
+        let db = temp_db();
+        let proj = db
+            .create_project("/dummy/path.mp4", "local", "modern-box", Some(120.0))
+            .expect("create project");
+
+        let drafts_v1 = vec![
+            CandidateDraft {
+                start: 0.0,
+                end: 15.0,
+                score: 9.0,
+                hook: "Rendered Clip Hook".into(),
+                rationale: "Rationale 1".into(),
+            },
+            CandidateDraft {
+                start: 20.0,
+                end: 35.0,
+                score: 8.0,
+                hook: "Pending Clip Hook".into(),
+                rationale: "Rationale 2".into(),
+            },
+        ];
+
+        let cands_v1 = db.replace_candidates(&proj.id, &drafts_v1).expect("replace 1");
+        assert_eq!(cands_v1.len(), 2);
+        let cand1_id = cands_v1[0].id.clone();
+        let cand2_id = cands_v1[1].id.clone();
+
+        // Mark candidate 1 as rendered (done)
+        db.update_clip_for_candidate(&cand1_id, "done", Some("/clips/clip1.mp4"), None, None)
+            .expect("mark done");
+
+        // Rerun candidate generation with new drafts
+        let drafts_v2 = vec![
+            CandidateDraft {
+                start: 40.0,
+                end: 55.0,
+                score: 8.5,
+                hook: "New Discovery Hook".into(),
+                rationale: "Rationale 3".into(),
+            },
+        ];
+
+        let cands_v2 = db.replace_candidates(&proj.id, &drafts_v2).expect("replace 2");
+        
+        // Candidate 1 must STILL EXIST because it has a finished rendered clip!
+        assert!(cands_v2.iter().any(|c| c.id == cand1_id));
+
+        // Candidate 2 (pending unrendered) was replaced
+        assert!(!cands_v2.iter().any(|c| c.id == cand2_id));
+
+        // Candidate 3 is newly discovered
+        assert!(cands_v2.iter().any(|c| c.hook == "New Discovery Hook"));
+
+        // Clips table still has candidate 1's finished clip
+        let clips = db.list_clips_for_project(&proj.id).expect("list clips");
+        let clip1 = clips.iter().find(|c| c.candidate_id == cand1_id).unwrap();
+        assert_eq!(clip1.status, "done");
+        assert_eq!(clip1.output_path.as_deref(), Some("/clips/clip1.mp4"));
+    }
+
+    #[test]
+    fn test_sqlite_wal_and_pragmas() {
+        let db = temp_db();
+        let conn = db.conn.lock().unwrap();
+
+        let journal_mode: String = conn
+            .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+            .expect("query journal_mode");
+        assert_eq!(journal_mode.to_lowercase(), "wal");
+
+        let foreign_keys: i64 = conn
+            .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+            .expect("query foreign_keys");
+        assert_eq!(foreign_keys, 1);
+    }
+
+    #[test]
+    fn test_execute_migration_alter_accepts_duplicate_column_and_rejects_other_errors() {
+        let db = temp_db();
+        let conn = db.conn.lock().unwrap();
+
+        // 1. Adding an already existing column must succeed (duplicate column is accepted as harmless)
+        let dup_res = execute_migration_alter(&conn, "ALTER TABLE projects ADD COLUMN name TEXT");
+        assert!(dup_res.is_ok(), "duplicate column error must be accepted as harmless");
+
+        // 2. Syntax errors or invalid table references must return an Err, not be swallowed
+        let err_res = execute_migration_alter(&conn, "ALTER TABLE non_existent_table ADD COLUMN test_col TEXT");
+        assert!(err_res.is_err(), "non-duplicate errors must be propagated");
+    }
+
+    #[test]
+    fn test_save_transcript_transactional_integrity() {
+        let db = temp_db();
+        let proj = db
+            .create_project("/dummy/path.mp4", "local", "modern-box", Some(60.0))
+            .expect("create project");
+
+        let t1 = db
+            .save_transcript(&proj.id, "deepgram", "{\"words\":[{\"text\":\"first\"}]}", Some("en"))
+            .expect("save transcript 1");
+        assert_eq!(t1.engine, "deepgram");
+
+        let latest1 = db.latest_transcript(&proj.id).expect("latest transcript").unwrap();
+        assert_eq!(latest1.engine, "deepgram");
+        assert!(latest1.raw_json.contains("first"));
+
+        let t2 = db
+            .save_transcript(&proj.id, "whisper", "{\"words\":[{\"text\":\"second\"}]}", Some("en"))
+            .expect("save transcript 2");
+        assert_eq!(t2.engine, "whisper");
+
+        let latest2 = db.latest_transcript(&proj.id).expect("latest transcript").unwrap();
+        assert_eq!(latest2.engine, "whisper");
+        assert!(latest2.raw_json.contains("second"));
     }
 }

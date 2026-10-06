@@ -17,27 +17,31 @@ export function YoutubeImportModal({
   youtubeSaveDir,
 }: YoutubeImportModalProps) {
   const [youtubeUrl, setYoutubeUrl] = useState("");
-  const [youtubeStatus, setYoutubeStatus] = useState<"idle" | "checking" | "warning" | "downloading">("idle");
-  const [youtubeWarningLicense, setYoutubeWarningLicense] = useState<string | null>(null);
-  const [acknowledgedTos, setAcknowledgedTos] = useState(() => {
-    return localStorage.getItem("clipon_youtube_tos_ack") === "true";
-  });
+  const [youtubeStatus, setYoutubeStatus] = useState<
+    "idle" | "checking" | "warning" | "downloading"
+  >("idle");
+  const [youtubeWarningLicense, setYoutubeWarningLicense] = useState<
+    string | null
+  >(null);
+  const [acknowledgedTos, setAcknowledgedTos] = useState(false);
   const { showError } = useAppError();
 
   if (!isOpen) return null;
 
   const handleCheckboxChange = (checked: boolean) => {
     setAcknowledgedTos(checked);
-    localStorage.setItem("clipon_youtube_tos_ack", checked ? "true" : "false");
   };
 
   async function handleImport() {
     if (!youtubeUrl) return;
     setYoutubeStatus("checking");
     try {
-      const result = await invoke<{ isSafe: boolean; license: string | null }>("check_youtube_copyright", {
-        url: youtubeUrl,
-      });
+      const result = await invoke<{ isSafe: boolean; license: string | null }>(
+        "check_youtube_copyright",
+        {
+          url: youtubeUrl,
+        }
+      );
 
       if (!result.isSafe) {
         setYoutubeWarningLicense(result.license || "Standard YouTube License");
@@ -57,8 +61,10 @@ export function YoutubeImportModal({
       const downloadedPath = await invoke<string>("download_youtube_video", {
         url: youtubeUrl,
         outputDir: youtubeSaveDir.trim() || null,
+        userAcknowledged: acknowledgedTos,
       });
       setYoutubeUrl("");
+      setAcknowledgedTos(false);
       setYoutubeStatus("idle");
       onClose();
       onSuccess(downloadedPath);
@@ -102,11 +108,18 @@ export function YoutubeImportModal({
               alignItems: "flex-start",
             }}
           >
-            <ShieldAlert size={16} color="#60a5fa" style={{ flexShrink: 0, marginTop: 2 }} />
+            <ShieldAlert
+              size={16}
+              color="#60a5fa"
+              style={{ flexShrink: 0, marginTop: 2 }}
+            />
             <div>
-              <strong style={{ color: "#e2e8f0" }}>Notice & Terms of Service:</strong>
+              <strong style={{ color: "#e2e8f0" }}>
+                Notice & Terms of Service:
+              </strong>
               <div style={{ marginTop: 2 }}>
-                Ensure you have the right to download and use this content under YouTube’s Terms of Service and applicable copyright laws.
+                Ensure you have the right to download and use this content under
+                YouTube’s Terms of Service and applicable copyright laws.
               </div>
             </div>
           </div>
@@ -127,13 +140,22 @@ export function YoutubeImportModal({
                 <span>Copyright Advisory</span>
               </div>
               <p>
-                This video is not explicitly marked with a Creative Commons license. Detected license:{" "}
-                <strong>{youtubeWarningLicense}</strong>. Clipping and republishing copyrighted content may violate platform terms.
+                This video is not explicitly marked with a Creative Commons
+                license. Detected license:{" "}
+                <strong>{youtubeWarningLicense}</strong>. Clipping and
+                republishing copyrighted content may violate platform terms.
               </p>
             </div>
           )}
 
-          <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 8 }}>
+          <div
+            style={{
+              marginTop: 14,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
             <input
               type="checkbox"
               id="tos_ack"
@@ -141,7 +163,15 @@ export function YoutubeImportModal({
               onChange={(e) => handleCheckboxChange(e.target.checked)}
               style={{ cursor: "pointer" }}
             />
-            <label htmlFor="tos_ack" style={{ fontSize: 12, color: "#cbd5e1", cursor: "pointer", userSelect: "none" }}>
+            <label
+              htmlFor="tos_ack"
+              style={{
+                fontSize: 12,
+                color: "#cbd5e1",
+                cursor: "pointer",
+                userSelect: "none",
+              }}
+            >
               I confirm I have permission or legal right to use this content
             </label>
           </div>
@@ -153,9 +183,12 @@ export function YoutubeImportModal({
             onClick={() => {
               onClose();
               setYoutubeUrl("");
+              setAcknowledgedTos(false);
               setYoutubeStatus("idle");
             }}
-            disabled={youtubeStatus === "checking" || youtubeStatus === "downloading"}
+            disabled={
+              youtubeStatus === "checking" || youtubeStatus === "downloading"
+            }
           >
             Cancel
           </button>
@@ -171,7 +204,9 @@ export function YoutubeImportModal({
             <button
               className="studio-btn primary"
               onClick={handleImport}
-              disabled={!youtubeUrl || !acknowledgedTos || youtubeStatus !== "idle"}
+              disabled={
+                !youtubeUrl || !acknowledgedTos || youtubeStatus !== "idle"
+              }
             >
               {youtubeStatus === "checking" ? (
                 <>

@@ -100,7 +100,7 @@ echo -e "  Passed: ${GREEN}${PASS_COUNT}${NC}"
 echo -e "  Failed: ${RED}${FAIL_COUNT}${NC}"
 
 if [ "$FAIL_COUNT" -eq 0 ]; then
-    echo -e "${BOLD}${GREEN}All Smoke Tests Passed Successfully! System is Production-Ready.${NC}"
+    echo -e "${BOLD}${GREEN}All Smoke Tests Passed Successfully! Verified test coverage meets quality gates.${NC}"
     exit 0
 else
     echo -e "${BOLD}${RED}Some smoke tests failed. Please review output above.${NC}"

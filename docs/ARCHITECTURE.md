@@ -5,6 +5,7 @@
 ClipOn is a desktop-native application engineered for high-performance video analysis, automated short-form clipping, and multi-person dynamic reframing.
 
 The architecture combines:
+
 - **Presentation Layer**: React 19 + TypeScript on Vite, embedded in Tauri v2 WebView.
 - **Application Core**: Rust backend coordinating database persistence, API clients, job queueing, and media pipeline orchestration.
 - **Media Engine**: FFmpeg with Apple Silicon VideoToolbox (`h264_videotoolbox`) hardware acceleration.
@@ -18,7 +19,7 @@ The architecture combines:
 ```mermaid
 graph TD
     UI[React 19 Frontend Features] <-->|Tauri IPC / Events| RustCore[Tauri Rust Core]
-    
+
     subgraph Rust Backend
         RustCore --> DB[(SQLite DB + Migrations)]
         RustCore --> Cred[OS Keyring]
@@ -45,26 +46,27 @@ graph TD
 
 The frontend is strictly structured into modular feature domains under `src/features/`:
 
-| Feature Module | Responsibility | Key Components |
-|---|---|---|
-| `error/` | Centralized application error store & recovery | `ErrorProvider`, `useAppError` |
-| `projects/` | Workspace layout, navigation, project lifecycle | `ProjectSidebar`, `ProjectHeader`, `ProjectsDashboard` |
-| `transcription/` | Interactive transcript search & inspection | `TranscriptionPanel` |
-| `moments/` | AI candidate moments review, filtering & batch actions | `MomentsPanel`, `MomentCard` |
-| `rendering/` | Subtitle style selection & render options | `CaptionStyleModal`, `RenderControls` |
-| `jobs/` | Real-time render progress bar & job cancellation | `JobProgressBar` |
-| `export/` | Preset platform aspect ratio & bitrate selection | `ExportPresetSelector` |
-| `podcast/` | Multi-person timeline visualizer | `PodcastTimelinePreview` |
-| `youtube/` | YouTube downloader with copyright terms verification | `YoutubeImportModal` |
-| `social/` | AI titles/hashtags generation & Instagram Reels direct publish | `SocialKitModal`, `InstagramPublishModal` |
-| `settings/` | Studio configuration (AI keys, storage, video modifiers) | `SettingsModal` |
-| `system/` | Diagnostics & hardware acceleration monitoring | `StatusBar` |
+| Feature Module   | Responsibility                                                 | Key Components                                         |
+| ---------------- | -------------------------------------------------------------- | ------------------------------------------------------ |
+| `error/`         | Centralized application error store & recovery                 | `ErrorProvider`, `useAppError`                         |
+| `projects/`      | Workspace layout, navigation, project lifecycle                | `ProjectSidebar`, `ProjectHeader`, `ProjectsDashboard` |
+| `transcription/` | Interactive transcript search & inspection                     | `TranscriptionPanel`                                   |
+| `moments/`       | AI candidate moments review, filtering & batch actions         | `MomentsPanel`, `MomentCard`                           |
+| `rendering/`     | Subtitle style selection & render options                      | `CaptionStyleModal`, `RenderControls`                  |
+| `jobs/`          | Real-time render progress bar & job cancellation               | `JobProgressBar`                                       |
+| `export/`        | Preset platform aspect ratio & bitrate selection               | `ExportPresetSelector`                                 |
+| `podcast/`       | Multi-person timeline visualizer                               | `PodcastTimelinePreview`                               |
+| `youtube/`       | YouTube downloader with copyright terms verification           | `YoutubeImportModal`                                   |
+| `social/`        | AI titles/hashtags generation & Instagram Reels direct publish | `SocialKitModal`, `InstagramPublishModal`              |
+| `settings/`      | Studio configuration (AI keys, storage, video modifiers)       | `SettingsModal`                                        |
+| `system/`        | Diagnostics & hardware acceleration monitoring                 | `StatusBar`                                            |
 
 ---
 
 ## 4. Media Processing & Dynamic Reframing Pipeline
 
 ### Dynamic Podcast Reframing (16:9 → 9:16)
+
 1. **Face & Identity Tracking**:
    - `clipon-face-tracker` runs Apple Vision face landmark requests at 5 fps over the clip interval.
    - Computes normalized bounding boxes and appearance prototypes.
@@ -86,6 +88,7 @@ The frontend is strictly structured into modular feature domains under `src/feat
 ## 5. Security & Credential Storage
 
 Sensitive credentials (API keys for Deepgram, Gemini, Anthropic, DeepSeek, OpenAI, Groq, Meta Graph tokens) are stored via OS Keyring:
+
 - **macOS**: Apple Keychain Services.
 - **Linux**: Secret Service (Freedesktop).
 - **Windows**: Windows Credential Manager.

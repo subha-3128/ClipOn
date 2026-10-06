@@ -73,17 +73,29 @@ export function ProjectsDashboard({
             onClick={onImportMedia}
             disabled={busy !== "idle"}
           >
-            {busy === "import" ? <Loader2 className="spin" size={15} /> : <FileVideo size={15} />}
-            {appSection === "podcast" ? "Import Podcast Video" : "Import Recording"}
+            {busy === "import" ? (
+              <Loader2 className="spin" size={15} />
+            ) : (
+              <FileVideo size={15} />
+            )}
+            {appSection === "podcast"
+              ? "Import Podcast Video"
+              : "Import Recording"}
           </button>
           <button
             className="btn-minimal-secondary"
             onClick={onOpenYoutubeModal}
             disabled={busy !== "idle" || !environment?.hasYtdlp}
-            title={!environment?.hasYtdlp ? "yt-dlp required" : "Download a video from YouTube"}
+            title={
+              !environment?.hasYtdlp
+                ? "yt-dlp required"
+                : "Download a video from YouTube"
+            }
           >
             <Youtube size={15} />
-            {appSection === "podcast" ? "Podcast YouTube URL" : "Import from YouTube"}
+            {appSection === "podcast"
+              ? "Podcast YouTube URL"
+              : "Import from YouTube"}
           </button>
         </div>
       </header>
@@ -99,7 +111,10 @@ export function ProjectsDashboard({
             onChange={(e) => setProjectSearch(e.target.value)}
           />
           {projectSearch && (
-            <button onClick={() => setProjectSearch("")} className="clear-search">
+            <button
+              onClick={() => setProjectSearch("")}
+              className="clear-search"
+            >
               <X size={13} />
             </button>
           )}
@@ -108,7 +123,8 @@ export function ProjectsDashboard({
         <div className="dashboard-stats-pills">
           <span className="stats-pill">{projects.length} Total Projects</span>
           <span className="stats-pill">
-            Engine: {transcriptionEngine === "local" ? "Whisper Offline" : "Deepgram"}
+            Engine:{" "}
+            {transcriptionEngine === "local" ? "Whisper Offline" : "Deepgram"}
           </span>
         </div>
       </div>
@@ -168,7 +184,10 @@ export function ProjectsDashboard({
         <div className="empty-dashboard-state">
           <Clapperboard size={44} className="empty-state-icon" />
           <h3>No projects found</h3>
-          <p>Import a recording or paste a YouTube link to generate viral short clips.</p>
+          <p>
+            Import a recording or paste a YouTube link to generate viral short
+            clips.
+          </p>
         </div>
       )}
     </div>

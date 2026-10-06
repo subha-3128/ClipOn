@@ -43,7 +43,11 @@ export function ProjectHeader({
     <>
       <header className="workspace-topbar">
         <div className="topbar-left">
-          <button className="back-btn" onClick={onBack} title="Back to All Projects">
+          <button
+            className="back-btn"
+            onClick={onBack}
+            title="Back to All Projects"
+          >
             <ArrowLeft size={16} />
             <span>Projects</span>
           </button>
@@ -63,8 +67,12 @@ export function ProjectHeader({
                   ? formatTime(detail.project.sourceDuration)
                   : "Probing..."}
               </span>
-              <span className="meta-pill">{detail.project.captionStyle || "Modern Box"}</span>
-              <span className="meta-pill status-pill">{detail.project.status}</span>
+              <span className="meta-pill">
+                {detail.project.captionStyle || "Modern Box"}
+              </span>
+              <span className="meta-pill status-pill">
+                {detail.project.status}
+              </span>
             </div>
           </div>
         </div>
@@ -97,7 +105,11 @@ export function ProjectHeader({
             <FolderOpen size={15} />
             <span>Clips Folder</span>
           </button>
-          <button className="topbar-action-btn" onClick={onOpenSettings} title="Studio Settings">
+          <button
+            className="topbar-action-btn"
+            onClick={onOpenSettings}
+            title="Studio Settings"
+          >
             <Sliders size={15} />
             <span>Config</span>
           </button>
@@ -113,42 +125,62 @@ export function ProjectHeader({
 
       {/* 4-Stage Studio Pipeline Tracker */}
       <div className="pipeline-tracker">
-        <div className={`pipeline-step ${detail.project.sourcePath ? "complete" : ""}`}>
-          <div className="step-circle">{detail.project.sourcePath ? <Check size={12} /> : "1"}</div>
+        <div
+          className={`pipeline-step ${detail.project.sourcePath ? "complete" : ""}`}
+        >
+          <div className="step-circle">
+            {detail.project.sourcePath ? <Check size={12} /> : "1"}
+          </div>
           <div className="step-content">
             <span className="step-title">Source Loaded</span>
-            <span className="step-sub">{fileName(detail.project.sourcePath)}</span>
-          </div>
-        </div>
-        <div className="pipeline-connector" />
-
-        <div className={`pipeline-step ${Boolean(detail.transcript) ? "complete" : ""}`}>
-          <div className="step-circle">{detail.transcript ? <Check size={12} /> : "2"}</div>
-          <div className="step-content">
-            <span className="step-title">Transcription</span>
             <span className="step-sub">
-              {transcript ? `${transcript.segments.length} segments` : "Pending"}
+              {fileName(detail.project.sourcePath)}
             </span>
           </div>
         </div>
         <div className="pipeline-connector" />
 
-        <div className={`pipeline-step ${detail.candidates.length > 0 ? "complete" : ""}`}>
-          <div className="step-circle">{detail.candidates.length > 0 ? <Check size={12} /> : "3"}</div>
+        <div className={`pipeline-step ${detail.transcript ? "complete" : ""}`}>
+          <div className="step-circle">
+            {detail.transcript ? <Check size={12} /> : "2"}
+          </div>
+          <div className="step-content">
+            <span className="step-title">Transcription</span>
+            <span className="step-sub">
+              {transcript
+                ? `${transcript.segments.length} segments`
+                : "Pending"}
+            </span>
+          </div>
+        </div>
+        <div className="pipeline-connector" />
+
+        <div
+          className={`pipeline-step ${detail.candidates.length > 0 ? "complete" : ""}`}
+        >
+          <div className="step-circle">
+            {detail.candidates.length > 0 ? <Check size={12} /> : "3"}
+          </div>
           <div className="step-content">
             <span className="step-title">Viral Moments</span>
             <span className="step-sub">
-              {detail.candidates.length ? `${detail.candidates.length} found` : "Pending"}
+              {detail.candidates.length
+                ? `${detail.candidates.length} found`
+                : "Pending"}
             </span>
           </div>
         </div>
         <div className="pipeline-connector" />
 
         <div className={`pipeline-step ${cutCount > 0 ? "complete" : ""}`}>
-          <div className="step-circle">{cutCount > 0 ? <Check size={12} /> : "4"}</div>
+          <div className="step-circle">
+            {cutCount > 0 ? <Check size={12} /> : "4"}
+          </div>
           <div className="step-content">
             <span className="step-title">Rendered Clips</span>
-            <span className="step-sub">{cutCount > 0 ? `${cutCount} ready` : "Not cut"}</span>
+            <span className="step-sub">
+              {cutCount > 0 ? `${cutCount} ready` : "Not cut"}
+            </span>
           </div>
         </div>
       </div>

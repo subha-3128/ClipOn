@@ -1,8 +1,9 @@
 use anyhow::Result;
 use serde::{de::DeserializeOwned, Serialize};
+use sha2::{Digest, Sha256};
 use std::{
     fs,
-    hash::{Hash, Hasher},
+    io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
 };
 
@@ -11,6 +12,8 @@ pub struct AnalysisCache {
     base_dir: PathBuf,
 }
 
+static GLOBAL_CACHE_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
 impl AnalysisCache {
     pub fn new(data_dir: &Path) -> Self {
         let base_dir = data_dir.join("analysis");
@@ -18,13 +21,24 @@ impl AnalysisCache {
         Self { base_dir }
     }
 
-    pub fn global() -> Self {
-        let base = dirs::data_dir()
-            .map(|d| d.join("clipon"))
-            .unwrap_or_else(|| PathBuf::from("."));
-        Self::new(&base)
+    pub fn init_global(data_dir: &Path) {
+        let _ = GLOBAL_CACHE_DIR.set(data_dir.to_path_buf());
     }
 
+    pub fn global() -> Self {
+        if let Some(data_dir) = GLOBAL_CACHE_DIR.get() {
+            Self::new(data_dir)
+        } else {
+            let base = dirs::data_dir()
+                .map(|d| d.join("clipon"))
+                .unwrap_or_else(|| PathBuf::from("."));
+            Self::new(&base)
+        }
+    }
+
+    /// Computes a deterministic, cryptographic cache key using SHA-256.
+    /// Incorporates file path, size, nanosecond mtime, content fingerprint (head+tail digest),
+    /// time bounds, and analyzer/model versions.
     pub fn compute_source_key_with_params(
         source_path: &str,
         start_sec: f64,
@@ -36,10 +50,27 @@ impl AnalysisCache {
         let p = Path::new(source_path);
         let mtime = p.metadata().and_then(|m| m.modified()).ok();
         let size = p.metadata().map(|m| m.len()).unwrap_or(0);
-        let mtime_sec = mtime
+        let mtime_nanos = mtime
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_secs())
+            .map(|d| d.as_nanos())
             .unwrap_or(0);
+
+        // Compute content fingerprint if file exists to prevent collision on rapid overwrite
+        let mut content_hasher = Sha256::new();
+        if let Ok(mut file) = std::fs::File::open(p) {
+            let mut buf = [0u8; 65536];
+            if let Ok(n) = file.read(&mut buf) {
+                content_hasher.update(&buf[..n]);
+            }
+            if size > 65536 * 2 {
+                if file.seek(SeekFrom::End(-65536)).is_ok() {
+                    if let Ok(n) = file.read(&mut buf) {
+                        content_hasher.update(&buf[..n]);
+                    }
+                }
+            }
+        }
+        let content_digest = format!("{:x}", content_hasher.finalize());
 
         let stem = p
             .file_stem()
@@ -50,13 +81,14 @@ impl AnalysisCache {
             .collect::<String>();
 
         let raw = format!(
-            "{source_path}:{size}:{mtime_sec}:{start_sec:.3}:{duration_sec:.3}:{analyzer_version}:{model_version}:{analysis_params}:clipon_v3"
+            "{source_path}:{size}:{mtime_nanos}:{content_digest}:{start_sec:.3}:{duration_sec:.3}:{analyzer_version}:{model_version}:{analysis_params}:clipon_sha256_v1"
         );
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        raw.hash(&mut hasher);
-        let hash_val = hasher.finish();
+        let mut hasher = Sha256::new();
+        hasher.update(raw.as_bytes());
+        let hash_hex = format!("{:x}", hasher.finalize());
+        let hash_short = &hash_hex[..16];
 
-        format!("{stem}_{:016x}", hash_val)
+        format!("{stem}_{hash_short}")
     }
 
     pub fn compute_source_key(source_path: &str, start_sec: f64, duration_sec: f64) -> String {

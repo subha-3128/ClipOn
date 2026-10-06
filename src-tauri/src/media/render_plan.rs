@@ -35,11 +35,17 @@ impl Default for ReframePlan {
 
 impl ReframePlan {
     pub fn from_mode_str(mode: Option<&str>) -> Self {
+        Self::from_mode_with_override(mode, None)
+    }
+
+    pub fn from_mode_with_override(mode: Option<&str>, layout_override: Option<&str>) -> Self {
         match mode.unwrap_or("vertical_crop") {
             "original" => Self::Original,
             "smart_face_track" => Self::SmartFaceTrack,
             "podcast_split" => Self::PodcastSplit {
-                layout_override: None,
+                layout_override: layout_override
+                    .filter(|s| !s.is_empty() && *s != "auto")
+                    .map(ToString::to_string),
             },
             _ => Self::VerticalCrop,
         }

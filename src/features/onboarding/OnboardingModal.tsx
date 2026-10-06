@@ -16,7 +16,16 @@ export interface OnboardingProps {
   environment: EnvironmentStatus | null;
   onComplete: () => void;
   setTranscriptionEngine: (engine: "deepgram" | "local") => void;
-  setLlmEngine: (engine: "claude" | "deepseek" | "local" | "gemini" | "openai" | "openrouter" | "groq") => void;
+  setLlmEngine: (
+    engine:
+      | "claude"
+      | "deepseek"
+      | "local"
+      | "gemini"
+      | "openai"
+      | "openrouter"
+      | "groq"
+  ) => void;
   setLocalLlmModel: (model: string) => void;
   setDeepgramKey: (key: string) => void;
   setGeminiKey: (key: string) => void;
@@ -49,14 +58,18 @@ export function Onboarding({
   groqKey: initialGroqKey,
   refreshEnv,
 }: OnboardingProps) {
-  const [setupMode, setSetupMode] = useState<"choose" | "local" | "cloud" | "downloading">("choose");
+  const [setupMode, setSetupMode] = useState<
+    "choose" | "local" | "cloud" | "downloading"
+  >("choose");
   const [selectedModel, setSelectedModel] = useState<string>("llama3.2");
   const [dgKey, setDgKey] = useState(initialDeepgramKey || "");
   const [gmKey, setGmKey] = useState(initialGeminiKey || "");
   const [antKey, setAntKey] = useState(initialAnthropicKey || "");
   const [dsKey, setDsKey] = useState(initialDeepseekKey || "");
   const [grKey, setGrKey] = useState(initialGroqKey || "");
-  const [downloadStatus, setDownloadStatus] = useState("Initializing download...");
+  const [downloadStatus, setDownloadStatus] = useState(
+    "Initializing download..."
+  );
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [checkingOllama, setCheckingOllama] = useState(false);
@@ -73,7 +86,14 @@ export function Onboarding({
     if (!antKey && initialAnthropicKey) setAntKey(initialAnthropicKey);
     if (!dsKey && initialDeepseekKey) setDsKey(initialDeepseekKey);
     if (!grKey && initialGroqKey) setGrKey(initialGroqKey);
-  }, [environment, initialDeepgramKey, initialGeminiKey, initialAnthropicKey, initialDeepseekKey, initialGroqKey]);
+  }, [
+    environment,
+    initialDeepgramKey,
+    initialGeminiKey,
+    initialAnthropicKey,
+    initialDeepseekKey,
+    initialGroqKey,
+  ]);
 
   const copyWhisperCommand = () => {
     navigator.clipboard.writeText("pip3 install -U openai-whisper");
@@ -111,13 +131,15 @@ export function Onboarding({
     }
 
     try {
-      await Promise.all([
-        ["deepgram", dgKey],
-        ["gemini", cleanGm],
-        ["anthropic", antKey],
-        ["deepseek", dsKey],
-        ["groq", grKey],
-      ].map(([name, value]) => invoke("save_credential", { name, value })));
+      await Promise.all(
+        [
+          ["deepgram", dgKey],
+          ["gemini", cleanGm],
+          ["anthropic", antKey],
+          ["deepseek", dsKey],
+          ["groq", grKey],
+        ].map(([name, value]) => invoke("save_credential", { name, value }))
+      );
       await refreshEnv();
     } catch (err) {
       console.error("Failed to persist credentials safely:", err);
@@ -133,25 +155,41 @@ export function Onboarding({
     setDownloadProgress(0);
     await refreshEnv();
 
-    let isOllamaRunning = false;
+    let isOllamaRunning: boolean;
+    let currentEnv: EnvironmentStatus | null = null;
     try {
-      const currentEnv = await invoke<EnvironmentStatus>("environment_status");
+      currentEnv = await invoke<EnvironmentStatus>("environment_status");
       isOllamaRunning = currentEnv.hasOllama;
-    } catch (e) {}
+    } catch {
+      isOllamaRunning = false;
+    }
 
     setCheckingOllama(false);
 
     if (!isOllamaRunning) {
+      if (currentEnv && currentEnv.ollamaInstallSupported === false) {
+        setError(
+          `Ollama was not detected at http://localhost:11434. In-app automatic installation is supported on macOS. On ${currentEnv.platform === "windows" ? "Windows" : "Linux"}, please download and start Ollama from https://ollama.com first.`
+        );
+        return;
+      }
       setSetupMode("downloading");
       setDownloadStatus("Ollama not found. Starting automatic installer...");
       try {
-        const unlistenInstall = await listen<string>("ollama-install-status", (event) => {
-          setDownloadStatus(event.payload);
-        });
+        const unlistenInstall = await listen<string>(
+          "ollama-install-status",
+          (event) => {
+            setDownloadStatus(event.payload);
+          }
+        );
         await invoke("install_ollama");
         unlistenInstall();
       } catch (err) {
-        setError("Automatic installation failed: " + String(err) + ". Please install it manually from ollama.com.");
+        setError(
+          "Automatic installation failed: " +
+            String(err) +
+            ". Please install it manually from ollama.com."
+        );
         setSetupMode("local");
         return;
       }
@@ -161,16 +199,18 @@ export function Onboarding({
     setDownloadStatus("Ollama connected. Initiating model download...");
 
     try {
-      const unlisten = await listen<{ status: string; completed?: number; total?: number; percentage?: number }>(
-        "ollama-pull-progress",
-        (event) => {
-          const payload = event.payload;
-          setDownloadStatus(payload.status);
-          if (payload.percentage !== undefined && payload.percentage !== null) {
-            setDownloadProgress(Math.round(payload.percentage));
-          }
+      const unlisten = await listen<{
+        status: string;
+        completed?: number;
+        total?: number;
+        percentage?: number;
+      }>("ollama-pull-progress", (event) => {
+        const payload = event.payload;
+        setDownloadStatus(payload.status);
+        if (payload.percentage !== undefined && payload.percentage !== null) {
+          setDownloadProgress(Math.round(payload.percentage));
         }
-      );
+      });
 
       await invoke("pull_ollama_model", { modelName: selectedModel });
       unlisten();
@@ -199,30 +239,57 @@ export function Onboarding({
                 <Clapperboard size={36} />
               </div>
               <h2>Welcome to ClipOn</h2>
-              <p>Long recording in. Short clips out. Choose how you want to run the studio.</p>
+              <p>
+                Long recording in. Short clips out. Choose how you want to run
+                the studio.
+              </p>
             </div>
 
             <div className="onboarding-choices">
-              <div className="choice-card" onClick={() => setSetupMode("local")}>
+              <div
+                className="choice-card"
+                onClick={() => setSetupMode("local")}
+              >
                 <div className="choice-icon">
                   <Database size={28} />
                 </div>
                 <h3>Fully Offline &amp; Private</h3>
-                <p>Process everything locally on your machine. 100% private, free, and offline.</p>
-                <div className="choice-badge local">Offline (Ollama + Whisper)</div>
+                <p>
+                  Process everything locally on your machine. 100% private,
+                  free, and offline.
+                </p>
+                <div className="choice-badge local">
+                  Offline (Ollama + Whisper)
+                </div>
               </div>
 
-              <div className="choice-card" onClick={() => setSetupMode("cloud")}>
+              <div
+                className="choice-card"
+                onClick={() => setSetupMode("cloud")}
+              >
                 <div className="choice-icon">
                   <Cloud size={28} />
                 </div>
                 <h3>Cloud APIs</h3>
-                <p>Blazing fast cloud transcription &amp; analysis. Minimal local RAM requirements.</p>
+                <p>
+                  Blazing fast cloud transcription &amp; analysis. Minimal local
+                  RAM requirements.
+                </p>
                 <div className="choice-badge cloud">API Keys Required</div>
               </div>
             </div>
-            <div style={{ marginTop: "24px", display: "flex", justifyContent: "center" }}>
-              <button type="button" className="studio-btn secondary" onClick={skipToStudio}>
+            <div
+              style={{
+                marginTop: "24px",
+                display: "flex",
+                justifyContent: "center",
+              }}
+            >
+              <button
+                type="button"
+                className="studio-btn secondary"
+                onClick={skipToStudio}
+              >
                 Skip Setup &amp; Explore Studio
               </button>
             </div>
@@ -236,25 +303,43 @@ export function Onboarding({
               <p>Set up your local transcription and Ollama intelligence.</p>
             </div>
 
-            {error && <div className="workspace-error-banner" style={{ marginBottom: "16px" }}>{error}</div>}
+            {error && (
+              <div
+                className="workspace-error-banner"
+                style={{ marginBottom: "16px" }}
+              >
+                {error}
+              </div>
+            )}
 
             <div className="setup-steps">
               <div className="setup-step">
                 <div className="step-num">1</div>
                 <div className="step-body">
                   <h4>Install Python Whisper</h4>
-                  <p>Run the following command in terminal to enable local transcription:</p>
+                  <p>
+                    Run the following command in terminal to enable local
+                    transcription:
+                  </p>
                   <div className="code-block-container">
                     <code>pip3 install -U openai-whisper</code>
-                    <button type="button" className="copy-btn" onClick={copyWhisperCommand}>
+                    <button
+                      type="button"
+                      className="copy-btn"
+                      onClick={copyWhisperCommand}
+                    >
                       {copied ? <Check size={14} /> : <Copy size={14} />}
                       {copied ? "Copied!" : "Copy"}
                     </button>
                   </div>
                   {environment?.hasLocalWhisperModel ? (
-                    <span className="step-check success"><BadgeCheck size={14} /> Whisper detected in Python!</span>
+                    <span className="step-check success">
+                      <BadgeCheck size={14} /> Whisper detected in Python!
+                    </span>
                   ) : (
-                    <span className="step-check warning">Package 'whisper' not detected yet. Run command above.</span>
+                    <span className="step-check warning">
+                      Package 'whisper' not detected yet. Run command above.
+                    </span>
                   )}
                 </div>
               </div>
@@ -272,7 +357,10 @@ export function Onboarding({
                         <h5>LLaMA 3.2 3B</h5>
                         <span className="model-size">1.9 GB</span>
                       </div>
-                      <p>Fast, efficient, excellent hook identification for shorts.</p>
+                      <p>
+                        Fast, efficient, excellent hook identification for
+                        shorts.
+                      </p>
                     </div>
 
                     <div
@@ -283,16 +371,58 @@ export function Onboarding({
                         <h5>Qwen 2.5 3B</h5>
                         <span className="model-size">2.0 GB</span>
                       </div>
-                      <p>Optimized for multilingual dialogues and concise hooks.</p>
+                      <p>
+                        Optimized for multilingual dialogues and concise hooks.
+                      </p>
                     </div>
                   </div>
+                  {environment?.ollamaInstallSupported === false &&
+                    !environment?.hasOllama && (
+                      <p
+                        style={{
+                          marginTop: "10px",
+                          fontSize: "12px",
+                          color: "var(--muted)",
+                        }}
+                      >
+                        Note: Automatic installation is macOS only. On{" "}
+                        {environment?.platform === "windows"
+                          ? "Windows"
+                          : "Linux"}
+                        , please install and run Ollama from{" "}
+                        <a
+                          href="https://ollama.com"
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            color: "var(--accent)",
+                            textDecoration: "underline",
+                          }}
+                        >
+                          ollama.com
+                        </a>
+                        .
+                      </p>
+                    )}
                 </div>
               </div>
             </div>
 
             <div className="onboarding-actions">
-              <button type="button" className="studio-btn secondary" onClick={() => setSetupMode("choose")}>Back</button>
-              <button type="button" className="studio-btn secondary" onClick={skipToStudio}>Skip Setup</button>
+              <button
+                type="button"
+                className="studio-btn secondary"
+                onClick={() => setSetupMode("choose")}
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                className="studio-btn secondary"
+                onClick={skipToStudio}
+              >
+                Skip Setup
+              </button>
               <button
                 type="button"
                 className="studio-btn primary"
@@ -300,7 +430,9 @@ export function Onboarding({
                 disabled={checkingOllama}
               >
                 {checkingOllama ? <Loader2 className="spin" size={16} /> : null}
-                {checkingOllama ? "Connecting Ollama..." : "Download & Finish Setup"}
+                {checkingOllama
+                  ? "Connecting Ollama..."
+                  : "Download & Finish Setup"}
               </button>
             </div>
           </div>
@@ -313,7 +445,14 @@ export function Onboarding({
               <p>Add your API keys to enable cloud processing.</p>
             </div>
 
-            {error && <div className="workspace-error-banner" style={{ marginBottom: "16px" }}>{error}</div>}
+            {error && (
+              <div
+                className="workspace-error-banner"
+                style={{ marginBottom: "16px" }}
+              >
+                {error}
+              </div>
+            )}
 
             <div className="form-stack">
               <div className="settings-field-group">
@@ -322,7 +461,11 @@ export function Onboarding({
                   type="password"
                   value={dgKey}
                   onChange={(e) => setDgKey(e.target.value)}
-                  placeholder={environment?.hasDeepgramKey ? "Saved securely" : "Deepgram API Key"}
+                  placeholder={
+                    environment?.hasDeepgramKey
+                      ? "Saved securely"
+                      : "Deepgram API Key"
+                  }
                 />
               </div>
 
@@ -332,7 +475,11 @@ export function Onboarding({
                   type="password"
                   value={gmKey}
                   onChange={(e) => setGmKey(e.target.value)}
-                  placeholder={environment?.hasGeminiKey ? "Saved securely" : "Google Gemini API Key"}
+                  placeholder={
+                    environment?.hasGeminiKey
+                      ? "Saved securely"
+                      : "Google Gemini API Key"
+                  }
                 />
               </div>
 
@@ -368,9 +515,23 @@ export function Onboarding({
             </div>
 
             <div className="onboarding-actions">
-              <button type="button" className="studio-btn secondary" onClick={() => setSetupMode("choose")}>Back</button>
-              <button type="button" className="studio-btn secondary" onClick={skipToStudio}>Skip for Now</button>
-              <button type="submit" className="studio-btn primary">Save &amp; Launch Studio</button>
+              <button
+                type="button"
+                className="studio-btn secondary"
+                onClick={() => setSetupMode("choose")}
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                className="studio-btn secondary"
+                onClick={skipToStudio}
+              >
+                Skip for Now
+              </button>
+              <button type="submit" className="studio-btn primary">
+                Save &amp; Launch Studio
+              </button>
             </div>
           </form>
         )}
@@ -383,7 +544,10 @@ export function Onboarding({
             </div>
 
             <div className="download-progress-bar">
-              <div className="progress-fill" style={{ width: `${downloadProgress}%` }} />
+              <div
+                className="progress-fill"
+                style={{ width: `${downloadProgress}%` }}
+              />
             </div>
 
             <div className="download-stats-row">

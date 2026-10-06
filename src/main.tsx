@@ -26,7 +26,6 @@ import type {
   Transcript,
   SocialKit,
   Candidate,
-  Clip,
   InstagramPost,
   ProjectDetail,
   NormalizedTranscript,
@@ -51,13 +50,23 @@ function formatTime(seconds: number): string {
 function formatDate(dateStr: string): string {
   try {
     const d = new Date(dateStr);
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+    return d.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
   } catch {
     return dateStr;
   }
 }
 
-function Toast({ message, onClose }: { message: string | null; onClose: () => void }) {
+function Toast({
+  message,
+  onClose,
+}: {
+  message: string | null;
+  onClose: () => void;
+}) {
   useEffect(() => {
     if (!message) return;
     const timer = setTimeout(onClose, 2400);
@@ -75,7 +84,9 @@ function Toast({ message, onClose }: { message: string | null; onClose: () => vo
 
 function AppContent() {
   const { showError, showWarning, showInfo } = useAppError();
-  const [environment, setEnvironment] = useState<EnvironmentStatus | null>(null);
+  const [environment, setEnvironment] = useState<EnvironmentStatus | null>(
+    null
+  );
   const [projects, setProjects] = useState<Project[]>([]);
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [busy, setBusy] = useState<BusyState>("idle");
@@ -85,39 +96,85 @@ function AppContent() {
   const [showSettings, setShowSettings] = useState(false);
   const [showStyleModal, setShowStyleModal] = useState(false);
   const [selectedStyle, setSelectedStyle] = useState("modern-box");
-  const [mediaPathToImport, setMediaPathToImport] = useState<string | null>(null);
+  const [mediaPathToImport, setMediaPathToImport] = useState<string | null>(
+    null
+  );
   const [youtubeModalOpen, setYoutubeModalOpen] = useState(false);
 
   // Candidate cut & social kit state
-  const [renderingCandidateId, setRenderingCandidateId] = useState<string | null>(null);
-  const [socialKitModalCandidate, setSocialKitModalCandidate] = useState<Candidate | null>(null);
-  const [socialKitData, setSocialKitData] = useState<Record<string, SocialKit>>({});
+  const [renderingCandidateId, setRenderingCandidateId] = useState<
+    string | null
+  >(null);
+  const [socialKitModalCandidate, setSocialKitModalCandidate] =
+    useState<Candidate | null>(null);
+  const [socialKitData, setSocialKitData] = useState<Record<string, SocialKit>>(
+    {}
+  );
   const [socialKitLoading, setSocialKitLoading] = useState<string | null>(null);
 
   // Settings & persistence
   const [isOnboarded, setIsOnboarded] = useState<boolean | null>(null);
-  const [transcriptionEngine, setTranscriptionEngine] = useState<"deepgram" | "local">(() => {
-    return ((localStorage.getItem("clipon_transcription_engine") || localStorage.getItem("autoshorts_transcription_engine")) as "deepgram" | "local") || "local";
+  const [transcriptionEngine, setTranscriptionEngine] = useState<
+    "deepgram" | "local"
+  >(() => {
+    return (
+      ((localStorage.getItem("clipon_transcription_engine") ||
+        localStorage.getItem("autoshorts_transcription_engine")) as
+        "deepgram" | "local") || "local"
+    );
   });
-  const [llmEngine, setLlmEngine] = useState<"claude" | "deepseek" | "local" | "gemini" | "openai" | "openrouter" | "groq">(() => {
-    return ((localStorage.getItem("clipon_llm_engine") || localStorage.getItem("autoshorts_llm_engine")) as any) || "local";
+  const [llmEngine, setLlmEngine] = useState<
+    | "claude"
+    | "deepseek"
+    | "local"
+    | "gemini"
+    | "openai"
+    | "openrouter"
+    | "groq"
+  >(() => {
+    return (
+      ((localStorage.getItem("clipon_llm_engine") ||
+        localStorage.getItem("autoshorts_llm_engine")) as any) || "local"
+    );
   });
   const [localLlmModel, setLocalLlmModel] = useState(() => {
-    return (localStorage.getItem("clipon_local_llm_model") || localStorage.getItem("autoshorts_local_llm_model")) || "llama3.2";
+    return (
+      localStorage.getItem("clipon_local_llm_model") ||
+      localStorage.getItem("autoshorts_local_llm_model") ||
+      "llama3.2"
+    );
   });
   const [deepgramKey, setDeepgramKey] = useState("");
   const [anthropicKey, setAnthropicKey] = useState("");
   const [deepseekKey, setDeepseekKey] = useState("");
-  const [deepseekModel, setDeepseekModel] = useState(() => (localStorage.getItem("clipon_deepseek_model") || localStorage.getItem("autoshorts_deepseek_model")) || "");
+  const [deepseekModel, setDeepseekModel] = useState(
+    () =>
+      localStorage.getItem("clipon_deepseek_model") ||
+      localStorage.getItem("autoshorts_deepseek_model") ||
+      ""
+  );
   const [geminiKey, setGeminiKey] = useState("");
   const [openaiKey, setOpenaiKey] = useState("");
   const [openrouterKey, setOpenrouterKey] = useState("");
   const [groqKey, setGroqKey] = useState("");
 
   // Folder paths
-  const [youtubeSaveDir, setYoutubeSaveDir] = useState(() => (localStorage.getItem("clipon_youtube_dir") || localStorage.getItem("autoshorts_youtube_dir")) || "");
-  const [clipsSaveDir, setClipsSaveDir] = useState(() => (localStorage.getItem("clipon_clips_dir") || localStorage.getItem("autoshorts_clips_dir")) || "");
-  const [defaultFolders, setDefaultFolders] = useState<{ youtubeSaveDir: string; clipsOutputDir: string } | null>(null);
+  const [youtubeSaveDir, setYoutubeSaveDir] = useState(
+    () =>
+      localStorage.getItem("clipon_youtube_dir") ||
+      localStorage.getItem("autoshorts_youtube_dir") ||
+      ""
+  );
+  const [clipsSaveDir, setClipsSaveDir] = useState(
+    () =>
+      localStorage.getItem("clipon_clips_dir") ||
+      localStorage.getItem("autoshorts_clips_dir") ||
+      ""
+  );
+  const [defaultFolders, setDefaultFolders] = useState<{
+    youtubeSaveDir: string;
+    clipsOutputDir: string;
+  } | null>(null);
 
   // Reframe Mode & Modifiers
   const [removeSilence, setRemoveSilence] = useState<boolean>(() => {
@@ -140,8 +197,13 @@ function AppContent() {
   });
 
   const [reframeMode, setReframeMode] = useState<ReframeMode>(() => {
-    const saved = (localStorage.getItem("clipon_reframe_mode") || localStorage.getItem("autoshorts_reframe_mode")) as any;
-    if (saved === "podcast_split" || saved === "original" || saved === "vertical_crop") {
+    const saved = (localStorage.getItem("clipon_reframe_mode") ||
+      localStorage.getItem("autoshorts_reframe_mode")) as any;
+    if (
+      saved === "podcast_split" ||
+      saved === "original" ||
+      saved === "vertical_crop"
+    ) {
       return saved as ReframeMode;
     }
     return "vertical_crop";
@@ -160,13 +222,22 @@ function AppContent() {
   };
 
   const [exportPreset, setExportPreset] = useState<ExportPresetPlatform>(() => {
-    return (localStorage.getItem("clipon_export_preset") as ExportPresetPlatform) || "instagram_reels";
+    return (
+      (localStorage.getItem("clipon_export_preset") as ExportPresetPlatform) ||
+      "instagram_reels"
+    );
   });
-  useEffect(() => { localStorage.setItem("clipon_export_preset", exportPreset); }, [exportPreset]);
+  useEffect(() => {
+    localStorage.setItem("clipon_export_preset", exportPreset);
+  }, [exportPreset]);
 
   // Instagram Reels API State
-  const [instagramProvider, setInstagramProvider] = useState<"graph_api" | "webhook">(() => {
-    return (localStorage.getItem("clipon_instagram_provider") as any) || "graph_api";
+  const [instagramProvider, setInstagramProvider] = useState<
+    "graph_api" | "webhook"
+  >(() => {
+    return (
+      (localStorage.getItem("clipon_instagram_provider") as any) || "graph_api"
+    );
   });
   const [instagramAccountId, setInstagramAccountId] = useState(() => {
     return localStorage.getItem("clipon_instagram_account_id") || "";
@@ -176,46 +247,91 @@ function AppContent() {
     return localStorage.getItem("clipon_instagram_webhook_url") || "";
   });
   const [instagramTesting, setInstagramTesting] = useState(false);
-  const [instagramTestResult, setInstagramTestResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [publishingCandidateId, setPublishingCandidateId] = useState<string | null>(null);
+  const [instagramTestResult, setInstagramTestResult] = useState<{
+    success: boolean;
+    message: string;
+  } | null>(null);
+  const [publishingCandidateId, setPublishingCandidateId] = useState<
+    string | null
+  >(null);
 
   // Meta Graph API Quick Connect Modal State
   const [showMetaModal, setShowMetaModal] = useState(false);
-  const [pendingCandidateIdToPost, setPendingCandidateIdToPost] = useState<string | null>(null);
+  const [pendingCandidateIdToPost, setPendingCandidateIdToPost] = useState<
+    string | null
+  >(null);
   const [metaModalAccountId, setMetaModalAccountId] = useState("");
   const [metaModalAccessToken, setMetaModalAccessToken] = useState("");
   const [metaModalSaving, setMetaModalSaving] = useState(false);
   const [metaModalTesting, setMetaModalTesting] = useState(false);
-  const [metaModalStatus, setMetaModalStatus] = useState<{ success: boolean; message: string } | null>(null);
+  const [metaModalStatus, setMetaModalStatus] = useState<{
+    success: boolean;
+    message: string;
+  } | null>(null);
 
-  useEffect(() => { localStorage.setItem("clipon_instagram_provider", instagramProvider); }, [instagramProvider]);
-  useEffect(() => { localStorage.setItem("clipon_instagram_account_id", instagramAccountId); }, [instagramAccountId]);
-  useEffect(() => { localStorage.setItem("clipon_instagram_webhook_url", instagramWebhookUrl); }, [instagramWebhookUrl]);
+  useEffect(() => {
+    localStorage.setItem("clipon_instagram_provider", instagramProvider);
+  }, [instagramProvider]);
+  useEffect(() => {
+    localStorage.setItem("clipon_instagram_account_id", instagramAccountId);
+  }, [instagramAccountId]);
+  useEffect(() => {
+    localStorage.setItem("clipon_instagram_webhook_url", instagramWebhookUrl);
+  }, [instagramWebhookUrl]);
 
   // UI Filters
-  const [momentTab, setMomentTab] = useState<"all" | "selected" | "ready">("all");
+  const [momentTab, setMomentTab] = useState<"all" | "selected" | "ready">(
+    "all"
+  );
 
   const showToast = (msg: string) => setToast(msg);
 
   // Sync state with LocalStorage
-  useEffect(() => { localStorage.setItem("clipon_transcription_engine", transcriptionEngine); }, [transcriptionEngine]);
-  useEffect(() => { localStorage.setItem("clipon_llm_engine", llmEngine); }, [llmEngine]);
-  useEffect(() => { localStorage.setItem("clipon_local_llm_model", localLlmModel); }, [localLlmModel]);
-  useEffect(() => { localStorage.setItem("clipon_deepseek_model", deepseekModel); }, [deepseekModel]);
-  useEffect(() => { localStorage.setItem("clipon_youtube_dir", youtubeSaveDir); }, [youtubeSaveDir]);
-  useEffect(() => { localStorage.setItem("clipon_clips_dir", clipsSaveDir); }, [clipsSaveDir]);
-  useEffect(() => { localStorage.setItem("clipon_reframe_mode", reframeMode); }, [reframeMode]);
-  useEffect(() => { localStorage.setItem("clipon_punch_zoom", String(punchZoom)); }, [punchZoom]);
-  useEffect(() => { localStorage.setItem("clipon_studio_audio", String(studioAudio)); }, [studioAudio]);
+  useEffect(() => {
+    localStorage.setItem("clipon_transcription_engine", transcriptionEngine);
+  }, [transcriptionEngine]);
+  useEffect(() => {
+    localStorage.setItem("clipon_llm_engine", llmEngine);
+  }, [llmEngine]);
+  useEffect(() => {
+    localStorage.setItem("clipon_local_llm_model", localLlmModel);
+  }, [localLlmModel]);
+  useEffect(() => {
+    localStorage.setItem("clipon_deepseek_model", deepseekModel);
+  }, [deepseekModel]);
+  useEffect(() => {
+    localStorage.setItem("clipon_youtube_dir", youtubeSaveDir);
+  }, [youtubeSaveDir]);
+  useEffect(() => {
+    localStorage.setItem("clipon_clips_dir", clipsSaveDir);
+  }, [clipsSaveDir]);
+  useEffect(() => {
+    localStorage.setItem("clipon_reframe_mode", reframeMode);
+  }, [reframeMode]);
+  useEffect(() => {
+    localStorage.setItem("clipon_punch_zoom", String(punchZoom));
+  }, [punchZoom]);
+  useEffect(() => {
+    localStorage.setItem("clipon_studio_audio", String(studioAudio));
+  }, [studioAudio]);
 
   // Initial load
   useEffect(() => {
     void refresh();
-    const onboardedVal = localStorage.getItem("clipon_onboarded") || localStorage.getItem("autoshorts_onboarded");
+    const onboardedVal =
+      localStorage.getItem("clipon_onboarded") ||
+      localStorage.getItem("autoshorts_onboarded");
     setIsOnboarded(onboardedVal === "true");
 
-    invoke<{ youtube_download_dir: string; clips_output_dir: string }>("get_default_folders")
-      .then((dirs) => setDefaultFolders({ youtubeSaveDir: dirs.youtube_download_dir, clipsOutputDir: dirs.clips_output_dir }))
+    invoke<{ youtube_download_dir: string; clips_output_dir: string }>(
+      "get_default_folders"
+    )
+      .then((dirs) =>
+        setDefaultFolders({
+          youtubeSaveDir: dirs.youtube_download_dir,
+          clipsOutputDir: dirs.clips_output_dir,
+        })
+      )
       .catch(() => {});
   }, []);
 
@@ -271,24 +387,47 @@ function AppContent() {
       setEnvironment(env);
       setProjects(projectList);
 
-      if (env.hasDeepgramKey && !localStorage.getItem("clipon_transcription_engine")) {
+      if (
+        env.hasDeepgramKey &&
+        !localStorage.getItem("clipon_transcription_engine")
+      ) {
         setTranscriptionEngine("deepgram");
       }
-      if (env.instagramAccountId && (!instagramAccountId || !localStorage.getItem("clipon_instagram_account_id"))) {
+      if (
+        env.instagramAccountId &&
+        (!instagramAccountId ||
+          !localStorage.getItem("clipon_instagram_account_id"))
+      ) {
         setInstagramAccountId(env.instagramAccountId);
-        localStorage.setItem("clipon_instagram_account_id", env.instagramAccountId);
+        localStorage.setItem(
+          "clipon_instagram_account_id",
+          env.instagramAccountId
+        );
       }
 
-      if (env.hasDeepgramKey || env.hasGeminiKey || env.hasDeepseekKey || env.hasAnthropicKey || env.hasGroqKey || env.hasLocalWhisperModel || env.hasOllama || projectList.length > 0) {
+      if (
+        env.hasDeepgramKey ||
+        env.hasGeminiKey ||
+        env.hasDeepseekKey ||
+        env.hasAnthropicKey ||
+        env.hasGroqKey ||
+        env.hasLocalWhisperModel ||
+        env.hasOllama ||
+        projectList.length > 0
+      ) {
         setIsOnboarded(true);
         localStorage.setItem("clipon_onboarded", "true");
       }
 
       if (nextProjectId) {
-        const nextDetail = await invoke<ProjectDetail>("get_project_detail", { projectId: nextProjectId });
+        const nextDetail = await invoke<ProjectDetail>("get_project_detail", {
+          projectId: nextProjectId,
+        });
         setDetail(nextDetail);
       } else if (detail) {
-        const nextDetail = await invoke<ProjectDetail>("get_project_detail", { projectId: detail.project.id });
+        const nextDetail = await invoke<ProjectDetail>("get_project_detail", {
+          projectId: detail.project.id,
+        });
         setDetail(nextDetail);
       }
     } catch (err) {
@@ -311,7 +450,9 @@ function AppContent() {
   }, [detail?.clips]);
 
   const instagramPostByCandidate = useMemo(() => {
-    return new Map((detail?.instagramPosts ?? []).map((post) => [post.candidateId, post]));
+    return new Map(
+      (detail?.instagramPosts ?? []).map((post) => [post.candidateId, post])
+    );
   }, [detail?.instagramPosts]);
 
   async function testInstagramConnection() {
@@ -335,8 +476,13 @@ function AppContent() {
 
   async function handlePublishToInstagram(candidateId: string) {
     if (!detail) return;
-    const currentAccId = instagramAccountId.trim() || environment?.instagramAccountId?.trim() || "";
-    const hasToken = Boolean(instagramAccessToken.trim() || environment?.hasInstagramToken);
+    const currentAccId =
+      instagramAccountId.trim() ||
+      environment?.instagramAccountId?.trim() ||
+      "";
+    const hasToken = Boolean(
+      instagramAccessToken.trim() || environment?.hasInstagramToken
+    );
 
     if (instagramProvider === "graph_api" && (!currentAccId || !hasToken)) {
       setPendingCandidateIdToPost(candidateId);
@@ -349,22 +495,25 @@ function AppContent() {
       return;
     }
 
-    await executeInstagramPublish(candidateId, currentAccId, instagramAccessToken.trim() || undefined);
+    await executeInstagramPublish(candidateId, currentAccId);
   }
 
-  async function executeInstagramPublish(candidateId: string, accId?: string, token?: string) {
+  async function executeInstagramPublish(candidateId: string, accId?: string) {
     if (!detail) return;
     setPublishingCandidateId(candidateId);
     try {
-      const activeAccId = accId || instagramAccountId.trim() || environment?.instagramAccountId?.trim() || null;
-      const activeToken = token || (instagramAccessToken.trim() ? instagramAccessToken.trim() : null);
+      const activeAccId =
+        accId ||
+        instagramAccountId.trim() ||
+        environment?.instagramAccountId?.trim() ||
+        null;
 
       await invoke<InstagramPost>("publish_candidate_to_instagram", {
         candidateId,
         captionOverride: null,
         provider: instagramProvider,
         accountId: activeAccId,
-        accessToken: activeToken,
+        accessToken: null, // Retrieved securely from OS Keyring
         webhookUrl: instagramWebhookUrl.trim() || null,
       });
       await refresh(detail.project.id);
@@ -389,22 +538,24 @@ function AppContent() {
     setMetaModalSaving(true);
     try {
       setInstagramAccountId(metaModalAccountId.trim());
-      setInstagramAccessToken(metaModalAccessToken.trim());
-      localStorage.setItem("clipon_instagram_account_id", metaModalAccountId.trim());
-      localStorage.setItem("clipon_instagram_access_token", metaModalAccessToken.trim());
+      setInstagramAccessToken(""); // Clear raw token from frontend state
+      localStorage.setItem(
+        "clipon_instagram_account_id",
+        metaModalAccountId.trim()
+      );
 
       await invoke("save_instagram_credentials", {
         accountId: metaModalAccountId.trim(),
         accessToken: metaModalAccessToken.trim(),
       });
 
-      showToast("Meta Graph API credentials saved!");
+      showToast("Meta Graph API credentials saved securely!");
       setShowMetaModal(false);
 
       if (pendingCandidateIdToPost) {
         const candId = pendingCandidateIdToPost;
         setPendingCandidateIdToPost(null);
-        await executeInstagramPublish(candId, metaModalAccountId.trim(), metaModalAccessToken.trim());
+        await executeInstagramPublish(candId, metaModalAccountId.trim());
       }
     } catch (err) {
       showError("Failed to save credentials", { details: String(err) });
@@ -415,7 +566,10 @@ function AppContent() {
 
   async function handleTestMetaConnection() {
     if (!metaModalAccountId.trim() || !metaModalAccessToken.trim()) {
-      setMetaModalStatus({ success: false, message: "Please enter both Account ID and Access Token to test" });
+      setMetaModalStatus({
+        success: false,
+        message: "Please enter both Account ID and Access Token to test",
+      });
       return;
     }
     setMetaModalTesting(true);
@@ -435,30 +589,52 @@ function AppContent() {
     }
   }
 
-  const selectedCount = detail?.candidates.filter((c) => c.selected).length ?? 0;
-  const cutCount = detail?.candidates.filter((c) => {
-    const clip = clipByCandidate.get(c.id);
-    return clip?.status === "done" && Boolean(clip.outputPath);
-  }).length ?? 0;
+  const selectedCount =
+    detail?.candidates.filter((c) => c.selected).length ?? 0;
+  const cutCount =
+    detail?.candidates.filter((c) => {
+      const clip = clipByCandidate.get(c.id);
+      return clip?.status === "done" && Boolean(clip.outputPath);
+    }).length ?? 0;
 
-  const canUseCloudKey = Boolean(environment?.hasDeepgramKey || deepgramKey.trim().length > 0);
-  const canUseClaude = Boolean(environment?.hasAnthropicKey || anthropicKey.trim().length > 0);
-  const canUseDeepseek = Boolean(environment?.hasDeepseekKey || deepseekKey.trim().length > 0);
-  const canUseGemini = Boolean(environment?.hasGeminiKey || geminiKey.trim().length > 0);
-  const canUseOpenai = Boolean(environment?.hasOpenaiKey || openaiKey.trim().length > 0);
-  const canUseGroq = Boolean(environment?.hasGroqKey || groqKey.trim().length > 0);
+  const canUseCloudKey = Boolean(
+    environment?.hasDeepgramKey || deepgramKey.trim().length > 0
+  );
+  const canUseClaude = Boolean(
+    environment?.hasAnthropicKey || anthropicKey.trim().length > 0
+  );
+  const canUseDeepseek = Boolean(
+    environment?.hasDeepseekKey || deepseekKey.trim().length > 0
+  );
+  const canUseGemini = Boolean(
+    environment?.hasGeminiKey || geminiKey.trim().length > 0
+  );
+  const canUseOpenai = Boolean(
+    environment?.hasOpenaiKey || openaiKey.trim().length > 0
+  );
+  const canUseGroq = Boolean(
+    environment?.hasGroqKey || groqKey.trim().length > 0
+  );
 
-  const canTranscribe = transcriptionEngine === "local"
-    ? Boolean(environment?.hasLocalWhisperModel)
-    : canUseCloudKey;
+  const canTranscribe =
+    transcriptionEngine === "local"
+      ? Boolean(environment?.hasLocalWhisperModel)
+      : canUseCloudKey;
 
-  const canUseActiveLlm = llmEngine === "local"
-    ? Boolean(environment?.hasOllama)
-    : llmEngine === "claude" ? canUseClaude
-    : llmEngine === "deepseek" ? canUseDeepseek
-    : llmEngine === "gemini" ? canUseGemini
-    : llmEngine === "openai" ? canUseOpenai
-    : llmEngine === "groq" ? canUseGroq : false;
+  const canUseActiveLlm =
+    llmEngine === "local"
+      ? Boolean(environment?.hasOllama)
+      : llmEngine === "claude"
+        ? canUseClaude
+        : llmEngine === "deepseek"
+          ? canUseDeepseek
+          : llmEngine === "gemini"
+            ? canUseGemini
+            : llmEngine === "openai"
+              ? canUseOpenai
+              : llmEngine === "groq"
+                ? canUseGroq
+                : false;
 
   async function run(action: BusyState, task: () => Promise<void>) {
     setBusy(action);
@@ -503,7 +679,9 @@ function AppContent() {
   async function importMedia() {
     const selected = await open({
       multiple: false,
-      filters: [{ name: "Media", extensions: ["mp4", "mov", "mp3", "wav", "m4a"] }],
+      filters: [
+        { name: "Media", extensions: ["mp4", "mov", "mp3", "wav", "m4a"] },
+      ],
     });
     if (typeof selected !== "string") return;
     setMediaPathToImport(selected);
@@ -537,11 +715,15 @@ function AppContent() {
     const env = await invoke<EnvironmentStatus>("environment_status");
 
     if (transcriptionEngine === "local" && !env.hasLocalWhisperModel) {
-      showWarning("Local Whisper is missing. Add model or switch to Cloud in Settings.");
+      showWarning(
+        "Local Whisper is missing. Add model or switch to Cloud in Settings."
+      );
       return;
     }
     if (transcriptionEngine === "deepgram" && !canUseCloudKey) {
-      showWarning("Deepgram API Key is missing. Add it in Settings to transcribe.");
+      showWarning(
+        "Deepgram API Key is missing. Add it in Settings to transcribe."
+      );
       return;
     }
 
@@ -564,7 +746,12 @@ function AppContent() {
       await invoke<Candidate[]>("generate_candidates", {
         projectId,
         provider: llmEngine,
-        modelName: llmEngine === "local" ? localLlmModel.trim() : (llmEngine === "deepseek" ? (deepseekModel.trim() || null) : null),
+        modelName:
+          llmEngine === "local"
+            ? localLlmModel.trim()
+            : llmEngine === "deepseek"
+              ? deepseekModel.trim() || null
+              : null,
         allowDemo: false,
       });
       await refresh(projectId);
@@ -578,7 +765,9 @@ function AppContent() {
 
   async function selectProject(projectId: string) {
     await run("idle", async () => {
-      const nextDetail = await invoke<ProjectDetail>("get_project_detail", { projectId });
+      const nextDetail = await invoke<ProjectDetail>("get_project_detail", {
+        projectId,
+      });
       setDetail(nextDetail);
     });
   }
@@ -605,7 +794,8 @@ function AppContent() {
     const project = projects.find((p) => p.id === projectId);
     if (!project) return;
     const name = project.name || fileName(project.sourcePath);
-    if (!window.confirm(`Delete project "${name}"? This cannot be undone.`)) return;
+    if (!window.confirm(`Delete project "${name}"? This cannot be undone.`))
+      return;
 
     try {
       await invoke("delete_project", { projectId });
@@ -635,7 +825,12 @@ function AppContent() {
       await invoke<Candidate[]>("generate_candidates", {
         projectId: detail.project.id,
         provider: llmEngine,
-        modelName: llmEngine === "local" ? localLlmModel.trim() : (llmEngine === "deepseek" ? (deepseekModel.trim() || null) : null),
+        modelName:
+          llmEngine === "local"
+            ? localLlmModel.trim()
+            : llmEngine === "deepseek"
+              ? deepseekModel.trim() || null
+              : null,
         allowDemo: false,
       });
       await refresh(detail.project.id);
@@ -660,7 +855,9 @@ function AppContent() {
     if (!target) return;
     const newSelected = !target.selected;
 
-    const newCandidates = detail.candidates.map((c) => c.id === candidateId ? { ...c, selected: newSelected } : c);
+    const newCandidates = detail.candidates.map((c) =>
+      c.id === candidateId ? { ...c, selected: newSelected } : c
+    );
     setDetail({ ...detail, candidates: newCandidates });
 
     const newCount = newCandidates.filter((c) => c.selected).length;
@@ -681,6 +878,7 @@ function AppContent() {
 
   async function cutCandidate(candidateId: string) {
     if (!detail) return;
+    const cand = detail.candidates.find((c) => c.id === candidateId);
     setRenderingCandidateId(candidateId);
     setBusy("cut");
     try {
@@ -691,6 +889,8 @@ function AppContent() {
         removeSilence,
         punchZoom,
         studioAudio,
+        exportPreset,
+        layoutOverride: cand?.layoutOverride || null,
       });
       showToast("Clip rendered successfully!");
     } catch (err) {
@@ -709,17 +909,21 @@ function AppContent() {
 
     setBusy("cut");
     try {
-      for (const candidate of selected) {
-        setRenderingCandidateId(candidate.id);
-        await invoke<string>("render_flat_clip_for_candidate", {
-          candidateId: candidate.id,
-          reframeMode,
-          outputDir: clipsSaveDir.trim() || null,
-          removeSilence,
-          punchZoom,
-          studioAudio,
-        });
-      }
+      // Submit all selected clips to backend render queue (bounded concurrency of 2 workers)
+      await Promise.all(
+        selected.map((candidate) =>
+          invoke<string>("render_flat_clip_for_candidate", {
+            candidateId: candidate.id,
+            reframeMode,
+            outputDir: clipsSaveDir.trim() || null,
+            removeSilence,
+            punchZoom,
+            studioAudio,
+            exportPreset,
+            layoutOverride: candidate.layoutOverride || null,
+          })
+        )
+      );
       showToast(`Finished rendering ${selected.length} clips!`);
     } catch (err) {
       showError("Batch render failed", { details: String(err) });
@@ -730,12 +934,54 @@ function AppContent() {
     }
   }
 
+  async function handleLayoutOverride(
+    candidateId: string,
+    layout: "auto" | "single" | "split_two" | "split_three"
+  ) {
+    if (!detail) return;
+    const overrideVal = layout === "auto" ? null : layout;
+    try {
+      await invoke("update_candidate_layout_override", {
+        candidateId,
+        layoutOverride: overrideVal,
+      });
+      setDetail((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          candidates: prev.candidates.map((c) =>
+            c.id === candidateId ? { ...c, layoutOverride: overrideVal } : c
+          ),
+        };
+      });
+      showToast(
+        layout === "auto"
+          ? "Reset to dynamic AI podcast layout"
+          : `Layout locked to ${layout === "single" ? "1-Person" : layout === "split_two" ? "2-Split" : "3-Split"}`
+      );
+    } catch (err) {
+      showError("Failed to update layout override", { details: String(err) });
+    }
+  }
+
   async function handleOpenSocialKit(candidate: Candidate) {
     setSocialKitModalCandidate(candidate);
     if (!socialKitData[candidate.id]) {
       setSocialKitLoading(candidate.id);
       try {
-        const kit = await invoke<SocialKit>("generate_social_kit_for_candidate", { candidateId: candidate.id });
+        const kit = await invoke<SocialKit>(
+          "generate_social_kit_for_candidate",
+          {
+            candidateId: candidate.id,
+            provider: llmEngine,
+            modelName:
+              llmEngine === "local"
+                ? localLlmModel.trim()
+                : llmEngine === "deepseek"
+                  ? deepseekModel.trim() || null
+                  : null,
+          }
+        );
         setSocialKitData((prev) => ({ ...prev, [candidate.id]: kit }));
       } catch (err) {
         showError("Failed to generate social kit", { details: String(err) });
@@ -748,7 +994,16 @@ function AppContent() {
   async function handleRegenerateSocialKit(candidateId: string) {
     setSocialKitLoading(candidateId);
     try {
-      const kit = await invoke<SocialKit>("generate_social_kit_for_candidate", { candidateId });
+      const kit = await invoke<SocialKit>("generate_social_kit_for_candidate", {
+        candidateId,
+        provider: llmEngine,
+        modelName:
+          llmEngine === "local"
+            ? localLlmModel.trim()
+            : llmEngine === "deepseek"
+              ? deepseekModel.trim() || null
+              : null,
+      });
       setSocialKitData((prev) => ({ ...prev, [candidateId]: kit }));
       showToast("Social kit regenerated");
     } catch (err) {
@@ -760,7 +1015,8 @@ function AppContent() {
 
   const filteredCandidates = useMemo(() => {
     if (!detail?.candidates) return [];
-    if (momentTab === "selected") return detail.candidates.filter((c) => c.selected);
+    if (momentTab === "selected")
+      return detail.candidates.filter((c) => c.selected);
     if (momentTab === "ready") {
       return detail.candidates.filter((c) => {
         const clip = clipByCandidate.get(c.id);
@@ -781,7 +1037,7 @@ function AppContent() {
   const closeAndSaveSettings = async () => {
     setShowSettings(false);
     try {
-      await Promise.all([
+      const keysToSave = [
         ["deepgram", deepgramKey],
         ["gemini", geminiKey],
         ["openai", openaiKey],
@@ -789,7 +1045,25 @@ function AppContent() {
         ["deepseek", deepseekKey],
         ["groq", groqKey],
         ["openrouter", openrouterKey],
-      ].map(([name, value]) => invoke("save_credential", { name, value })));
+        ["instagram", instagramAccessToken],
+      ].filter(([_, value]) => value && value.trim().length > 0);
+
+      if (keysToSave.length > 0) {
+        await Promise.all(
+          keysToSave.map(([name, value]) =>
+            invoke("save_credential", { name, value })
+          )
+        );
+      }
+      setDeepgramKey("");
+      setGeminiKey("");
+      setOpenaiKey("");
+      setAnthropicKey("");
+      setDeepseekKey("");
+      setGroqKey("");
+      setOpenrouterKey("");
+      setInstagramAccessToken("");
+
       await refresh();
       showToast("Settings saved securely");
     } catch (err) {
@@ -854,27 +1128,34 @@ function AppContent() {
                 onBack={() => setDetail(null)}
                 onRename={renameProject}
                 onOpenClipsFolder={() => {
-                  const renderedClip = detail?.candidates.map((c) => clipByCandidate.get(c.id)).find((cl) => cl?.outputPath);
+                  const renderedClip = detail?.candidates
+                    .map((c) => clipByCandidate.get(c.id))
+                    .find((cl) => cl?.outputPath);
                   if (renderedClip?.outputPath) {
-                    const parts = renderedClip.outputPath.split(/[\/]/);
+                    const parts = renderedClip.outputPath.split(/[/\\]/);
                     parts.pop();
                     void openFolder(parts.join("/"));
                     return;
                   }
                   if (detail?.project) {
-                    const rawName = detail.project.name || fileName(detail.project.sourcePath);
+                    const rawName =
+                      detail.project.name ||
+                      fileName(detail.project.sourcePath);
                     const slug = rawName
                       .replace(/\.[^/.]+$/, "")
                       .replace(/[^a-zA-Z0-9_-]/g, "-")
                       .replace(/-+/g, "-")
                       .replace(/^-|-$/g, "");
-                    const base = clipsSaveDir || defaultFolders?.clipsOutputDir || "";
+                    const base =
+                      clipsSaveDir || defaultFolders?.clipsOutputDir || "";
                     if (base) {
                       void openFolder(`${base}/${slug}/clips`);
                       return;
                     }
                   }
-                  void openFolder(clipsSaveDir || defaultFolders?.clipsOutputDir || "");
+                  void openFolder(
+                    clipsSaveDir || defaultFolders?.clipsOutputDir || ""
+                  );
                 }}
                 onOpenSettings={() => setShowSettings(true)}
                 onRefresh={(id) => void refresh(id)}
@@ -926,6 +1207,7 @@ function AppContent() {
                   cutCandidate={cutCandidate}
                   openFolder={openFolder}
                   handlePublishToInstagram={handlePublishToInstagram}
+                  onLayoutOverride={handleLayoutOverride}
                   onJobComplete={() => {
                     showToast("Render completed!");
                     if (detail) refresh(detail.project.id);
@@ -1020,7 +1302,11 @@ function AppContent() {
         browseFolder={browseFolder}
         openFolder={openFolder}
         onClearStorage={async () => {
-          if (confirm("Are you sure you want to clear all project storage? All downloaded videos, rendered clips, and project records will be wiped.")) {
+          if (
+            confirm(
+              "Are you sure you want to clear all project storage? All downloaded videos, rendered clips, and project records will be wiped."
+            )
+          ) {
             try {
               const res = await invoke<string>("clear_all_storage");
               showToast(res);
@@ -1058,7 +1344,11 @@ function AppContent() {
       <SocialKitModal
         candidate={socialKitModalCandidate}
         loading={socialKitLoading === socialKitModalCandidate?.id}
-        kitData={socialKitModalCandidate ? socialKitData[socialKitModalCandidate.id] : undefined}
+        kitData={
+          socialKitModalCandidate
+            ? socialKitData[socialKitModalCandidate.id]
+            : undefined
+        }
         onClose={() => setSocialKitModalCandidate(null)}
         onRegenerate={handleRegenerateSocialKit}
         onShowToast={showToast}

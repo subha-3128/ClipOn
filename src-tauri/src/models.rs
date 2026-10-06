@@ -1,5 +1,15 @@
 use serde::{Deserialize, Serialize};
 
+fn default_platform() -> String {
+    std::env::consts::OS.to_string()
+}
+fn default_true() -> bool {
+    true
+}
+fn default_false() -> bool {
+    false
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EnvironmentStatus {
@@ -21,6 +31,18 @@ pub struct EnvironmentStatus {
     pub has_hardware_accel: bool,
     #[serde(default)]
     pub instagram_account_id: Option<String>,
+    #[serde(default = "default_platform")]
+    pub platform: String,
+    #[serde(default = "default_true")]
+    pub local_whisper_supported: bool,
+    #[serde(default = "default_true")]
+    pub ollama_supported: bool,
+    #[serde(default = "default_false")]
+    pub ollama_install_supported: bool,
+    #[serde(default = "default_false")]
+    pub dynamic_podcast_supported: bool,
+    #[serde(default = "default_false")]
+    pub hardware_encoder_supported: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,6 +93,7 @@ pub struct Candidate {
     pub rationale: String,
     pub rank: i64,
     pub selected: bool,
+    pub layout_override: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

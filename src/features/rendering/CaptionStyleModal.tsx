@@ -27,7 +27,9 @@ export function CaptionStyleModal({
             </div>
             <div>
               <h3>Choose Caption Style</h3>
-              <p>Select automated subtitle typography for your vertical clips</p>
+              <p>
+                Select automated subtitle typography for your vertical clips
+              </p>
             </div>
           </div>
         </div>
@@ -39,13 +41,19 @@ export function CaptionStyleModal({
             onClick={() => onSelectStyle("hormozi-kinetic")}
           >
             <div className="style-preview-box">
-              <span className="preview-text-hormozi" style={{ color: "#00E6FF" }}>
+              <span
+                className="preview-text-hormozi"
+                style={{ color: "#00E6FF" }}
+              >
                 KINETIC POP ⚡
               </span>
             </div>
-            <div className="style-card-title">Hormozi Kinetic (Pro Karaoke)</div>
+            <div className="style-card-title">
+              Hormozi Kinetic (Pro Karaoke)
+            </div>
             <div className="style-card-desc">
-              Word-by-word active highlighting with vibrant yellow &amp; electric green keyword pops!
+              Word-by-word active highlighting with vibrant yellow &amp;
+              electric green keyword pops!
             </div>
           </div>
 
@@ -59,7 +67,8 @@ export function CaptionStyleModal({
             </div>
             <div className="style-card-title">Submagic Viral (Auto-Emoji)</div>
             <div className="style-card-desc">
-              High-retention neon yellow text in a dark pillbox with automated emojis (🔥, 💰, 🤯, 🚀)!
+              High-retention neon yellow text in a dark pillbox with automated
+              emojis (🔥, 💰, 🤯, 🚀)!
             </div>
           </div>
 
@@ -73,7 +82,8 @@ export function CaptionStyleModal({
             </div>
             <div className="style-card-title">Hormozi Punch (Auto-Emoji)</div>
             <div className="style-card-desc">
-              Heavy black text on solid golden yellow box with high-impact auto-emojis.
+              Heavy black text on solid golden yellow box with high-impact
+              auto-emojis.
             </div>
           </div>
 
@@ -87,7 +97,8 @@ export function CaptionStyleModal({
             </div>
             <div className="style-card-title">Neon Glow (Auto-Emoji)</div>
             <div className="style-card-desc">
-              Electric glowing cyan text with deep shadows and contextual auto-emojis.
+              Electric glowing cyan text with deep shadows and contextual
+              auto-emojis.
             </div>
           </div>
 
@@ -100,7 +111,8 @@ export function CaptionStyleModal({
             </div>
             <div className="style-card-title">Modern Box</div>
             <div className="style-card-desc">
-              Sleek white text inside semi-transparent dark box. Clean &amp; readable.
+              Sleek white text inside semi-transparent dark box. Clean &amp;
+              readable.
             </div>
           </div>
 
@@ -126,7 +138,8 @@ export function CaptionStyleModal({
             </div>
             <div className="style-card-title">Minimal Shadow</div>
             <div className="style-card-desc">
-              Pure white text with a soft drop shadow. Elegant &amp; unobtrusive.
+              Pure white text with a soft drop shadow. Elegant &amp;
+              unobtrusive.
             </div>
           </div>
 
@@ -187,7 +200,10 @@ export function CaptionStyleModal({
           <button className="studio-btn secondary" onClick={onCancel}>
             Cancel
           </button>
-          <button className="studio-btn primary" onClick={() => onConfirm(selectedStyle)}>
+          <button
+            className="studio-btn primary"
+            onClick={() => onConfirm(selectedStyle)}
+          >
             Confirm &amp; Import
           </button>
         </div>

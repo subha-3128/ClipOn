@@ -262,7 +262,9 @@ function main() {
         console.log("To extract colors from an image:");
         console.log("  node extract-colors.cjs <image-path>");
         console.log("\nOr use ImageMagick directly:");
-        console.log('  magick image.png -colors 10 -depth 8 -format "%c" histogram:info:');
+        console.log(
+          '  magick image.png -colors 10 -depth 8 -format "%c" histogram:info:'
+        );
       }
     }
     return;

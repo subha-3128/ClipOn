@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { XCircle, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { XCircle, Loader2, AlertCircle } from "lucide-react";
 import type { JobInfo } from "../../types";
 
 type JobProgressBarProps = {
@@ -15,23 +15,46 @@ export function JobProgressBar({
   onJobComplete,
   onJobCancel,
 }: JobProgressBarProps) {
-  const [job, setJob] = useState<JobInfo | null>(null);
-  const [isCancelling, setIsCancelling] = useState(false);
+  const [jobs, setJobs] = useState<Map<string, JobInfo>>(new Map());
+  const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
+    // Populate active jobs on mount
+    invoke<JobInfo[]>("get_active_jobs")
+      .then((active) => {
+        if (active && active.length > 0) {
+          setJobs((prev) => {
+            const next = new Map(prev);
+            for (const j of active) {
+              if (!currentJobId || j.id === currentJobId) {
+                next.set(j.id, j);
+              }
+            }
+            return next;
+          });
+        }
+      })
+      .catch(() => {});
+
     let unlistenFn: (() => void) | undefined;
 
     const setupListener = async () => {
       unlistenFn = await listen<JobInfo>("job-progress", (event) => {
         const payload = event.payload;
         if (!currentJobId || payload.id === currentJobId) {
-          setJob(payload);
-          if (payload.state === "Completed") {
-            onJobComplete?.(payload.id);
-          } else if (payload.state === "Cancelled") {
-            setIsCancelling(false);
-            onJobCancel?.(payload.id);
-          }
+          setJobs((prev) => {
+            const next = new Map(prev);
+            if (payload.state === "Completed") {
+              onJobComplete?.(payload.id);
+              next.delete(payload.id);
+            } else if (payload.state === "Cancelled") {
+              onJobCancel?.(payload.id);
+              next.delete(payload.id);
+            } else {
+              next.set(payload.id, payload);
+            }
+            return next;
+          });
         }
       });
     };
@@ -43,103 +66,162 @@ export function JobProgressBar({
     };
   }, [currentJobId, onJobComplete, onJobCancel]);
 
-  if (!job || job.state === "Completed") {
-    return null;
-  }
-
-  const handleCancel = async () => {
-    if (!job.id) return;
-    setIsCancelling(true);
+  const handleCancel = async (jobId: string) => {
+    setCancellingIds((prev) => new Set(prev).add(jobId));
     try {
-      await invoke("cancel_job", { jobId: job.id });
+      await invoke("cancel_job", { jobId });
     } catch (err) {
       console.error("Failed to cancel job:", err);
-      setIsCancelling(false);
+      setCancellingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(jobId);
+        return next;
+      });
     }
   };
 
-  const isFailed = job.state === "Failed";
-  const isCancelled = job.state === "Cancelled";
+  const activeJobList = Array.from(jobs.values()).filter(
+    (j) => j.state !== "Completed"
+  );
+
+  if (activeJobList.length === 0) {
+    return null;
+  }
 
   return (
-    <div className="job-progress-card" style={{
-      background: "linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.95))",
-      border: "1px solid rgba(56, 189, 248, 0.3)",
-      borderRadius: "12px",
-      padding: "14px 18px",
-      margin: "12px 0",
-      boxShadow: "0 8px 24px rgba(0, 0, 0, 0.35)",
-      backdropFilter: "blur(12px)",
-    }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          {isFailed ? (
-            <AlertCircle size={18} color="#ef4444" />
-          ) : isCancelled ? (
-            <XCircle size={18} color="#f59e0b" />
-          ) : (
-            <Loader2 size={18} color="#38bdf8" className="spin" />
-          )}
-          <div>
-            <div style={{ fontSize: "13px", fontWeight: "600", color: "#f8fafc" }}>
-              {job.stage}
-            </div>
-            {job.error && (
-              <div style={{ fontSize: "11px", color: "#f87171", marginTop: "2px" }}>
-                {job.error}
-              </div>
-            )}
-          </div>
-        </div>
+    <div
+      className="active-jobs-container"
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "8px",
+        margin: "12px 0",
+      }}
+    >
+      {activeJobList.map((job) => {
+        const isFailed = job.state === "Failed";
+        const isCancelled = job.state === "Cancelled";
+        const isCancelling = cancellingIds.has(job.id);
 
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <span style={{ fontSize: "13px", fontWeight: "700", color: "#38bdf8" }}>
-            {job.progress}%
-          </span>
-          {!isFailed && !isCancelled && (
-            <button
-              type="button"
-              onClick={handleCancel}
-              disabled={isCancelling}
+        return (
+          <div
+            key={job.id}
+            className="job-progress-card"
+            style={{
+              background:
+                "linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.95))",
+              border: "1px solid rgba(56, 189, 248, 0.3)",
+              borderRadius: "12px",
+              padding: "12px 16px",
+              boxShadow: "0 6px 20px rgba(0, 0, 0, 0.3)",
+              backdropFilter: "blur(12px)",
+            }}
+          >
+            <div
               style={{
-                background: "rgba(239, 68, 68, 0.15)",
-                border: "1px solid rgba(239, 68, 68, 0.4)",
-                color: "#fca5a5",
-                borderRadius: "6px",
-                padding: "4px 10px",
-                fontSize: "11px",
-                fontWeight: "600",
-                cursor: "pointer",
                 display: "flex",
+                justifyContent: "space-between",
                 alignItems: "center",
-                gap: "5px",
+                marginBottom: "8px",
               }}
             >
-              <XCircle size={12} />
-              {isCancelling ? "Cancelling..." : "Cancel"}
-            </button>
-          )}
-        </div>
-      </div>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "10px" }}
+              >
+                {isFailed ? (
+                  <AlertCircle size={17} color="#ef4444" />
+                ) : isCancelled ? (
+                  <XCircle size={17} color="#f59e0b" />
+                ) : (
+                  <Loader2 size={17} color="#38bdf8" className="spin" />
+                )}
+                <div>
+                  <div
+                    style={{
+                      fontSize: "13px",
+                      fontWeight: "600",
+                      color: "#f8fafc",
+                    }}
+                  >
+                    {job.stage || "Processing clip..."}
+                  </div>
+                  {job.error && (
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        color: "#f87171",
+                        marginTop: "2px",
+                      }}
+                    >
+                      {job.error}
+                    </div>
+                  )}
+                </div>
+              </div>
 
-      <div style={{
-        width: "100%",
-        height: "6px",
-        background: "rgba(255, 255, 255, 0.1)",
-        borderRadius: "999px",
-        overflow: "hidden",
-      }}>
-        <div style={{
-          width: `${job.progress}%`,
-          height: "100%",
-          background: isFailed
-            ? "#ef4444"
-            : isCancelled
-            ? "#f59e0b"
-            : "linear-gradient(90deg, #38bdf8, #818cf8)",
-          transition: "width 0.3s ease",
-        }} />
-      </div>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "12px" }}
+              >
+                <span
+                  style={{
+                    fontSize: "13px",
+                    fontWeight: "700",
+                    color: "#38bdf8",
+                  }}
+                >
+                  {job.progress}%
+                </span>
+                {!isFailed && !isCancelled && (
+                  <button
+                    type="button"
+                    onClick={() => handleCancel(job.id)}
+                    disabled={isCancelling}
+                    style={{
+                      background: "rgba(239, 68, 68, 0.15)",
+                      border: "1px solid rgba(239, 68, 68, 0.4)",
+                      color: "#fca5a5",
+                      borderRadius: "6px",
+                      padding: "4px 10px",
+                      fontSize: "11px",
+                      fontWeight: "600",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "5px",
+                    }}
+                  >
+                    <XCircle size={12} />
+                    {isCancelling ? "Cancelling..." : "Cancel"}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div
+              style={{
+                width: "100%",
+                height: "6px",
+                background: "rgba(255, 255, 255, 0.1)",
+                borderRadius: "999px",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  width: `${job.progress}%`,
+                  height: "100%",
+                  background: isFailed
+                    ? "#ef4444"
+                    : isCancelled
+                      ? "#f59e0b"
+                      : "linear-gradient(90deg, #38bdf8, #818cf8)",
+                  transition: "width 0.3s ease",
+                }}
+              />
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

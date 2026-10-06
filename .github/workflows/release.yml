@@ -3,7 +3,7 @@ name: Release App
 on:
   push:
     tags:
-      - 'v*' # Triggers on release tags like v0.1.0 or v1.0.0
+      - "v*" # Triggers on release tags like v0.1.0 or v1.0.0
 
 jobs:
   release:
@@ -42,7 +42,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'ClipOn ${{ github.ref_name }}'
-          releaseBody: 'See release notes for installation details.'
+          releaseName: "ClipOn ${{ github.ref_name }}"
+          releaseBody: "See release notes for installation details."
           releaseDraft: true
           prerelease: false

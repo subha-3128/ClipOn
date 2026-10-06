@@ -66,7 +66,11 @@ export interface SettingsModalProps {
   studioAudio: boolean;
   setStudioAudio: (a: boolean) => void;
   pullModelDirectly: (m: string) => void;
-  browseFolder: (initial: string, setter: (s: string) => void, storageKey: string) => void;
+  browseFolder: (
+    initial: string,
+    setter: (s: string) => void,
+    storageKey: string
+  ) => void;
   openFolder: (path: string) => void;
   onClearStorage: () => Promise<void>;
   onSaveAndClose: () => void;
@@ -127,7 +131,9 @@ export function SettingsModal({
   onSaveAndClose,
 }: SettingsModalProps) {
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("ai");
-  const [tosAck, setTosAck] = useState(() => localStorage.getItem("clipon_youtube_tos_ack") === "true");
+  const [tosAck, setTosAck] = useState(
+    () => localStorage.getItem("clipon_youtube_tos_ack") === "true"
+  );
 
   if (!isOpen) return null;
 
@@ -146,7 +152,10 @@ export function SettingsModal({
             </div>
             <div>
               <h3>Studio Configuration</h3>
-              <p>Tune AI models, storage destinations, rendering parameters &amp; accounts</p>
+              <p>
+                Tune AI models, storage destinations, rendering parameters &amp;
+                accounts
+              </p>
             </div>
           </div>
           <button className="modal-close-btn" onClick={onClose}>
@@ -188,10 +197,16 @@ export function SettingsModal({
                 <label>Transcription Provider</label>
                 <select
                   value={transcriptionEngine}
-                  onChange={(e) => setTranscriptionEngine(e.target.value as any)}
+                  onChange={(e) =>
+                    setTranscriptionEngine(e.target.value as any)
+                  }
                 >
-                  <option value="local">Local Whisper (Offline &amp; Free)</option>
-                  <option value="deepgram">Deepgram (Cloud API - Super Fast)</option>
+                  <option value="local">
+                    Local Whisper (Offline &amp; Free)
+                  </option>
+                  <option value="deepgram">
+                    Deepgram (Cloud API - Super Fast)
+                  </option>
                 </select>
               </div>
 
@@ -202,14 +217,21 @@ export function SettingsModal({
                     type="password"
                     value={deepgramKey}
                     onChange={(e) => setDeepgramKey(e.target.value)}
-                    placeholder={environment?.hasDeepgramKey ? "Loaded securely" : "Enter Deepgram API Key"}
+                    placeholder={
+                      environment?.hasDeepgramKey
+                        ? "Loaded securely"
+                        : "Enter Deepgram API Key"
+                    }
                   />
                 </div>
               )}
 
               <div className="settings-field-group">
                 <label>Viral Moment LLM Provider</label>
-                <select value={llmEngine} onChange={(e) => setLlmEngine(e.target.value as any)}>
+                <select
+                  value={llmEngine}
+                  onChange={(e) => setLlmEngine(e.target.value as any)}
+                >
                   <option value="local">Ollama (Offline Local)</option>
                   <option value="claude">Anthropic Claude</option>
                   <option value="deepseek">DeepSeek AI</option>
@@ -249,7 +271,11 @@ export function SettingsModal({
                     type="password"
                     value={anthropicKey}
                     onChange={(e) => setAnthropicKey(e.target.value)}
-                    placeholder={environment?.hasAnthropicKey ? "Loaded securely" : "Enter Anthropic API Key"}
+                    placeholder={
+                      environment?.hasAnthropicKey
+                        ? "Loaded securely"
+                        : "Enter Anthropic API Key"
+                    }
                   />
                 </div>
               )}
@@ -262,7 +288,11 @@ export function SettingsModal({
                       type="password"
                       value={deepseekKey}
                       onChange={(e) => setDeepseekKey(e.target.value)}
-                      placeholder={environment?.hasDeepseekKey ? "Loaded securely" : "Enter DeepSeek API Key"}
+                      placeholder={
+                        environment?.hasDeepseekKey
+                          ? "Loaded securely"
+                          : "Enter DeepSeek API Key"
+                      }
                     />
                   </div>
                   <div className="settings-field-group">
@@ -284,7 +314,11 @@ export function SettingsModal({
                     type="password"
                     value={geminiKey}
                     onChange={(e) => setGeminiKey(e.target.value)}
-                    placeholder={environment?.hasGeminiKey ? "Loaded securely" : "Enter Gemini API Key"}
+                    placeholder={
+                      environment?.hasGeminiKey
+                        ? "Loaded securely"
+                        : "Enter Gemini API Key"
+                    }
                   />
                 </div>
               )}
@@ -296,7 +330,11 @@ export function SettingsModal({
                     type="password"
                     value={openaiKey}
                     onChange={(e) => setOpenaiKey(e.target.value)}
-                    placeholder={environment?.hasOpenaiKey ? "Loaded securely" : "Enter OpenAI API Key"}
+                    placeholder={
+                      environment?.hasOpenaiKey
+                        ? "Loaded securely"
+                        : "Enter OpenAI API Key"
+                    }
                   />
                 </div>
               )}
@@ -308,7 +346,11 @@ export function SettingsModal({
                     type="password"
                     value={groqKey}
                     onChange={(e) => setGroqKey(e.target.value)}
-                    placeholder={environment?.hasGroqKey ? "Loaded securely" : "Enter Groq API Key"}
+                    placeholder={
+                      environment?.hasGroqKey
+                        ? "Loaded securely"
+                        : "Enter Groq API Key"
+                    }
                   />
                 </div>
               )}
@@ -325,8 +367,12 @@ export function SettingsModal({
                   value={instagramProvider}
                   onChange={(e) => setInstagramProvider(e.target.value as any)}
                 >
-                  <option value="graph_api">Official Meta Graph API (Direct Instagram Reels)</option>
-                  <option value="webhook">Webhook Automation (Make.com, Zapier, n8n)</option>
+                  <option value="graph_api">
+                    Official Meta Graph API (Direct Instagram Reels)
+                  </option>
+                  <option value="webhook">
+                    Webhook Automation (Make.com, Zapier, n8n)
+                  </option>
                 </select>
               </div>
 
@@ -340,7 +386,9 @@ export function SettingsModal({
                       onChange={(e) => setInstagramAccountId(e.target.value)}
                       placeholder="e.g. 17841400000000000"
                     />
-                    <span className="folder-hint">Found in Meta Business Suite or via Graph API Explorer</span>
+                    <span className="folder-hint">
+                      Found in Meta Business Suite or via Graph API Explorer
+                    </span>
                   </div>
 
                   <div className="settings-field-group">
@@ -349,9 +397,16 @@ export function SettingsModal({
                       type="password"
                       value={instagramAccessToken}
                       onChange={(e) => setInstagramAccessToken(e.target.value)}
-                      placeholder="EAA... (Token with instagram_content_publish permission)"
+                      placeholder={
+                        environment?.hasInstagramToken
+                          ? "Loaded securely in Keychain"
+                          : "EAA... (Token with instagram_content_publish permission)"
+                      }
                     />
-                    <span className="folder-hint">Requires 'instagram_basic' and 'instagram_content_publish' scopes</span>
+                    <span className="folder-hint">
+                      Stored securely in OS Keychain. Requires 'instagram_basic'
+                      and 'instagram_content_publish' scopes
+                    </span>
                   </div>
                 </>
               )}
@@ -366,12 +421,20 @@ export function SettingsModal({
                     placeholder="https://hook.eu1.make.com/... or https://hooks.zapier.com/..."
                   />
                   <span className="folder-hint">
-                    Payload includes candidateId, videoPath, viralScore, hook, and formatted caption
+                    Payload includes candidateId, videoPath, viralScore, hook,
+                    and formatted caption
                   </span>
                 </div>
               )}
 
-              <div style={{ marginTop: "4px", display: "flex", alignItems: "center", gap: "12px" }}>
+              <div
+                style={{
+                  marginTop: "4px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                }}
+              >
                 <button
                   type="button"
                   className="studio-btn secondary"
@@ -379,12 +442,20 @@ export function SettingsModal({
                   disabled={
                     instagramTesting ||
                     (instagramProvider === "graph_api"
-                      ? !instagramAccountId.trim() || !instagramAccessToken.trim()
+                      ? !instagramAccountId.trim() ||
+                        (!instagramAccessToken.trim() &&
+                          !environment?.hasInstagramToken)
                       : !instagramWebhookUrl.trim())
                   }
                 >
-                  {instagramTesting ? <Loader2 className="spin" size={14} /> : <Instagram size={14} />}
-                  <span>{instagramTesting ? "Verifying..." : "Test Connection"}</span>
+                  {instagramTesting ? (
+                    <Loader2 className="spin" size={14} />
+                  ) : (
+                    <Instagram size={14} />
+                  )}
+                  <span>
+                    {instagramTesting ? "Verifying..." : "Test Connection"}
+                  </span>
                 </button>
               </div>
 
@@ -392,7 +463,11 @@ export function SettingsModal({
                 <div
                   className={`connection-status-banner ${instagramTestResult.success ? "success" : "error"}`}
                 >
-                  {instagramTestResult.success ? <BadgeCheck size={16} /> : <AlertTriangle size={16} />}
+                  {instagramTestResult.success ? (
+                    <BadgeCheck size={16} />
+                  ) : (
+                    <AlertTriangle size={16} />
+                  )}
                   <span>{instagramTestResult.message}</span>
                 </div>
               )}
@@ -405,14 +480,18 @@ export function SettingsModal({
               <div className="settings-folder-group">
                 <div className="folder-group-header">
                   <label>📥 YouTube Downloads Destination</label>
-                  <span className="folder-hint">Where downloaded YouTube videos will be stored</span>
+                  <span className="folder-hint">
+                    Where downloaded YouTube videos will be stored
+                  </span>
                 </div>
                 <div className="folder-input-row">
                   <input
                     type="text"
                     value={youtubeSaveDir}
                     onChange={(e) => setYoutubeSaveDir(e.target.value)}
-                    placeholder={defaultFolders?.youtubeSaveDir || "~/Downloads/ClipOn"}
+                    placeholder={
+                      defaultFolders?.youtubeSaveDir || "~/Downloads/ClipOn"
+                    }
                   />
                   <button
                     className="studio-btn secondary"
@@ -429,7 +508,11 @@ export function SettingsModal({
                   </button>
                   <button
                     className="studio-btn secondary icon-only"
-                    onClick={() => openFolder(youtubeSaveDir || defaultFolders?.youtubeSaveDir || "")}
+                    onClick={() =>
+                      openFolder(
+                        youtubeSaveDir || defaultFolders?.youtubeSaveDir || ""
+                      )
+                    }
                     title="Open folder in Finder"
                   >
                     <FolderOpen size={15} />
@@ -438,17 +521,38 @@ export function SettingsModal({
               </div>
 
               {/* YouTube Terms of Service Compliance Policy */}
-              <div className="settings-folder-group" style={{ borderColor: "rgba(59, 130, 246, 0.3)", background: "rgba(59, 130, 246, 0.04)" }}>
+              <div
+                className="settings-folder-group"
+                style={{
+                  borderColor: "rgba(59, 130, 246, 0.3)",
+                  background: "rgba(59, 130, 246, 0.04)",
+                }}
+              >
                 <div className="folder-group-header">
-                  <label style={{ display: "flex", alignItems: "center", gap: 6, color: "#93c5fd" }}>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      color: "#93c5fd",
+                    }}
+                  >
                     <ShieldAlert size={14} color="#60a5fa" />
                     YouTube Terms &amp; Compliance Policy
                   </label>
                   <span className="folder-hint">
-                    Required acknowledgment before utilizing the automated YouTube media downloader
+                    Required acknowledgment before utilizing the automated
+                    YouTube media downloader
                   </span>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginTop: 6,
+                  }}
+                >
                   <input
                     type="checkbox"
                     id="tos_settings_ack"
@@ -456,8 +560,17 @@ export function SettingsModal({
                     onChange={(e) => handleTosToggle(e.target.checked)}
                     style={{ cursor: "pointer" }}
                   />
-                  <label htmlFor="tos_settings_ack" style={{ fontSize: 12, color: "#e2e8f0", cursor: "pointer", userSelect: "none" }}>
-                    I acknowledge YouTube Terms of Service and accept responsibility for copyright verification.
+                  <label
+                    htmlFor="tos_settings_ack"
+                    style={{
+                      fontSize: 12,
+                      color: "#e2e8f0",
+                      cursor: "pointer",
+                      userSelect: "none",
+                    }}
+                  >
+                    I acknowledge YouTube Terms of Service and accept
+                    responsibility for copyright verification.
                   </label>
                 </div>
               </div>
@@ -466,14 +579,18 @@ export function SettingsModal({
               <div className="settings-folder-group">
                 <div className="folder-group-header">
                   <label>Rendered Clips Output Destination</label>
-                  <span className="folder-hint">Where final vertical video clips and captions will be saved</span>
+                  <span className="folder-hint">
+                    Where final vertical video clips and captions will be saved
+                  </span>
                 </div>
                 <div className="folder-input-row">
                   <input
                     type="text"
                     value={clipsSaveDir}
                     onChange={(e) => setClipsSaveDir(e.target.value)}
-                    placeholder={defaultFolders?.clipsOutputDir || "~/Documents/ClipOn"}
+                    placeholder={
+                      defaultFolders?.clipsOutputDir || "~/Documents/ClipOn"
+                    }
                   />
                   <button
                     className="studio-btn secondary"
@@ -490,7 +607,11 @@ export function SettingsModal({
                   </button>
                   <button
                     className="studio-btn secondary icon-only"
-                    onClick={() => openFolder(clipsSaveDir || defaultFolders?.clipsOutputDir || "")}
+                    onClick={() =>
+                      openFolder(
+                        clipsSaveDir || defaultFolders?.clipsOutputDir || ""
+                      )
+                    }
                     title="Open folder in Finder"
                   >
                     <FolderOpen size={15} />
@@ -501,19 +622,28 @@ export function SettingsModal({
               {/* Storage Cleanup */}
               <div
                 className="settings-folder-group"
-                style={{ borderColor: "rgba(239, 68, 68, 0.25)", background: "rgba(239, 68, 68, 0.03)" }}
+                style={{
+                  borderColor: "rgba(239, 68, 68, 0.25)",
+                  background: "rgba(239, 68, 68, 0.03)",
+                }}
               >
                 <div className="folder-group-header">
-                  <label style={{ color: "#f87171" }}>🗑️ Project Storage Cleanup</label>
+                  <label style={{ color: "#f87171" }}>
+                    🗑️ Project Storage Cleanup
+                  </label>
                   <span className="folder-hint">
-                    Delete all rendered vertical clips, downloaded source videos, and clear database history
+                    Delete all rendered vertical clips, downloaded source
+                    videos, and clear database history
                   </span>
                 </div>
                 <div style={{ marginTop: "4px" }}>
                   <button
                     type="button"
                     className="studio-btn secondary"
-                    style={{ color: "#f87171", borderColor: "rgba(239, 68, 68, 0.4)" }}
+                    style={{
+                      color: "#f87171",
+                      borderColor: "rgba(239, 68, 68, 0.4)",
+                    }}
                     onClick={onClearStorage}
                   >
                     <Trash2 size={14} /> Clear Full Storage
@@ -529,76 +659,145 @@ export function SettingsModal({
                 <label>Default Video Framing</label>
                 <select
                   value={reframeMode}
-                  onChange={(e) => setReframeMode(e.target.value as ReframeMode)}
+                  onChange={(e) =>
+                    setReframeMode(e.target.value as ReframeMode)
+                  }
                 >
-                  <option value="vertical_crop">1. Center Crop (Standard 9:16)</option>
-                  <option value="podcast_split">2. Podcast Studio (Dynamic 1P / 2P / 3P Split 9:16)</option>
+                  <option value="vertical_crop">
+                    1. Center Crop (Standard 9:16)
+                  </option>
+                  <option value="podcast_split">
+                    2. Podcast Studio (Dynamic 1P / 2P / 3P Split 9:16)
+                  </option>
                   <option value="original">3. Original Aspect Ratio</option>
                 </select>
               </div>
 
               <div className="settings-field-group">
                 <label>Retention Punch Zoom</label>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    marginTop: 4,
+                  }}
+                >
                   <input
                     type="checkbox"
                     id="setting_punch_zoom"
                     checked={punchZoom}
                     onChange={(e) => {
                       setPunchZoom(e.target.checked);
-                      localStorage.setItem("clipon_punch_zoom", String(e.target.checked));
+                      localStorage.setItem(
+                        "clipon_punch_zoom",
+                        String(e.target.checked)
+                      );
                     }}
-                    style={{ width: 16, height: 16, accentColor: "#a855f7", cursor: "pointer" }}
+                    style={{
+                      width: 16,
+                      height: 16,
+                      accentColor: "#a855f7",
+                      cursor: "pointer",
+                    }}
                   />
                   <label
                     htmlFor="setting_punch_zoom"
-                    style={{ margin: 0, cursor: "pointer", fontSize: 13, color: "var(--text-secondary)" }}
+                    style={{
+                      margin: 0,
+                      cursor: "pointer",
+                      fontSize: 13,
+                      color: "var(--text-secondary)",
+                    }}
                   >
-                    Retention Punch Zoom Cuts (Punches 1.14x visual zoom every 5.5s to maintain viewer attention)
+                    Retention Punch Zoom Cuts (Punches 1.14x visual zoom every
+                    5.5s to maintain viewer attention)
                   </label>
                 </div>
               </div>
 
               <div className="settings-field-group">
                 <label>Dead-Air Silence Jump Cutter</label>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    marginTop: 4,
+                  }}
+                >
                   <input
                     type="checkbox"
                     id="setting_remove_silence"
                     checked={removeSilence}
                     onChange={(e) => {
                       setRemoveSilence(e.target.checked);
-                      localStorage.setItem("clipon_remove_silence", String(e.target.checked));
+                      localStorage.setItem(
+                        "clipon_remove_silence",
+                        String(e.target.checked)
+                      );
                     }}
-                    style={{ width: 16, height: 16, accentColor: "#10b981", cursor: "pointer" }}
+                    style={{
+                      width: 16,
+                      height: 16,
+                      accentColor: "#10b981",
+                      cursor: "pointer",
+                    }}
                   />
                   <label
                     htmlFor="setting_remove_silence"
-                    style={{ margin: 0, cursor: "pointer", fontSize: 13, color: "var(--text-secondary)" }}
+                    style={{
+                      margin: 0,
+                      cursor: "pointer",
+                      fontSize: 13,
+                      color: "var(--text-secondary)",
+                    }}
                   >
-                    Automatically skip pauses &amp; dead air &gt;0.45s (Boosts video retention by 20%)
+                    Automatically skip pauses &amp; dead air &gt;0.45s (Boosts
+                    video retention by 20%)
                   </label>
                 </div>
               </div>
 
               <div className="settings-field-group">
                 <label>Studio Sound Mastering</label>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    marginTop: 4,
+                  }}
+                >
                   <input
                     type="checkbox"
                     id="setting_studio_audio"
                     checked={studioAudio}
                     onChange={(e) => {
                       setStudioAudio(e.target.checked);
-                      localStorage.setItem("clipon_studio_audio", String(e.target.checked));
+                      localStorage.setItem(
+                        "clipon_studio_audio",
+                        String(e.target.checked)
+                      );
                     }}
-                    style={{ width: 16, height: 16, accentColor: "#facc15", cursor: "pointer" }}
+                    style={{
+                      width: 16,
+                      height: 16,
+                      accentColor: "#facc15",
+                      cursor: "pointer",
+                    }}
                   />
                   <label
                     htmlFor="setting_studio_audio"
-                    style={{ margin: 0, cursor: "pointer", fontSize: 13, color: "var(--text-secondary)" }}
+                    style={{
+                      margin: 0,
+                      cursor: "pointer",
+                      fontSize: 13,
+                      color: "var(--text-secondary)",
+                    }}
                   >
-                    Auto-Master Audio to -14 LUFS Broadcast Standard with AI Spectral Noise Suppression
+                    Auto-Master Audio to -14 LUFS Broadcast Standard with AI
+                    Spectral Noise Suppression
                   </label>
                 </div>
               </div>
@@ -609,50 +808,78 @@ export function SettingsModal({
             <div className="settings-form-stack">
               <div className="diagnostics-list">
                 <div className="diag-item">
-                  <span className="diag-name">Apple Silicon VideoToolbox Hardware Accel</span>
-                  <span className={`diag-badge ${environment?.hasHardwareAccel ? "ok" : "muted"}`}>
-                    {environment?.hasHardwareAccel ? "Active (Hardware Accelerated)" : "Inactive (CPU)"}
+                  <span className="diag-name">
+                    Apple Silicon VideoToolbox Hardware Accel
+                  </span>
+                  <span
+                    className={`diag-badge ${environment?.hasHardwareAccel ? "ok" : "muted"}`}
+                  >
+                    {environment?.hasHardwareAccel
+                      ? "Active (Hardware Accelerated)"
+                      : "Inactive (CPU)"}
                   </span>
                 </div>
                 <div className="diag-item">
                   <span className="diag-name">FFmpeg</span>
-                  <span className={`diag-badge ${environment?.hasFfmpeg ? "ok" : "err"}`}>
+                  <span
+                    className={`diag-badge ${environment?.hasFfmpeg ? "ok" : "err"}`}
+                  >
                     {environment?.hasFfmpeg ? "Installed" : "Missing"}
                   </span>
                 </div>
                 <div className="diag-item">
                   <span className="diag-name">FFprobe</span>
-                  <span className={`diag-badge ${environment?.hasFfprobe ? "ok" : "err"}`}>
+                  <span
+                    className={`diag-badge ${environment?.hasFfprobe ? "ok" : "err"}`}
+                  >
                     {environment?.hasFfprobe ? "Installed" : "Missing"}
                   </span>
                 </div>
                 <div className="diag-item">
                   <span className="diag-name">yt-dlp (YouTube downloader)</span>
-                  <span className={`diag-badge ${environment?.hasYtdlp ? "ok" : "err"}`}>
+                  <span
+                    className={`diag-badge ${environment?.hasYtdlp ? "ok" : "err"}`}
+                  >
                     {environment?.hasYtdlp ? "Installed" : "Missing"}
                   </span>
                 </div>
                 <div className="diag-item">
-                  <span className="diag-name">Local Whisper (openai-whisper)</span>
-                  <span className={`diag-badge ${environment?.hasLocalWhisperModel ? "ok" : "err"}`}>
-                    {environment?.hasLocalWhisperModel ? "Installed" : "Missing"}
+                  <span className="diag-name">
+                    Local Whisper (openai-whisper)
+                  </span>
+                  <span
+                    className={`diag-badge ${environment?.hasLocalWhisperModel ? "ok" : "err"}`}
+                  >
+                    {environment?.hasLocalWhisperModel
+                      ? "Installed"
+                      : "Missing"}
                   </span>
                 </div>
                 <div className="diag-item">
                   <span className="diag-name">Ollama Local Daemon</span>
-                  <span className={`diag-badge ${environment?.hasOllama ? "ok" : "err"}`}>
-                    {environment?.hasOllama ? "Running (127.0.0.1:11434)" : "Not detected"}
+                  <span
+                    className={`diag-badge ${environment?.hasOllama ? "ok" : "err"}`}
+                  >
+                    {environment?.hasOllama
+                      ? "Running (127.0.0.1:11434)"
+                      : "Not detected"}
                   </span>
                 </div>
               </div>
 
               <div className="danger-zone">
                 <label>Danger Zone</label>
-                <p>Reset all configuration and restart onboarding from scratch.</p>
+                <p>
+                  Reset all configuration and restart onboarding from scratch.
+                </p>
                 <button
                   className="studio-btn danger"
                   onClick={() => {
-                    if (window.confirm("Reset all settings and restart onboarding?")) {
+                    if (
+                      window.confirm(
+                        "Reset all settings and restart onboarding?"
+                      )
+                    ) {
                       localStorage.clear();
                       window.location.reload();
                     }

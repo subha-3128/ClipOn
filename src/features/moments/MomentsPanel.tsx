@@ -26,6 +26,7 @@ interface MomentsPanelProps {
   appSection: AppSection;
   reframeMode: ReframeMode;
   setReframeMode: (m: ReframeMode) => void;
+  environment?: EnvironmentStatus | null;
   busy: BusyState;
   canUseActiveLlm: boolean;
   onFindMoments: () => void;
@@ -55,6 +56,10 @@ interface MomentsPanelProps {
   cutCandidate: (id: string) => void;
   openFolder: (path: string) => void;
   handlePublishToInstagram: (id: string) => void;
+  onLayoutOverride?: (
+    candidateId: string,
+    layout: "auto" | "single" | "split_two" | "split_three"
+  ) => void;
   onJobComplete: () => void;
   onJobCancel: () => void;
 }
@@ -93,6 +98,7 @@ export function MomentsPanel({
   cutCandidate,
   openFolder,
   handlePublishToInstagram,
+  onLayoutOverride,
   onJobComplete,
   onJobCancel,
 }: MomentsPanelProps) {
@@ -105,11 +111,15 @@ export function MomentsPanel({
               <Mic size={14} />
             </div>
             <div>
-              <div className="podcast-banner-title">Dynamic Podcast Reframing (16:9 → 9:16)</div>
+              <div className="podcast-banner-title">
+                Dynamic Podcast Reframing (16:9 → 9:16)
+              </div>
               <p className="podcast-banner-desc">
-                Adaptive multi-person timeline reframing: 1 Person (Full 9:16), 2 People (Top/Bottom Split), 3
-                People (2 Top + 1 Bottom). Dynamically tracks persistent identities, preserves framing during
-                temporary absences, and keeps captions synchronized along dividing seams.
+                Adaptive multi-person timeline reframing: 1 Person (Full 9:16),
+                2 People (Top/Bottom Split), 3 People (2 Top + 1 Bottom).
+                Dynamically tracks persistent identities, preserves framing
+                during temporary absences, and keeps captions synchronized along
+                dividing seams.
               </p>
             </div>
           </div>
@@ -117,7 +127,9 @@ export function MomentsPanel({
             <div className="tracking-status-item">
               <span className="dot dot-blue" />
               <span className="tracking-label">Layouts:</span>
-              <span className="tracking-val">1P Full / 2P Split / 3P Dynamic</span>
+              <span className="tracking-val">
+                1P Full / 2P Split / 3P Dynamic
+              </span>
             </div>
             <div className="tracking-status-item">
               <span className="dot dot-purple" />
@@ -154,7 +166,11 @@ export function MomentsPanel({
             onClick={onFindMoments}
             disabled={busy !== "idle" || !detail.transcript || !canUseActiveLlm}
           >
-            {busy === "moments" ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
+            {busy === "moments" ? (
+              <Loader2 className="spin" size={14} />
+            ) : (
+              <Sparkles size={14} />
+            )}
             Find Moments
           </button>
 
@@ -163,7 +179,11 @@ export function MomentsPanel({
             onClick={onCutSelected}
             disabled={busy !== "idle" || selectedCount === 0 || !hasFfmpeg}
           >
-            {busy === "cut" ? <Loader2 className="spin" size={14} /> : <Scissors size={14} />}
+            {busy === "cut" ? (
+              <Loader2 className="spin" size={14} />
+            ) : (
+              <Scissors size={14} />
+            )}
             Cut Selected ({selectedCount})
           </button>
         </div>
@@ -221,7 +241,9 @@ export function MomentsPanel({
               title="Video Framing Aspect Ratio"
             >
               <option value="vertical_crop">Center Crop (9:16)</option>
-              <option value="podcast_split">Podcast Studio (Dynamic 1P / 2P / 3P Split 9:16)</option>
+              <option value="podcast_split">
+                Podcast Studio (Dynamic 1P / 2P / 3P Split 9:16)
+              </option>
               <option value="original">Original Aspect Ratio</option>
             </select>
           </div>
@@ -252,7 +274,8 @@ export function MomentsPanel({
             }}
             title="Auto-Detect & Jump-Cut Dead Air / Pauses >0.45s for 20% Faster Clip Retention"
           >
-            <Scissors size={12} /> {removeSilence ? "Dead Air Cut: ON" : "Dead Air Cut: OFF"}
+            <Scissors size={12} />{" "}
+            {removeSilence ? "Dead Air Cut: ON" : "Dead Air Cut: OFF"}
           </button>
 
           <button
@@ -265,13 +288,20 @@ export function MomentsPanel({
             }}
             title="Studio Sound Auto-Mastering: -14 LUFS Broadcast Standard & AI Noise Suppression"
           >
-            <AudioLines size={12} /> {studioAudio ? "Studio Audio: ON" : "Studio Audio: OFF"}
+            <AudioLines size={12} />{" "}
+            {studioAudio ? "Studio Audio: ON" : "Studio Audio: OFF"}
           </button>
         </div>
 
-        <ExportPresetSelector selectedPreset={exportPreset} onSelectPreset={setExportPreset} />
+        <ExportPresetSelector
+          selectedPreset={exportPreset}
+          onSelectPreset={setExportPreset}
+        />
 
-        <JobProgressBar onJobComplete={onJobComplete} onJobCancel={onJobCancel} />
+        <JobProgressBar
+          onJobComplete={onJobComplete}
+          onJobCancel={onJobCancel}
+        />
       </div>
 
       {/* Candidates Cards List */}
@@ -282,7 +312,8 @@ export function MomentsPanel({
             const isCuttingThis = renderingCandidateId === candidate.id;
             const igPost = instagramPostByCandidate.get(candidate.id);
             const isPublishingThis =
-              publishingCandidateId === candidate.id || igPost?.status === "publishing";
+              publishingCandidateId === candidate.id ||
+              igPost?.status === "publishing";
 
             return (
               <MomentCard
@@ -301,6 +332,7 @@ export function MomentsPanel({
                 onCutCandidate={cutCandidate}
                 onOpenFolder={openFolder}
                 onPublishToInstagram={handlePublishToInstagram}
+                onLayoutOverride={onLayoutOverride}
                 hasFfmpeg={hasFfmpeg}
                 isBusy={busy !== "idle"}
               />
@@ -315,14 +347,23 @@ export function MomentsPanel({
           <div className="empty-panel-state">
             <Sparkles size={36} />
             <h4>No Viral Moments Detected</h4>
-            <p>Click "Find Moments" to use AI to locate high-retention viral segments.</p>
+            <p>
+              Click "Find Moments" to use AI to locate high-retention viral
+              segments.
+            </p>
             <div className="empty-state-buttons">
               <button
                 className="studio-btn primary"
                 onClick={onFindMoments}
-                disabled={busy !== "idle" || !detail.transcript || !canUseActiveLlm}
+                disabled={
+                  busy !== "idle" || !detail.transcript || !canUseActiveLlm
+                }
               >
-                {busy === "moments" ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
+                {busy === "moments" ? (
+                  <Loader2 className="spin" size={14} />
+                ) : (
+                  <Sparkles size={14} />
+                )}
                 Find Viral Moments
               </button>
             </div>

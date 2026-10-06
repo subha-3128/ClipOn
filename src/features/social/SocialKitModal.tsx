@@ -1,4 +1,12 @@
-import { Sparkles, X, Loader2, Flame, Copy, Hash, RefreshCw } from "lucide-react";
+import {
+  Sparkles,
+  X,
+  Loader2,
+  Flame,
+  Copy,
+  Hash,
+  RefreshCw,
+} from "lucide-react";
 import { Candidate, SocialKit } from "../../types";
 
 interface SocialKitModalProps {
@@ -30,7 +38,9 @@ export function SocialKitModal({
             </div>
             <div>
               <h3>AI Social Publishing Kit</h3>
-              <p>Viral titles, hashtags & captions for Clip #{candidate.rank}</p>
+              <p>
+                Viral titles, hashtags & captions for Clip #{candidate.rank}
+              </p>
             </div>
           </div>
           <button className="modal-close-btn" onClick={onClose}>
@@ -80,7 +90,9 @@ export function SocialKitModal({
                       <button
                         className="text-action-btn"
                         onClick={() => {
-                          navigator.clipboard.writeText(kitData.hashtags.join(" "));
+                          navigator.clipboard.writeText(
+                            kitData.hashtags.join(" ")
+                          );
                           onShowToast("All hashtags copied!");
                         }}
                       >
@@ -107,11 +119,15 @@ export function SocialKitModal({
                   {/* Description & Caption */}
                   <div className="social-section">
                     <div className="section-header-row">
-                      <label className="section-label">📝 Caption & Description</label>
+                      <label className="section-label">
+                        📝 Caption & Description
+                      </label>
                       <button
                         className="text-action-btn"
                         onClick={() => {
-                          navigator.clipboard.writeText(`${kitData.description}\n\n${kitData.callToAction}`);
+                          navigator.clipboard.writeText(
+                            `${kitData.description}\n\n${kitData.callToAction}`
+                          );
                           onShowToast("Caption copied!");
                         }}
                       >
@@ -120,7 +136,9 @@ export function SocialKitModal({
                     </div>
                     <div className="caption-preview-box">
                       <p>{kitData.description}</p>
-                      <span className="caption-cta">{kitData.callToAction}</span>
+                      <span className="caption-cta">
+                        {kitData.callToAction}
+                      </span>
                     </div>
                   </div>
 

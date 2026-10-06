@@ -6,12 +6,12 @@ use serde_json::Value;
 use crate::models::{NormalizedTranscript, TranscriptSegment, TranscriptWord};
 
 pub async fn transcribe_deepgram(audio_path: &str, api_key: &str) -> Result<NormalizedTranscript> {
-    let bytes = tokio::fs::read(audio_path)
+    let raw_bytes = tokio::fs::read(audio_path)
         .await
         .with_context(|| format!("reading audio file {audio_path}"))?;
+    let audio_payload = bytes::Bytes::from(raw_bytes);
 
     let client = crate::http_client::build_api_client(120);
-    let bytes_clone = bytes.clone();
     let api_key_clone = api_key.to_string();
 
     let response = crate::http_client::send_with_retry(
@@ -21,7 +21,7 @@ pub async fn transcribe_deepgram(audio_path: &str, api_key: &str) -> Result<Norm
                 .post("https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&diarize=true&punctuate=true&filler_words=true")
                 .header("Authorization", format!("Token {api_key_clone}"))
                 .header("Content-Type", "audio/wav")
-                .body(bytes_clone.clone())
+                .body(audio_payload.clone())
         },
         3,
         1000,
@@ -274,9 +274,65 @@ fn normalize_whisper_raw_json(raw: serde_json::Value) -> Result<NormalizedTransc
     })
 }
 
-pub async fn transcribe_local(audio_path: &str, model_path: &str) -> Result<NormalizedTranscript> {
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WhisperModel {
+    Tiny,
+    Base,
+    Small,
+    Medium,
+    Large,
+    Custom(String),
+}
+
+impl WhisperModel {
+    pub fn as_str(&self) -> &str {
+        match self {
+            WhisperModel::Tiny => "tiny",
+            WhisperModel::Base => "base",
+            WhisperModel::Small => "small",
+            WhisperModel::Medium => "medium",
+            WhisperModel::Large => "large",
+            WhisperModel::Custom(ref path) => path.as_str(),
+        }
+    }
+}
+
+impl std::fmt::Display for WhisperModel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl std::str::FromStr for WhisperModel {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let trimmed = s.trim();
+        let model = match trimmed.to_ascii_lowercase().as_str() {
+            "tiny" => WhisperModel::Tiny,
+            "base" | "" => WhisperModel::Base,
+            "small" => WhisperModel::Small,
+            "medium" => WhisperModel::Medium,
+            "large" | "large-v1" | "large-v2" | "large-v3" => WhisperModel::Large,
+            _ => WhisperModel::Custom(trimmed.to_string()),
+        };
+        Ok(model)
+    }
+}
+
+pub async fn transcribe_local(audio_path: &str, model_spec: &str) -> Result<NormalizedTranscript> {
+    let model: WhisperModel = model_spec.parse().unwrap_or(WhisperModel::Base);
+    transcribe_local_with_model(audio_path, &model, None).await
+}
+
+pub async fn transcribe_local_with_model(
+    audio_path: &str,
+    model: &WhisperModel,
+    scratch_dir: Option<&std::path::Path>,
+) -> Result<NormalizedTranscript> {
     let audio_path = audio_path.to_string();
-    let model_path = model_path.to_string();
+    let model_str = model.as_str().to_string();
 
     if whisper_cli_exists() {
         let audio_path_buf = std::path::Path::new(&audio_path);
@@ -293,11 +349,12 @@ pub async fn transcribe_local(audio_path: &str, model_path: &str) -> Result<Norm
         let audio_dir_str = audio_dir.to_string_lossy().to_string();
         let audio_dir_clone = audio_dir.to_path_buf();
         let audio_stem_clone = audio_stem.to_string();
+        let model_str_clone = model_str.clone();
 
         tokio::task::spawn_blocking(move || {
             let output = std::process::Command::new("whisper")
                 .arg(&audio_path)
-                .args(["--model", "base"])
+                .args(["--model", &model_str_clone])
                 .args(["--output_format", "json"])
                 .args(["--output_dir", &audio_dir_str])
                 .args(["--word_timestamps", "True"])
@@ -335,12 +392,16 @@ pub async fn transcribe_local(audio_path: &str, model_path: &str) -> Result<Norm
         .await
         .context("spawn_blocking failed")?
     } else {
-        // Resolve the directory where the model lives. We'll put transcribe.py there.
-        let model_dir = std::path::Path::new(&model_path)
-            .parent()
-            .ok_or_else(|| anyhow!("Invalid model path"))?;
+        let script_dir = if let Some(dir) = scratch_dir {
+            dir.to_path_buf()
+        } else {
+            dirs::data_dir()
+                .map(|d| d.join("clipon").join("scripts"))
+                .unwrap_or_else(|| std::env::temp_dir().join("clipon_scripts"))
+        };
+        let _ = std::fs::create_dir_all(&script_dir);
 
-        let script_path = model_dir.join("transcribe.py");
+        let script_path = script_dir.join("transcribe.py");
         if !script_path.exists() {
             let script_content = r#"import sys
 import json
@@ -396,9 +457,10 @@ if __name__ == "__main__":
         }
 
         let output_json_path =
-            model_dir.join(format!("temp_transcript_{}.json", uuid::Uuid::new_v4()));
+            script_dir.join(format!("temp_transcript_{}.json", uuid::Uuid::new_v4()));
         let script_path_str = script_path.to_string_lossy().to_string();
         let output_json_path_str = output_json_path.to_string_lossy().to_string();
+        let model_str_clone = model_str.clone();
 
         tokio::task::spawn_blocking(move || {
             let python_bin = find_python_command().unwrap_or_else(|| "python".to_string());
@@ -406,7 +468,7 @@ if __name__ == "__main__":
                 .arg(&script_path_str)
                 .arg(&audio_path)
                 .arg(&output_json_path_str)
-                .arg("base") // default model size
+                .arg(&model_str_clone)
                 .output()
                 .context("executing python transcribe.py")?;
 
@@ -432,5 +494,41 @@ if __name__ == "__main__":
         })
         .await
         .context("spawn_blocking failed")?
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_whisper_model_parsing_and_str() {
+        let tiny: WhisperModel = "tiny".parse().unwrap();
+        assert_eq!(tiny, WhisperModel::Tiny);
+        assert_eq!(tiny.as_str(), "tiny");
+
+        let base: WhisperModel = "base".parse().unwrap();
+        assert_eq!(base, WhisperModel::Base);
+        assert_eq!(base.as_str(), "base");
+
+        let small: WhisperModel = "Small".parse().unwrap();
+        assert_eq!(small, WhisperModel::Small);
+        assert_eq!(small.as_str(), "small");
+
+        let medium: WhisperModel = "medium".parse().unwrap();
+        assert_eq!(medium, WhisperModel::Medium);
+        assert_eq!(medium.as_str(), "medium");
+
+        let large: WhisperModel = "LARGE-v3".parse().unwrap();
+        assert_eq!(large, WhisperModel::Large);
+        assert_eq!(large.as_str(), "large");
+
+        let custom: WhisperModel = "/path/to/my-model.bin".parse().unwrap();
+        assert_eq!(custom, WhisperModel::Custom("/path/to/my-model.bin".into()));
+        assert_eq!(custom.as_str(), "/path/to/my-model.bin");
+
+        let empty: WhisperModel = "   ".parse().unwrap();
+        assert_eq!(empty, WhisperModel::Base);
+        assert_eq!(empty.as_str(), "base");
     }
 }

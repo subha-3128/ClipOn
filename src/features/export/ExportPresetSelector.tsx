@@ -1,4 +1,4 @@
-import { Instagram, Youtube, Video, Settings2 } from "lucide-react";
+import { Instagram, Youtube, Video } from "lucide-react";
 import type { ExportPresetConfig, ExportPresetPlatform } from "../../types";
 
 const PRESETS: ExportPresetConfig[] = [
@@ -45,10 +45,25 @@ export function ExportPresetSelector({
 }: ExportPresetSelectorProps) {
   return (
     <div className="export-preset-selector" style={{ margin: "10px 0" }}>
-      <label style={{ fontSize: "11px", fontWeight: "600", color: "#94a3b8", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>
+      <label
+        style={{
+          fontSize: "11px",
+          fontWeight: "600",
+          color: "#94a3b8",
+          textTransform: "uppercase",
+          display: "block",
+          marginBottom: "6px",
+        }}
+      >
         Export Preset (1080×1920 Vertical)
       </label>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 1fr)",
+          gap: "8px",
+        }}
+      >
         {PRESETS.map((p) => {
           const isSelected = selectedPreset === p.platform;
           return (
@@ -57,8 +72,12 @@ export function ExportPresetSelector({
               type="button"
               onClick={() => onSelectPreset(p.platform)}
               style={{
-                background: isSelected ? "rgba(56, 189, 248, 0.15)" : "rgba(30, 41, 59, 0.5)",
-                border: isSelected ? "1px solid #38bdf8" : "1px solid rgba(255, 255, 255, 0.08)",
+                background: isSelected
+                  ? "rgba(56, 189, 248, 0.15)"
+                  : "rgba(30, 41, 59, 0.5)",
+                border: isSelected
+                  ? "1px solid #38bdf8"
+                  : "1px solid rgba(255, 255, 255, 0.08)",
                 borderRadius: "8px",
                 padding: "8px 10px",
                 textAlign: "left",
@@ -68,15 +87,29 @@ export function ExportPresetSelector({
                 gap: "3px",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "6px" }}
+              >
                 {p.platform === "instagram_reels" ? (
-                  <Instagram size={13} color={isSelected ? "#38bdf8" : "#94a3b8"} />
+                  <Instagram
+                    size={13}
+                    color={isSelected ? "#38bdf8" : "#94a3b8"}
+                  />
                 ) : p.platform === "youtube_shorts" ? (
-                  <Youtube size={13} color={isSelected ? "#38bdf8" : "#94a3b8"} />
+                  <Youtube
+                    size={13}
+                    color={isSelected ? "#38bdf8" : "#94a3b8"}
+                  />
                 ) : (
                   <Video size={13} color={isSelected ? "#38bdf8" : "#94a3b8"} />
                 )}
-                <span style={{ fontSize: "11px", fontWeight: "600", color: isSelected ? "#f8fafc" : "#cbd5e1" }}>
+                <span
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: "600",
+                    color: isSelected ? "#f8fafc" : "#cbd5e1",
+                  }}
+                >
                   {p.label}
                 </span>
               </div>

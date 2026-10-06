@@ -1,10 +1,24 @@
 import React, { createContext, useContext, useState, useCallback } from "react";
-import { AppError, createAppError, ErrorSeverity, ErrorAction } from "../../types/error";
-import { AlertCircle, AlertTriangle, CheckCircle, Info, X } from "lucide-react";
+import {
+  AppError,
+  createAppError,
+  ErrorSeverity,
+  ErrorAction,
+} from "../../types/error";
+import { AlertCircle, AlertTriangle, Info, X } from "lucide-react";
 
 interface ErrorContextValue {
   errors: AppError[];
-  showError: (message: string, options?: { code?: string; details?: string; severity?: ErrorSeverity; recoverable?: boolean; action?: ErrorAction }) => string;
+  showError: (
+    message: string,
+    options?: {
+      code?: string;
+      details?: string;
+      severity?: ErrorSeverity;
+      recoverable?: boolean;
+      action?: ErrorAction;
+    }
+  ) => string;
   showWarning: (message: string, details?: string) => string;
   showInfo: (message: string) => string;
   dismissError: (id: string) => void;
@@ -41,13 +55,19 @@ export function ErrorProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  const showWarning = useCallback((message: string, details?: string) => {
-    return showError(message, { severity: "warning", details });
-  }, [showError]);
+  const showWarning = useCallback(
+    (message: string, details?: string) => {
+      return showError(message, { severity: "warning", details });
+    },
+    [showError]
+  );
 
-  const showInfo = useCallback((message: string) => {
-    return showError(message, { severity: "info" });
-  }, [showError]);
+  const showInfo = useCallback(
+    (message: string) => {
+      return showError(message, { severity: "info" });
+    },
+    [showError]
+  );
 
   const dismissError = useCallback((id: string) => {
     setErrors((prev) => prev.filter((e) => e.id !== id));
@@ -70,25 +90,31 @@ export function ErrorProvider({ children }: { children: React.ReactNode }) {
     >
       {children}
       {errors.length > 0 && (
-        <div className="error-toast-container" style={{
-          position: "fixed",
-          bottom: 24,
-          right: 24,
-          zIndex: 9999,
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
-          maxWidth: 420,
-          width: "100%",
-          pointerEvents: "none"
-        }}>
+        <div
+          className="error-toast-container"
+          style={{
+            position: "fixed",
+            bottom: 24,
+            right: 24,
+            zIndex: 9999,
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+            maxWidth: 420,
+            width: "100%",
+            pointerEvents: "none",
+          }}
+        >
           {errors.map((err) => (
             <div
               key={err.id}
               className={`error-toast ${err.severity}`}
               style={{
                 pointerEvents: "auto",
-                background: err.severity === "fatal" || err.severity === "error" ? "rgba(30, 10, 10, 0.95)" : "rgba(25, 25, 35, 0.95)",
+                background:
+                  err.severity === "fatal" || err.severity === "error"
+                    ? "rgba(30, 10, 10, 0.95)"
+                    : "rgba(25, 25, 35, 0.95)",
                 border: `1px solid ${err.severity === "fatal" || err.severity === "error" ? "#ef4444" : err.severity === "warning" ? "#f59e0b" : "#3b82f6"}`,
                 borderRadius: 8,
                 padding: "12px 16px",
@@ -97,19 +123,36 @@ export function ErrorProvider({ children }: { children: React.ReactNode }) {
                 backdropFilter: "blur(12px)",
                 display: "flex",
                 flexDirection: "column",
-                gap: 6
+                gap: 6,
               }}
             >
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  justifyContent: "space-between",
+                  gap: 10,
+                }}
+              >
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   {err.severity === "fatal" || err.severity === "error" ? (
-                    <AlertCircle size={18} color="#ef4444" style={{ flexShrink: 0 }} />
+                    <AlertCircle
+                      size={18}
+                      color="#ef4444"
+                      style={{ flexShrink: 0 }}
+                    />
                   ) : err.severity === "warning" ? (
-                    <AlertTriangle size={18} color="#f59e0b" style={{ flexShrink: 0 }} />
+                    <AlertTriangle
+                      size={18}
+                      color="#f59e0b"
+                      style={{ flexShrink: 0 }}
+                    />
                   ) : (
                     <Info size={18} color="#3b82f6" style={{ flexShrink: 0 }} />
                   )}
-                  <div style={{ fontWeight: 600, fontSize: 13, lineHeight: "1.3" }}>
+                  <div
+                    style={{ fontWeight: 600, fontSize: 13, lineHeight: "1.3" }}
+                  >
                     {err.message}
                   </div>
                 </div>
@@ -122,7 +165,7 @@ export function ErrorProvider({ children }: { children: React.ReactNode }) {
                     cursor: "pointer",
                     padding: 2,
                     display: "flex",
-                    alignItems: "center"
+                    alignItems: "center",
                   }}
                   title="Dismiss"
                 >
@@ -131,7 +174,14 @@ export function ErrorProvider({ children }: { children: React.ReactNode }) {
               </div>
 
               {err.details && (
-                <div style={{ fontSize: 11, color: "#94a3b8", paddingLeft: 26, wordBreak: "break-word" }}>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "#94a3b8",
+                    paddingLeft: 26,
+                    wordBreak: "break-word",
+                  }}
+                >
                   {err.details}
                 </div>
               )}
@@ -151,7 +201,7 @@ export function ErrorProvider({ children }: { children: React.ReactNode }) {
                       fontSize: 11,
                       padding: "4px 10px",
                       cursor: "pointer",
-                      fontWeight: 500
+                      fontWeight: 500,
                     }}
                   >
                     {err.action.label}

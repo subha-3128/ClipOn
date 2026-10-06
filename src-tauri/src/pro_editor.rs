@@ -282,8 +282,9 @@ pub fn calculate_audio_energy_scores(
                     .clamp(45.0, 99.0);
 
             // Multi-modal composite blend: 40% LLM hook + 35% Audio Energy + 25% Speech Pacing
-            let composite = (0.40 * draft.score + 0.35 * audio_score + 0.25 * pacing_score).round();
-            enriched.score = composite.clamp(55.0, 99.0);
+            let llm_score_100 = (draft.score * 100.0).clamp(0.0, 100.0);
+            let composite = (0.40 * llm_score_100 + 0.35 * audio_score + 0.25 * pacing_score).round();
+            enriched.score = composite.clamp(45.0, 99.0);
 
             // Enrich rationale with auditory insights
             if hook_energy_ratio >= 1.15 {

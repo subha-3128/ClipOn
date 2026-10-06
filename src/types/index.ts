@@ -18,6 +18,12 @@ export type EnvironmentStatus = {
   hasYtdlp: boolean;
   hasHardwareAccel?: boolean;
   instagramAccountId?: string;
+  platform?: string;
+  localWhisperSupported?: boolean;
+  ollamaSupported?: boolean;
+  ollamaInstallSupported?: boolean;
+  dynamicPodcastSupported?: boolean;
+  hardwareEncoderSupported?: boolean;
 };
 
 export type Project = {
@@ -59,6 +65,7 @@ export type Candidate = {
   rationale: string;
   rank: number;
   selected: boolean;
+  layoutOverride?: string | null;
 };
 
 export type Clip = {
@@ -187,7 +194,8 @@ export type JobInfo = {
 
 // ===== Export Preset Types =====
 
-export type ExportPresetPlatform = "instagram_reels" | "youtube_shorts" | "tiktok" | "custom";
+export type ExportPresetPlatform =
+  "instagram_reels" | "youtube_shorts" | "tiktok" | "custom";
 
 export type ExportPresetConfig = {
   platform: ExportPresetPlatform;

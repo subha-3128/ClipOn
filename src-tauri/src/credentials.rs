@@ -9,6 +9,7 @@ pub const ANTHROPIC: &str = "anthropic";
 pub const DEEPSEEK: &str = "deepseek";
 pub const GROQ: &str = "groq";
 pub const OPENROUTER: &str = "openrouter";
+pub const INSTAGRAM: &str = "instagram";
 
 pub fn get(name: &str) -> Result<Option<String>> {
     let entry = keyring::Entry::new(SERVICE_NAME, name)

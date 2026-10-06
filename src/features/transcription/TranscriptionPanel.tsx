@@ -25,7 +25,9 @@ export function TranscriptionPanel({
     if (!transcript) return [];
     if (!transcriptSearch.trim()) return transcript.segments;
     const query = transcriptSearch.toLowerCase();
-    return transcript.segments.filter((s) => s.text.toLowerCase().includes(query));
+    return transcript.segments.filter((s) =>
+      s.text.toLowerCase().includes(query)
+    );
   }, [transcript, transcriptSearch]);
 
   return (
@@ -45,7 +47,11 @@ export function TranscriptionPanel({
           onClick={onTranscribe}
           disabled={busy !== "idle" || !canTranscribe}
         >
-          {busy === "transcribe" ? <Loader2 className="spin" size={14} /> : <AudioLines size={14} />}
+          {busy === "transcribe" ? (
+            <Loader2 className="spin" size={14} />
+          ) : (
+            <AudioLines size={14} />
+          )}
           {transcript ? "Re-transcribe" : "Transcribe"}
         </button>
       </div>
@@ -60,7 +66,10 @@ export function TranscriptionPanel({
             onChange={(e) => setTranscriptSearch(e.target.value)}
           />
           {transcriptSearch && (
-            <button onClick={() => setTranscriptSearch("")} className="clear-search">
+            <button
+              onClick={() => setTranscriptSearch("")}
+              className="clear-search"
+            >
               <X size={13} />
             </button>
           )}
@@ -70,10 +79,15 @@ export function TranscriptionPanel({
       <div className="transcript-scroll-area">
         {filteredSegments.length > 0 ? (
           filteredSegments.map((seg, idx) => (
-            <div key={`${seg.start}-${idx}`} className="transcript-segment-card">
+            <div
+              key={`${seg.start}-${idx}`}
+              className="transcript-segment-card"
+            >
               <div className="segment-meta">
                 <span className="segment-time">{formatTime(seg.start)}</span>
-                {seg.speaker && <span className="segment-speaker">{seg.speaker}</span>}
+                {seg.speaker && (
+                  <span className="segment-speaker">{seg.speaker}</span>
+                )}
               </div>
               <p className="segment-text">{seg.text}</p>
             </div>
@@ -87,15 +101,26 @@ export function TranscriptionPanel({
           <div className="empty-panel-state">
             <AudioLines size={36} />
             <h4>No Transcript Available</h4>
-            <p>Run transcription to enable AI moment detection and automated captions.</p>
+            <p>
+              Run transcription to enable AI moment detection and automated
+              captions.
+            </p>
             <button
               className="studio-btn primary"
               onClick={onTranscribe}
               disabled={busy !== "idle" || !canTranscribe}
               style={{ marginTop: "12px" }}
             >
-              {busy === "transcribe" ? <Loader2 className="spin" size={14} /> : <AudioLines size={14} />}
-              Transcribe Video ({transcriptionEngine === "local" ? "Whisper Offline" : "Deepgram Cloud"})
+              {busy === "transcribe" ? (
+                <Loader2 className="spin" size={14} />
+              ) : (
+                <AudioLines size={14} />
+              )}
+              Transcribe Video (
+              {transcriptionEngine === "local"
+                ? "Whisper Offline"
+                : "Deepgram Cloud"}
+              )
             </button>
           </div>
         )}

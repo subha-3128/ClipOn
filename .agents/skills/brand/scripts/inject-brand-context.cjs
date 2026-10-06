@@ -44,9 +44,7 @@ function extractColorsFromTable(content) {
   const secondaryMatch = content.match(
     /### Secondary Colors[\s\S]*?\|[\s\S]*?(?=###|$)/i
   );
-  const neutralMatch = content.match(
-    /### Neutral[\s\S]*?\|[\s\S]*?(?=###|$)/i
-  );
+  const neutralMatch = content.match(/### Neutral[\s\S]*?\|[\s\S]*?(?=###|$)/i);
   const semanticMatch = content.match(
     /### Semantic[\s\S]*?\|[\s\S]*?(?=###|$)/i
   );
@@ -107,21 +105,19 @@ function extractVoice(content) {
     /### Brand Personality[\s\S]*?\|[\s\S]*?(?=###|##|$)/i
   );
   if (personalityMatch) {
-    const traits = personalityMatch[0].match(
-      /\*\*([^*]+)\*\*\s*\|\s*([^|]+)/g
-    );
+    const traits = personalityMatch[0].match(/\*\*([^*]+)\*\*\s*\|\s*([^|]+)/g);
     if (traits) {
-      voice.traits = traits.map((t) => {
-        const match = t.match(/\*\*([^*]+)\*\*/);
-        return match ? match[1].trim() : "";
-      }).filter(Boolean);
+      voice.traits = traits
+        .map((t) => {
+          const match = t.match(/\*\*([^*]+)\*\*/);
+          return match ? match[1].trim() : "";
+        })
+        .filter(Boolean);
     }
   }
 
   // Extract prohibited terms
-  const prohibitedMatch = content.match(
-    /### Prohibited[\s\S]*?(?=###|##|$)/i
-  );
+  const prohibitedMatch = content.match(/### Prohibited[\s\S]*?(?=###|##|$)/i);
   if (prohibitedMatch) {
     const terms = prohibitedMatch[0].match(/\|\s*([^|]+)\s*\|/g);
     if (terms) {
@@ -203,12 +199,17 @@ function extractImageStyle(content) {
     /### Style Keywords[\s\S]*?\|[\s\S]*?(?=###|##|$)/i
   );
   if (keywordsMatch) {
-    const keywordRows = keywordsMatch[0].match(/\|\s*\*\*[^*]+\*\*\s*\|\s*([^|]+)\|/g);
+    const keywordRows = keywordsMatch[0].match(
+      /\|\s*\*\*[^*]+\*\*\s*\|\s*([^|]+)\|/g
+    );
     if (keywordRows) {
       keywordRows.forEach((row) => {
         const match = row.match(/\|\s*\*\*[^*]+\*\*\s*\|\s*([^|]+)\|/);
         if (match) {
-          const keywords = match[1].split(",").map((k) => k.trim()).filter(Boolean);
+          const keywords = match[1]
+            .split(",")
+            .map((k) => k.trim())
+            .filter(Boolean);
           imageStyle.keywords.push(...keywords);
         }
       });
@@ -222,7 +223,9 @@ function extractImageStyle(content) {
   if (moodMatch) {
     const moodItems = moodMatch[0].match(/-\s*([^\n]+)/g);
     if (moodItems) {
-      imageStyle.mood = moodItems.map((item) => item.replace(/^-\s*/, "").trim());
+      imageStyle.mood = moodItems.map((item) =>
+        item.replace(/^-\s*/, "").trim()
+      );
     }
   }
 
@@ -245,7 +248,9 @@ function extractImageStyle(content) {
   // Extract example prompts (content between ``` blocks after specific headers)
   const exampleMatch = content.match(/### Example Prompts[\s\S]*?(?=##|$)/i);
   if (exampleMatch) {
-    const prompts = exampleMatch[0].match(/\*\*([^*]+)\*\*:\s*```\n?([\s\S]*?)```/g);
+    const prompts = exampleMatch[0].match(
+      /\*\*([^*]+)\*\*:\s*```\n?([\s\S]*?)```/g
+    );
     if (prompts) {
       prompts.forEach((p) => {
         const match = p.match(/\*\*([^*]+)\*\*:\s*```\n?([\s\S]*?)```/);
@@ -310,7 +315,8 @@ Maintain consistent voice, colors, and messaging.
 function main() {
   const args = process.argv.slice(2);
   const jsonOutput = args.includes("--json");
-  const guidelinesPath = args.find((a) => !a.startsWith("--")) || DEFAULT_GUIDELINES_PATH;
+  const guidelinesPath =
+    args.find((a) => !a.startsWith("--")) || DEFAULT_GUIDELINES_PATH;
 
   // Resolve path
   const resolvedPath = path.isAbsolute(guidelinesPath)
@@ -320,7 +326,9 @@ function main() {
   // Check if file exists
   if (!fs.existsSync(resolvedPath)) {
     console.error(`Error: Brand guidelines not found at ${resolvedPath}`);
-    console.error(`Create brand guidelines at ${DEFAULT_GUIDELINES_PATH} or specify a path.`);
+    console.error(
+      `Create brand guidelines at ${DEFAULT_GUIDELINES_PATH} or specify a path.`
+    );
     process.exit(1);
   }
 
