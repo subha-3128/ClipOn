@@ -60,31 +60,34 @@ Transcript:
         })
         .unwrap_or(default_model);
 
-    let response = reqwest::Client::new()
-        .post("https://api.deepseek.com/chat/completions")
-        .header("Authorization", format!("Bearer {api_key}"))
-        .json(&json!({
-            "model": model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt,
-                }
-            ],
-            "temperature": 0.2,
-            "response_format": {
-                "type": "json_object"
+    let client = crate::http_client::build_api_client(60);
+    let payload = json!({
+        "model": model,
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt,
             }
-        }))
-        .send()
-        .await
-        .context("calling DeepSeek")?;
+        ],
+        "temperature": 0.2,
+        "response_format": {
+            "type": "json_object"
+        }
+    });
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(anyhow!("DeepSeek request failed ({status}): {body}"));
-    }
+    let response = crate::http_client::send_with_retry(
+        &client,
+        || {
+            client
+                .post("https://api.deepseek.com/chat/completions")
+                .header("Authorization", format!("Bearer {api_key}"))
+                .json(&payload)
+        },
+        3,
+        800,
+    )
+    .await
+    .context("calling DeepSeek API")?;
 
     let res_body: DeepseekResponse = response.json().await.context("parsing DeepSeek response")?;
     let text = res_body
@@ -274,32 +277,34 @@ Transcript:
     );
 
     let model = std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4o-mini".to_string());
-
-    let response = reqwest::Client::new()
-        .post("https://api.openai.com/v1/chat/completions")
-        .header("Authorization", format!("Bearer {api_key}"))
-        .json(&json!({
-            "model": model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt,
-                }
-            ],
-            "temperature": 0.2,
-            "response_format": {
-                "type": "json_object"
+    let client = crate::http_client::build_api_client(60);
+    let payload = json!({
+        "model": model,
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt,
             }
-        }))
-        .send()
-        .await
-        .context("calling OpenAI")?;
+        ],
+        "temperature": 0.2,
+        "response_format": {
+            "type": "json_object"
+        }
+    });
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(anyhow!("OpenAI request failed ({status}): {body}"));
-    }
+    let response = crate::http_client::send_with_retry(
+        &client,
+        || {
+            client
+                .post("https://api.openai.com/v1/chat/completions")
+                .header("Authorization", format!("Bearer {api_key}"))
+                .json(&payload)
+        },
+        3,
+        800,
+    )
+    .await
+    .context("calling OpenAI API")?;
 
     let res_body: ChatCompletionResponse =
         response.json().await.context("parsing OpenAI response")?;
@@ -347,31 +352,34 @@ Transcript:
         })
         .unwrap_or(default_model);
 
-    let response = reqwest::Client::new()
-        .post("https://openrouter.ai/api/v1/chat/completions")
-        .header("Authorization", format!("Bearer {api_key}"))
-        .json(&json!({
-            "model": model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt,
-                }
-            ],
-            "temperature": 0.2,
-            "response_format": {
-                "type": "json_object"
+    let client = crate::http_client::build_api_client(60);
+    let payload = json!({
+        "model": model,
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt,
             }
-        }))
-        .send()
-        .await
-        .context("calling OpenRouter")?;
+        ],
+        "temperature": 0.2,
+        "response_format": {
+            "type": "json_object"
+        }
+    });
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(anyhow!("OpenRouter request failed ({status}): {body}"));
-    }
+    let response = crate::http_client::send_with_retry(
+        &client,
+        || {
+            client
+                .post("https://openrouter.ai/api/v1/chat/completions")
+                .header("Authorization", format!("Bearer {api_key}"))
+                .json(&payload)
+        },
+        3,
+        800,
+    )
+    .await
+    .context("calling OpenRouter API")?;
 
     let res_body: ChatCompletionResponse = response
         .json()
@@ -412,31 +420,34 @@ Transcript:
     let model =
         std::env::var("GROQ_MODEL").unwrap_or_else(|_| "llama-3.3-70b-versatile".to_string());
 
-    let response = reqwest::Client::new()
-        .post("https://api.groq.com/openai/v1/chat/completions")
-        .header("Authorization", format!("Bearer {api_key}"))
-        .json(&json!({
-            "model": model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt,
-                }
-            ],
-            "temperature": 0.2,
-            "response_format": {
-                "type": "json_object"
+    let client = crate::http_client::build_api_client(60);
+    let payload = json!({
+        "model": model,
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt,
             }
-        }))
-        .send()
-        .await
-        .context("calling Groq")?;
+        ],
+        "temperature": 0.2,
+        "response_format": {
+            "type": "json_object"
+        }
+    });
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(anyhow!("Groq request failed ({status}): {body}"));
-    }
+    let response = crate::http_client::send_with_retry(
+        &client,
+        || {
+            client
+                .post("https://api.groq.com/openai/v1/chat/completions")
+                .header("Authorization", format!("Bearer {api_key}"))
+                .json(&payload)
+        },
+        3,
+        800,
+    )
+    .await
+    .context("calling Groq API")?;
 
     let res_body: ChatCompletionResponse =
         response.json().await.context("parsing Groq response")?;
@@ -481,30 +492,33 @@ Transcript:
     let model =
         std::env::var("ANTHROPIC_MODEL").unwrap_or_else(|_| "claude-3-5-sonnet-latest".to_string());
 
-    let response = reqwest::Client::new()
-        .post("https://api.anthropic.com/v1/messages")
-        .header("x-api-key", api_key)
-        .header("anthropic-version", "2023-06-01")
-        .json(&json!({
-            "model": model,
-            "max_tokens": 1800,
-            "temperature": 0.2,
-            "messages": [
-                ClaudeMessage {
-                    role: "user",
-                    content: prompt,
-                }
-            ]
-        }))
-        .send()
-        .await
-        .context("calling Claude")?;
+    let client = crate::http_client::build_api_client(60);
+    let payload = json!({
+        "model": model,
+        "max_tokens": 1800,
+        "temperature": 0.2,
+        "messages": [
+            ClaudeMessage {
+                role: "user",
+                content: prompt,
+            }
+        ]
+    });
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(anyhow!("Claude request failed ({status}): {body}"));
-    }
+    let response = crate::http_client::send_with_retry(
+        &client,
+        || {
+            client
+                .post("https://api.anthropic.com/v1/messages")
+                .header("x-api-key", api_key)
+                .header("anthropic-version", "2023-06-01")
+                .json(&payload)
+        },
+        3,
+        800,
+    )
+    .await
+    .context("calling Claude API")?;
 
     let message: AnthropicMessage = response.json().await.context("parsing Claude response")?;
     let text = message
@@ -611,8 +625,17 @@ Ensure the 'start' and 'end' values correspond to actual timestamps in the trans
 }
 
 fn compact_segments(segments: &[TranscriptSegment]) -> String {
-    segments
-        .iter()
+    // If transcript is exceedingly long (> 2 hours, > 1200 segments), sample across the timeline
+    // to prevent LLM prompt token exhaustion while preserving full temporal coverage.
+    let sampled_segments: Vec<&TranscriptSegment> = if segments.len() > 1200 {
+        let step = (segments.len() as f64 / 1200.0).ceil() as usize;
+        segments.iter().step_by(step.max(1)).collect()
+    } else {
+        segments.iter().collect()
+    };
+
+    sampled_segments
+        .into_iter()
         .map(|segment| {
             let speaker = segment.speaker.as_deref().unwrap_or("Speaker");
             format!(
@@ -1013,7 +1036,7 @@ pub async fn generate_social_kit(
     hook: &str,
     transcript_text: &str,
 ) -> SocialKit {
-    if let Ok(key) = std::env::var("GEMINI_API_KEY") {
+    if let Ok(Some(key)) = crate::credentials::get(crate::credentials::GEMINI) {
         if !key.trim().is_empty() {
             if let Ok(kit) =
                 generate_social_kit_with_gemini(candidate_id, hook, transcript_text, &key).await
@@ -1023,7 +1046,7 @@ pub async fn generate_social_kit(
         }
     }
 
-    if let Ok(key) = std::env::var("DEEPSEEK_API_KEY") {
+    if let Ok(Some(key)) = crate::credentials::get(crate::credentials::DEEPSEEK) {
         if !key.trim().is_empty() {
             if let Ok(kit) =
                 generate_social_kit_with_deepseek(candidate_id, hook, transcript_text, &key).await

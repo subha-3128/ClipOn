@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     process::Command,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 use tauri::Emitter;
@@ -22,18 +22,33 @@ pub enum JobState {
 pub struct JobInfo {
     pub id: String,
     pub project_id: String,
+    #[serde(default)]
+    pub input: Option<String>,
+    #[serde(default)]
+    pub output: Option<String>,
     pub state: JobState,
     pub progress: u32,
     pub stage: String,
     pub error: Option<String>,
     pub created_at_ms: u64,
     pub completed_at_ms: Option<u64>,
+    #[serde(default)]
+    pub cancel_state: bool,
 }
 
-#[derive(Clone, Default)]
+static GLOBAL_JOB_MANAGER: OnceLock<JobManager> = OnceLock::new();
+
+#[derive(Clone)]
 pub struct JobManager {
     jobs: Arc<Mutex<HashMap<String, JobInfo>>>,
     pids: Arc<Mutex<HashMap<String, Vec<u32>>>>,
+    semaphore: Arc<tokio::sync::Semaphore>,
+}
+
+impl Default for JobManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl JobManager {
@@ -41,7 +56,28 @@ impl JobManager {
         Self {
             jobs: Arc::new(Mutex::new(HashMap::new())),
             pids: Arc::new(Mutex::new(HashMap::new())),
+            semaphore: Arc::new(tokio::sync::Semaphore::new(2)),
         }
+    }
+
+    pub fn global() -> &'static JobManager {
+        GLOBAL_JOB_MANAGER.get_or_init(JobManager::new)
+    }
+
+    pub fn register_process_global(job_id: &str, pid: u32) {
+        Self::global().register_process(job_id, pid);
+    }
+
+    pub fn unregister_process_global(job_id: &str, pid: u32) {
+        Self::global().unregister_process(job_id, pid);
+    }
+
+    pub fn is_cancelled_global(job_id: &str) -> bool {
+        Self::global().is_cancelled(job_id)
+    }
+
+    pub fn semaphore(&self) -> Arc<tokio::sync::Semaphore> {
+        self.semaphore.clone()
     }
 
     fn now_ms() -> u64 {
@@ -52,16 +88,29 @@ impl JobManager {
     }
 
     pub fn create_job(&self, project_id: &str, initial_stage: &str) -> String {
+        self.create_job_with_details(project_id, None, None, initial_stage)
+    }
+
+    pub fn create_job_with_details(
+        &self,
+        project_id: &str,
+        input: Option<&str>,
+        output: Option<&str>,
+        initial_stage: &str,
+    ) -> String {
         let job_id = format!("job_{}_{}", uuid::Uuid::new_v4(), Self::now_ms());
         let info = JobInfo {
             id: job_id.clone(),
             project_id: project_id.to_string(),
+            input: input.map(|s| s.to_string()),
+            output: output.map(|s| s.to_string()),
             state: JobState::Queued,
             progress: 0,
             stage: initial_stage.to_string(),
             error: None,
             created_at_ms: Self::now_ms(),
             completed_at_ms: None,
+            cancel_state: false,
         };
 
         if let Ok(mut lock) = self.jobs.lock() {
@@ -162,6 +211,7 @@ impl JobManager {
         if let Ok(mut lock) = self.jobs.lock() {
             if let Some(job) = lock.get_mut(job_id) {
                 job.state = JobState::Cancelled;
+                job.cancel_state = true;
                 job.stage = "Cancelled by user".to_string();
                 job.completed_at_ms = Some(Self::now_ms());
                 emit_info = Some(job.clone());
@@ -180,7 +230,12 @@ impl JobManager {
         for pid in pids_to_kill {
             #[cfg(unix)]
             {
+                let _ = Command::new("kill").args(["-15", &pid.to_string()]).output();
                 let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
+            }
+            #[cfg(windows)]
+            {
+                let _ = Command::new("taskkill").args(["/PID", &pid.to_string(), "/F"]).output();
             }
         }
 
@@ -194,7 +249,7 @@ impl JobManager {
     pub fn is_cancelled(&self, job_id: &str) -> bool {
         if let Ok(lock) = self.jobs.lock() {
             if let Some(job) = lock.get(job_id) {
-                return job.state == JobState::Cancelled;
+                return job.state == JobState::Cancelled || job.cancel_state;
             }
         }
         false
@@ -222,5 +277,71 @@ impl JobManager {
                     .collect()
             })
             .unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_job_lifecycle() {
+        let mgr = JobManager::new();
+        let job_id = mgr.create_job_with_details("proj_1", Some("cand_1"), Some("/out/clip.mp4"), "Starting");
+
+        let job = mgr.get_job(&job_id).expect("job exists");
+        assert_eq!(job.state, JobState::Queued);
+        assert_eq!(job.progress, 0);
+        assert_eq!(job.input.as_deref(), Some("cand_1"));
+        assert_eq!(job.output.as_deref(), Some("/out/clip.mp4"));
+
+        mgr.update_progress(&job_id, JobState::Analyzing, 30, "Analyzing", None);
+        let job = mgr.get_job(&job_id).unwrap();
+        assert_eq!(job.state, JobState::Analyzing);
+        assert_eq!(job.progress, 30);
+
+        mgr.complete_job(&job_id, None);
+        let job = mgr.get_job(&job_id).unwrap();
+        assert_eq!(job.state, JobState::Completed);
+        assert_eq!(job.progress, 100);
+        assert!(job.completed_at_ms.is_some());
+    }
+
+    #[test]
+    fn test_job_cancellation() {
+        let mgr = JobManager::new();
+        let job_id = mgr.create_job("proj_1", "Starting");
+
+        assert!(!mgr.is_cancelled(&job_id));
+        mgr.cancel_job(&job_id, None).expect("cancellation succeeds");
+
+        assert!(mgr.is_cancelled(&job_id));
+        let job = mgr.get_job(&job_id).unwrap();
+        assert_eq!(job.state, JobState::Cancelled);
+        assert!(job.cancel_state);
+    }
+
+    #[tokio::test]
+    async fn test_bounded_queue_semaphore() {
+        let mgr = JobManager::new();
+        let sem = mgr.semaphore();
+        assert_eq!(sem.available_permits(), 2);
+
+        let p1 = sem.clone().try_acquire_owned().expect("slot 1 available");
+        assert_eq!(sem.available_permits(), 1);
+
+        let p2 = sem.clone().try_acquire_owned().expect("slot 2 available");
+        assert_eq!(sem.available_permits(), 0);
+
+        // Third acquire must fail when permits are exhausted
+        assert!(sem.clone().try_acquire_owned().is_err());
+
+        drop(p1);
+        assert_eq!(sem.available_permits(), 1);
+        let _p3 = sem.clone().try_acquire_owned().expect("slot 3 available after drop");
+
+        drop(p2);
+        drop(_p3);
+        assert_eq!(sem.available_permits(), 2);
     }
 }

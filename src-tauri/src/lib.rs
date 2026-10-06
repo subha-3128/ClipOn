@@ -1,13 +1,15 @@
 pub mod analysis_cache;
-mod db;
+mod credentials;
+pub mod db;
 pub mod dynamic_podcast_reframing;
 mod instagram;
+pub mod http_client;
 pub mod jobs;
-mod llm;
-mod media;
-mod models;
-mod pro_editor;
-mod transcription;
+pub mod llm;
+pub mod media;
+pub mod models;
+pub mod pro_editor;
+pub mod transcription;
 
 use std::path::PathBuf;
 
@@ -61,13 +63,13 @@ async fn environment_status(
         data_dir: state.data_dir.to_string_lossy().to_string(),
         has_ffmpeg: media::command_exists("ffmpeg"),
         has_ffprobe: media::command_exists("ffprobe"),
-        has_deepgram_key: std::env::var("DEEPGRAM_API_KEY").is_ok(),
-        has_anthropic_key: std::env::var("ANTHROPIC_API_KEY").is_ok(),
-        has_deepseek_key: std::env::var("DEEPSEEK_API_KEY").is_ok(),
-        has_gemini_key: std::env::var("GEMINI_API_KEY").is_ok(),
-        has_openai_key: std::env::var("OPENAI_API_KEY").is_ok(),
-        has_openrouter_key: std::env::var("OPENROUTER_API_KEY").is_ok(),
-        has_groq_key: std::env::var("GROQ_API_KEY").is_ok(),
+        has_deepgram_key: credentials::has(credentials::DEEPGRAM).map_err(to_command_error)?,
+        has_anthropic_key: credentials::has(credentials::ANTHROPIC).map_err(to_command_error)?,
+        has_deepseek_key: credentials::has(credentials::DEEPSEEK).map_err(to_command_error)?,
+        has_gemini_key: credentials::has(credentials::GEMINI).map_err(to_command_error)?,
+        has_openai_key: credentials::has(credentials::OPENAI).map_err(to_command_error)?,
+        has_openrouter_key: credentials::has(credentials::OPENROUTER).map_err(to_command_error)?,
+        has_groq_key: credentials::has(credentials::GROQ).map_err(to_command_error)?,
         has_instagram_token: std::env::var("INSTAGRAM_ACCESS_TOKEN").is_ok(),
         llm_provider,
         has_local_whisper_model,
@@ -411,7 +413,6 @@ async fn transcribe_project(
     state: tauri::State<'_, AppState>,
     project_id: String,
     provider: String,
-    api_key: Option<String>,
 ) -> Result<Transcript, String> {
     let db = state.db.clone();
     let data_dir = state.data_dir.clone();
@@ -421,11 +422,10 @@ async fn transcribe_project(
 
     let transcript = match provider.as_str() {
         "deepgram" => {
-            let key = api_key
-                .filter(|k| !k.trim().is_empty())
-                .or_else(|| std::env::var("DEEPGRAM_API_KEY").ok())
+            let key = credentials::get(credentials::DEEPGRAM)
+                .map_err(to_command_error)?
                 .ok_or_else(|| {
-                    "Set DEEPGRAM_API_KEY or paste an API key to use cloud transcription."
+                    "Configure a Deepgram API key in Settings to use cloud transcription."
                         .to_string()
                 })?;
             let audio_path = media::extract_audio(
@@ -494,7 +494,6 @@ fn save_demo_transcript(
 async fn generate_candidates(
     state: tauri::State<'_, AppState>,
     project_id: String,
-    api_key: Option<String>,
     provider: Option<String>,
     model_name: Option<String>,
     _allow_demo: bool,
@@ -514,12 +513,10 @@ async fn generate_candidates(
 
     let drafts = match active_provider.as_str() {
         "claude" => {
-            let key = api_key
-                .filter(|k| !k.trim().is_empty())
-                .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
+            let key = credentials::get(credentials::ANTHROPIC)
+                .map_err(to_command_error)?
                 .ok_or_else(|| {
-                    "Set ANTHROPIC_API_KEY or supply Claude API Key to generate candidates."
-                        .to_string()
+                    "Configure an Anthropic API key in Settings to generate candidates.".to_string()
                 })?;
             llm::detect_candidates_with_claude(&normalized, &key)
                 .await
@@ -535,35 +532,30 @@ async fn generate_candidates(
                 .map_err(to_command_error)?
         }
         "gemini" => {
-            let key = api_key
-                .filter(|k| !k.trim().is_empty())
-                .or_else(|| std::env::var("GEMINI_API_KEY").ok())
+            let key = credentials::get(credentials::GEMINI)
+                .map_err(to_command_error)?
                 .ok_or_else(|| {
-                    "Set GEMINI_API_KEY or supply Gemini API Key to generate candidates."
-                        .to_string()
+                    "Configure a Gemini API key in Settings to generate candidates.".to_string()
                 })?;
             llm::detect_candidates_with_gemini(&normalized, &key)
                 .await
                 .map_err(to_command_error)?
         }
         "openai" => {
-            let key = api_key
-                .filter(|k| !k.trim().is_empty())
-                .or_else(|| std::env::var("OPENAI_API_KEY").ok())
+            let key = credentials::get(credentials::OPENAI)
+                .map_err(to_command_error)?
                 .ok_or_else(|| {
-                    "Set OPENAI_API_KEY or supply OpenAI API Key to generate candidates."
-                        .to_string()
+                    "Configure an OpenAI API key in Settings to generate candidates.".to_string()
                 })?;
             llm::detect_candidates_with_openai(&normalized, &key)
                 .await
                 .map_err(to_command_error)?
         }
         "openrouter" => {
-            let key = api_key
-                .filter(|k| !k.trim().is_empty())
-                .or_else(|| std::env::var("OPENROUTER_API_KEY").ok())
+            let key = credentials::get(credentials::OPENROUTER)
+                .map_err(to_command_error)?
                 .ok_or_else(|| {
-                    "Set OPENROUTER_API_KEY or supply OpenRouter API Key to generate candidates."
+                    "Configure an OpenRouter API key in Settings to generate candidates."
                         .to_string()
                 })?;
             llm::detect_candidates_with_openrouter(&normalized, &key, model_name.as_deref())
@@ -571,23 +563,20 @@ async fn generate_candidates(
                 .map_err(to_command_error)?
         }
         "groq" => {
-            let key = api_key
-                .filter(|k| !k.trim().is_empty())
-                .or_else(|| std::env::var("GROQ_API_KEY").ok())
+            let key = credentials::get(credentials::GROQ)
+                .map_err(to_command_error)?
                 .ok_or_else(|| {
-                    "Set GROQ_API_KEY or supply Groq API Key to generate candidates.".to_string()
+                    "Configure a Groq API key in Settings to generate candidates.".to_string()
                 })?;
             llm::detect_candidates_with_groq(&normalized, &key)
                 .await
                 .map_err(to_command_error)?
         }
         _ => {
-            let key = api_key
-                .filter(|k| !k.trim().is_empty())
-                .or_else(|| std::env::var("DEEPSEEK_API_KEY").ok())
+            let key = credentials::get(credentials::DEEPSEEK)
+                .map_err(to_command_error)?
                 .ok_or_else(|| {
-                    "Set DEEPSEEK_API_KEY or supply DeepSeek API Key to generate candidates."
-                        .to_string()
+                    "Configure a DeepSeek API key in Settings to generate candidates.".to_string()
                 })?;
             llm::detect_candidates_with_deepseek(&normalized, &key, model_name.as_deref())
                 .await
@@ -676,7 +665,22 @@ async fn render_flat_clip_for_candidate(
     let job_mgr = state.jobs.clone();
     let app_clone = app.clone();
 
-    let job_id = job_mgr.create_job(&candidate_id, "Preparing clip render");
+    let job_id = job_mgr.create_job_with_details(
+        &candidate_id,
+        Some(&candidate_id),
+        None,
+        "Queued in render queue",
+    );
+    let permit = job_mgr
+        .semaphore()
+        .acquire_owned()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if job_mgr.is_cancelled(&job_id) {
+        return Err("Cancelled by user".to_string());
+    }
+
     job_mgr.update_progress(
         &job_id,
         jobs::JobState::Analyzing,
@@ -686,6 +690,7 @@ async fn render_flat_clip_for_candidate(
     );
 
     tokio::task::spawn_blocking(move || {
+        let _permit = permit;
         let (candidate, project) = db
             .get_candidate_with_project(&candidate_id)
             .map_err(to_command_error)?;
@@ -786,7 +791,7 @@ async fn render_flat_clip_for_candidate(
             Some(&app_clone),
         );
 
-        match media::render_flat_clip(
+        match media::render_flat_clip_with_job(
             &project.source_path,
             candidate.start_sec,
             candidate.end_sec,
@@ -797,6 +802,7 @@ async fn render_flat_clip_for_candidate(
             should_remove_silence,
             punch,
             studio,
+            Some(job_id.clone()),
         ) {
             Ok(path) => {
                 let path_string = path.to_string_lossy().to_string();
@@ -814,8 +820,21 @@ async fn render_flat_clip_for_candidate(
             }
             Err(error) => {
                 let err_msg = error.to_string();
-                // Fallback retry rendering without captions overlay on any error
-                match media::render_flat_clip(
+                if job_mgr.is_cancelled(&job_id) || err_msg.contains("cancelled") {
+                    let _ = std::fs::remove_file(&output_path);
+                    let _ = db.update_clip_for_candidate(
+                        &candidate_id,
+                        "failed",
+                        None,
+                        None,
+                        Some("Cancelled by user"),
+                    );
+                    job_mgr.fail_job(&job_id, "Cancelled by user", Some(&app_clone));
+                    return Err("Cancelled by user".to_string());
+                }
+
+                // Fallback retry rendering without captions overlay on any non-cancellation error
+                match media::render_flat_clip_with_job(
                     &project.source_path,
                     candidate.start_sec,
                     candidate.end_sec,
@@ -826,6 +845,7 @@ async fn render_flat_clip_for_candidate(
                     false,
                     punch,
                     studio,
+                    Some(job_id.clone()),
                 ) {
                     Ok(path) => {
                         let path_string = path.to_string_lossy().to_string();
@@ -847,6 +867,18 @@ async fn render_flat_clip_for_candidate(
                     }
                     Err(retry_err) => {
                         let message = retry_err.to_string();
+                        if job_mgr.is_cancelled(&job_id) || message.contains("cancelled") {
+                            let _ = std::fs::remove_file(&output_path);
+                            let _ = db.update_clip_for_candidate(
+                                &candidate_id,
+                                "failed",
+                                None,
+                                None,
+                                Some("Cancelled by user"),
+                            );
+                            job_mgr.fail_job(&job_id, "Cancelled by user", Some(&app_clone));
+                            return Err("Cancelled by user".to_string());
+                        }
                         db.update_clip_for_candidate(
                             &candidate_id,
                             "error",
@@ -1074,10 +1106,11 @@ pub fn run() {
                 data_dir.join("clipon.sqlite")
             };
             let db = Database::open(&db_path)?;
+            media::cleanup_stale_temp_dirs();
             app.manage(AppState {
                 db,
                 data_dir,
-                jobs: jobs::JobManager::new(),
+                jobs: jobs::JobManager::global().clone(),
             });
             Ok(())
         })
@@ -1105,7 +1138,9 @@ pub fn run() {
             test_instagram_connection,
             publish_candidate_to_instagram,
             save_instagram_credentials,
-            save_api_credentials,
+            save_credential,
+            delete_credential,
+            credential_status,
             update_candidate_timing,
             clear_all_storage,
             cancel_job,
@@ -1125,6 +1160,10 @@ pub struct CopyrightCheckResult {
 #[tauri::command]
 async fn check_youtube_copyright(url: String) -> Result<CopyrightCheckResult, String> {
     tokio::task::spawn_blocking(move || {
+        if !media::command_exists("yt-dlp") {
+            return Err("yt-dlp is not installed or available on PATH. Please install via Homebrew: 'brew install yt-dlp'".to_string());
+        }
+
         let output = std::process::Command::new(media::resolve_binary("yt-dlp"))
             .args(&["--dump-json", &url])
             .output()
@@ -1159,6 +1198,10 @@ async fn check_youtube_copyright(url: String) -> Result<CopyrightCheckResult, St
 #[tauri::command]
 async fn download_youtube_video(url: String, output_dir: Option<String>) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
+        if !media::command_exists("yt-dlp") {
+            return Err("yt-dlp is not installed or available on PATH. Please install via Homebrew: 'brew install yt-dlp'".to_string());
+        }
+
         let save_dir = output_dir
             .filter(|s| !s.is_empty())
             .or_else(|| {
@@ -1760,110 +1803,34 @@ async fn save_instagram_credentials(
 }
 
 #[tauri::command]
-async fn save_api_credentials(
-    state: tauri::State<'_, AppState>,
-    deepgram_key: Option<String>,
-    gemini_key: Option<String>,
-    openai_key: Option<String>,
-    anthropic_key: Option<String>,
-    deepseek_key: Option<String>,
-    groq_key: Option<String>,
-    openrouter_key: Option<String>,
-) -> Result<(), String> {
-    let mut updates: Vec<(&str, String)> = Vec::new();
-    if let Some(k) = deepgram_key {
-        let trimmed = k.trim().to_string();
-        if !trimmed.is_empty() {
-            std::env::set_var("DEEPGRAM_API_KEY", &trimmed);
-            updates.push(("DEEPGRAM_API_KEY", trimmed));
-        }
+async fn save_credential(name: String, value: String) -> Result<(), String> {
+    let allowed = [
+        credentials::DEEPGRAM,
+        credentials::GEMINI,
+        credentials::OPENAI,
+        credentials::ANTHROPIC,
+        credentials::DEEPSEEK,
+        credentials::GROQ,
+        credentials::OPENROUTER,
+    ];
+    if !allowed.contains(&name.as_str()) {
+        return Err("Unsupported credential".to_string());
     }
-    if let Some(k) = gemini_key {
-        let trimmed = k.trim().to_string();
-        if !trimmed.is_empty() {
-            std::env::set_var("GEMINI_API_KEY", &trimmed);
-            updates.push(("GEMINI_API_KEY", trimmed));
-        }
+    if value.trim().is_empty() {
+        credentials::delete(&name).map_err(to_command_error)
+    } else {
+        credentials::save(&name, &value).map_err(to_command_error)
     }
-    if let Some(k) = openai_key {
-        let trimmed = k.trim().to_string();
-        if !trimmed.is_empty() {
-            std::env::set_var("OPENAI_API_KEY", &trimmed);
-            updates.push(("OPENAI_API_KEY", trimmed));
-        }
-    }
-    if let Some(k) = anthropic_key {
-        let trimmed = k.trim().to_string();
-        if !trimmed.is_empty() {
-            std::env::set_var("ANTHROPIC_API_KEY", &trimmed);
-            updates.push(("ANTHROPIC_API_KEY", trimmed));
-        }
-    }
-    if let Some(k) = deepseek_key {
-        let trimmed = k.trim().to_string();
-        if !trimmed.is_empty() {
-            std::env::set_var("DEEPSEEK_API_KEY", &trimmed);
-            updates.push(("DEEPSEEK_API_KEY", trimmed));
-        }
-    }
-    if let Some(k) = groq_key {
-        let trimmed = k.trim().to_string();
-        if !trimmed.is_empty() {
-            std::env::set_var("GROQ_API_KEY", &trimmed);
-            updates.push(("GROQ_API_KEY", trimmed));
-        }
-    }
-    if let Some(k) = openrouter_key {
-        let trimmed = k.trim().to_string();
-        if !trimmed.is_empty() {
-            std::env::set_var("OPENROUTER_API_KEY", &trimmed);
-            updates.push(("OPENROUTER_API_KEY", trimmed));
-        }
-    }
+}
 
-    if updates.is_empty() {
-        return Ok(());
-    }
+#[tauri::command]
+async fn delete_credential(name: String) -> Result<(), String> {
+    credentials::delete(&name).map_err(to_command_error)
+}
 
-    let mut paths = vec![state.data_dir.join(".env")];
-    if PathBuf::from(".env").exists() {
-        paths.push(PathBuf::from(".env"));
-    }
-
-    for path in paths {
-        let mut lines = Vec::new();
-        let mut found_keys = std::collections::HashSet::new();
-
-        if path.exists() {
-            if let Ok(file_content) = std::fs::read_to_string(&path) {
-                for line in file_content.lines() {
-                    let mut matched = false;
-                    for (k, v) in &updates {
-                        let prefix = format!("{k}=");
-                        if line.starts_with(&prefix) {
-                            lines.push(format!("{k}={v}"));
-                            found_keys.insert(*k);
-                            matched = true;
-                            break;
-                        }
-                    }
-                    if !matched {
-                        lines.push(line.to_string());
-                    }
-                }
-            }
-        }
-
-        for (k, v) in &updates {
-            if !found_keys.contains(*k) {
-                lines.push(format!("{k}={v}"));
-            }
-        }
-
-        let _ = std::fs::write(&path, lines.join("\n") + "\n");
-    }
-
-    Ok(())
+#[tauri::command]
+async fn credential_status(name: String) -> Result<bool, String> {
+    credentials::has(&name).map_err(to_command_error)
 }
 
 #[tauri::command]

@@ -5,3 +5,5 @@ src-tauri/target
 .env
 .DS_Store
 *.log
+*.mp4
+.zcodeignore

@@ -32,10 +32,13 @@ pub fn extract_audio(source_path: &str, project_dir: &Path) -> Result<PathBuf> {
 
 pub fn detect_silences(source_path: &str, start_sec: f64, duration_sec: f64) -> Vec<(f64, f64)> {
     let cache = crate::analysis_cache::AnalysisCache::global();
-    let cache_key = crate::analysis_cache::AnalysisCache::compute_source_key(
+    let cache_key = crate::analysis_cache::AnalysisCache::compute_source_key_with_params(
         source_path,
         start_sec,
         duration_sec,
+        "silence_detector_v1",
+        "ffmpeg_silencedetect",
+        "-30dB_0.5s",
     );
 
     if let Some(cached) = cache.get::<Vec<(f64, f64)>>(&cache_key, "silence") {

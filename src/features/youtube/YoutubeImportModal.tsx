@@ -1,0 +1,193 @@
+import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { Youtube, X, AlertTriangle, Loader2, ShieldAlert } from "lucide-react";
+import { useAppError } from "../error/ErrorProvider";
+
+interface YoutubeImportModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess: (downloadedPath: string) => void;
+  youtubeSaveDir: string;
+}
+
+export function YoutubeImportModal({
+  isOpen,
+  onClose,
+  onSuccess,
+  youtubeSaveDir,
+}: YoutubeImportModalProps) {
+  const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [youtubeStatus, setYoutubeStatus] = useState<"idle" | "checking" | "warning" | "downloading">("idle");
+  const [youtubeWarningLicense, setYoutubeWarningLicense] = useState<string | null>(null);
+  const [acknowledgedTos, setAcknowledgedTos] = useState(() => {
+    return localStorage.getItem("clipon_youtube_tos_ack") === "true";
+  });
+  const { showError } = useAppError();
+
+  if (!isOpen) return null;
+
+  const handleCheckboxChange = (checked: boolean) => {
+    setAcknowledgedTos(checked);
+    localStorage.setItem("clipon_youtube_tos_ack", checked ? "true" : "false");
+  };
+
+  async function handleImport() {
+    if (!youtubeUrl) return;
+    setYoutubeStatus("checking");
+    try {
+      const result = await invoke<{ isSafe: boolean; license: string | null }>("check_youtube_copyright", {
+        url: youtubeUrl,
+      });
+
+      if (!result.isSafe) {
+        setYoutubeWarningLicense(result.license || "Standard YouTube License");
+        setYoutubeStatus("warning");
+        return;
+      }
+      await executeDownload();
+    } catch (err: any) {
+      showError("YouTube metadata check failed", { details: String(err) });
+      setYoutubeStatus("idle");
+    }
+  }
+
+  async function executeDownload() {
+    setYoutubeStatus("downloading");
+    try {
+      const downloadedPath = await invoke<string>("download_youtube_video", {
+        url: youtubeUrl,
+        outputDir: youtubeSaveDir.trim() || null,
+      });
+      setYoutubeUrl("");
+      setYoutubeStatus("idle");
+      onClose();
+      onSuccess(downloadedPath);
+    } catch (err: any) {
+      showError("Failed to download YouTube video", { details: String(err) });
+      setYoutubeStatus("idle");
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="youtube-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <div className="modal-header-left">
+            <div className="modal-icon-badge">
+              <Youtube size={18} />
+            </div>
+            <div>
+              <h3>Import from YouTube</h3>
+              <p>Download and convert a video directly into ClipOn</p>
+            </div>
+          </div>
+          <button className="modal-close-btn" onClick={onClose}>
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="youtube-modal-body">
+          {/* Terms Compliance Banner */}
+          <div
+            style={{
+              padding: "10px 14px",
+              background: "rgba(59, 130, 246, 0.08)",
+              border: "1px solid rgba(59, 130, 246, 0.25)",
+              borderRadius: 6,
+              marginBottom: 14,
+              fontSize: 12,
+              color: "#94a3b8",
+              display: "flex",
+              gap: 8,
+              alignItems: "flex-start",
+            }}
+          >
+            <ShieldAlert size={16} color="#60a5fa" style={{ flexShrink: 0, marginTop: 2 }} />
+            <div>
+              <strong style={{ color: "#e2e8f0" }}>Notice & Terms of Service:</strong>
+              <div style={{ marginTop: 2 }}>
+                Ensure you have the right to download and use this content under YouTube’s Terms of Service and applicable copyright laws.
+              </div>
+            </div>
+          </div>
+
+          <input
+            type="text"
+            placeholder="https://www.youtube.com/watch?v=..."
+            value={youtubeUrl}
+            onChange={(e) => setYoutubeUrl(e.target.value)}
+            disabled={youtubeStatus !== "idle" && youtubeStatus !== "warning"}
+            className="youtube-url-input"
+          />
+
+          {youtubeStatus === "warning" && (
+            <div className="youtube-warning-box">
+              <div className="warning-title">
+                <AlertTriangle size={18} />
+                <span>Copyright Advisory</span>
+              </div>
+              <p>
+                This video is not explicitly marked with a Creative Commons license. Detected license:{" "}
+                <strong>{youtubeWarningLicense}</strong>. Clipping and republishing copyrighted content may violate platform terms.
+              </p>
+            </div>
+          )}
+
+          <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              type="checkbox"
+              id="tos_ack"
+              checked={acknowledgedTos}
+              onChange={(e) => handleCheckboxChange(e.target.checked)}
+              style={{ cursor: "pointer" }}
+            />
+            <label htmlFor="tos_ack" style={{ fontSize: 12, color: "#cbd5e1", cursor: "pointer", userSelect: "none" }}>
+              I confirm I have permission or legal right to use this content
+            </label>
+          </div>
+        </div>
+
+        <div className="modal-footer">
+          <button
+            className="studio-btn secondary"
+            onClick={() => {
+              onClose();
+              setYoutubeUrl("");
+              setYoutubeStatus("idle");
+            }}
+            disabled={youtubeStatus === "checking" || youtubeStatus === "downloading"}
+          >
+            Cancel
+          </button>
+          {youtubeStatus === "warning" ? (
+            <button
+              className="studio-btn danger"
+              onClick={executeDownload}
+              disabled={!acknowledgedTos}
+            >
+              Proceed Anyway
+            </button>
+          ) : (
+            <button
+              className="studio-btn primary"
+              onClick={handleImport}
+              disabled={!youtubeUrl || !acknowledgedTos || youtubeStatus !== "idle"}
+            >
+              {youtubeStatus === "checking" ? (
+                <>
+                  <Loader2 className="spin" size={14} /> Checking...
+                </>
+              ) : youtubeStatus === "downloading" ? (
+                <>
+                  <Loader2 className="spin" size={14} /> Downloading...
+                </>
+              ) : (
+                "Download & Import"
+              )}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

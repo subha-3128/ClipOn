@@ -32,83 +32,120 @@ impl Database {
     }
 
     fn migrate(&self) -> Result<()> {
-        let conn = self.conn.lock().expect("database mutex poisoned");
+        let mut conn = self.conn.lock().expect("database mutex poisoned");
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+
         conn.execute_batch(
-            "
-            PRAGMA foreign_keys = ON;
-
-            CREATE TABLE IF NOT EXISTS projects (
-                id TEXT PRIMARY KEY,
-                name TEXT,
-                source_path TEXT NOT NULL,
-                source_duration REAL,
-                status TEXT NOT NULL,
-                transcription_mode TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS transcripts (
-                id TEXT PRIMARY KEY,
-                project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-                engine TEXT NOT NULL,
-                raw_json TEXT NOT NULL,
-                language TEXT,
-                created_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS candidates (
-                id TEXT PRIMARY KEY,
-                project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-                start_sec REAL NOT NULL,
-                end_sec REAL NOT NULL,
-                score REAL NOT NULL,
-                hook TEXT NOT NULL,
-                rationale TEXT NOT NULL,
-                rank INTEGER NOT NULL,
-                selected INTEGER NOT NULL DEFAULT 0
-            );
-
-            CREATE TABLE IF NOT EXISTS clips (
-                id TEXT PRIMARY KEY,
-                candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
-                status TEXT NOT NULL,
-                output_path TEXT,
-                face_track_json TEXT,
-                caption_ass_path TEXT,
-                render_log TEXT
-            );
-
-            CREATE TABLE IF NOT EXISTS clip_copy (
-                id TEXT PRIMARY KEY,
-                clip_id TEXT NOT NULL REFERENCES clips(id) ON DELETE CASCADE,
-                platform TEXT NOT NULL,
-                hook_text TEXT,
-                caption_text TEXT,
-                hashtags TEXT
-            );
-
-            CREATE TABLE IF NOT EXISTS schedule_entries (
-                id TEXT PRIMARY KEY,
-                clip_id TEXT NOT NULL REFERENCES clips(id) ON DELETE CASCADE,
-                platform TEXT NOT NULL,
-                scheduled_for TEXT,
-                status TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS instagram_posts (
-                id TEXT PRIMARY KEY,
-                candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
-                clip_id TEXT REFERENCES clips(id) ON DELETE SET NULL,
-                status TEXT NOT NULL,
-                caption TEXT,
-                post_url TEXT,
-                error_message TEXT,
-                created_at TEXT NOT NULL,
-                published_at TEXT
-            );
-            ",
+            "CREATE TABLE IF NOT EXISTS schema_migrations (
+                version INTEGER PRIMARY KEY,
+                applied_at TEXT NOT NULL
+            );",
         )?;
+
+        let migrations: &[(i64, &str)] = &[
+            (
+                1,
+                "CREATE TABLE IF NOT EXISTS projects (
+                    id TEXT PRIMARY KEY,
+                    name TEXT,
+                    source_path TEXT NOT NULL,
+                    source_duration REAL,
+                    status TEXT NOT NULL,
+                    transcription_mode TEXT NOT NULL,
+                    caption_style TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS transcripts (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    engine TEXT NOT NULL,
+                    raw_json TEXT NOT NULL,
+                    language TEXT,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS candidates (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    start_sec REAL NOT NULL,
+                    end_sec REAL NOT NULL,
+                    score REAL NOT NULL,
+                    hook TEXT NOT NULL,
+                    rationale TEXT NOT NULL,
+                    rank INTEGER NOT NULL,
+                    selected INTEGER NOT NULL DEFAULT 0
+                );
+
+                CREATE TABLE IF NOT EXISTS clips (
+                    id TEXT PRIMARY KEY,
+                    candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+                    status TEXT NOT NULL,
+                    output_path TEXT,
+                    face_track_json TEXT,
+                    caption_ass_path TEXT,
+                    render_log TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS clip_copy (
+                    id TEXT PRIMARY KEY,
+                    clip_id TEXT NOT NULL REFERENCES clips(id) ON DELETE CASCADE,
+                    platform TEXT NOT NULL,
+                    hook_text TEXT,
+                    caption_text TEXT,
+                    hashtags TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS schedule_entries (
+                    id TEXT PRIMARY KEY,
+                    clip_id TEXT NOT NULL REFERENCES clips(id) ON DELETE CASCADE,
+                    platform TEXT NOT NULL,
+                    scheduled_for TEXT,
+                    status TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS instagram_posts (
+                    id TEXT PRIMARY KEY,
+                    candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+                    clip_id TEXT REFERENCES clips(id) ON DELETE SET NULL,
+                    status TEXT NOT NULL,
+                    caption TEXT,
+                    post_url TEXT,
+                    error_message TEXT,
+                    created_at TEXT NOT NULL,
+                    published_at TEXT
+                );",
+            ),
+            (
+                2,
+                "CREATE INDEX IF NOT EXISTS idx_transcripts_project_id ON transcripts(project_id);
+                CREATE INDEX IF NOT EXISTS idx_candidates_project_id ON candidates(project_id);
+                CREATE INDEX IF NOT EXISTS idx_clips_candidate_id ON clips(candidate_id);
+                CREATE INDEX IF NOT EXISTS idx_instagram_candidate_id ON instagram_posts(candidate_id);",
+            ),
+        ];
+
+        for (ver, sql) in migrations {
+            let already_applied: bool = conn.query_row(
+                "SELECT COUNT(1) FROM schema_migrations WHERE version = ?1",
+                params![ver],
+                |row| row.get::<_, i64>(0).map(|c| c > 0),
+            )?;
+
+            if !already_applied {
+                let tx = conn.transaction()?;
+                tx.execute_batch(sql)?;
+                let now = Utc::now().to_rfc3339();
+                tx.execute(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES (?1, ?2)",
+                    params![ver, now],
+                )?;
+                tx.commit()?;
+            }
+        }
+
+        // Backward compatibility for pre-existing installations
         let _ = conn.execute("ALTER TABLE projects ADD COLUMN name TEXT", []);
         let _ = conn.execute("ALTER TABLE projects ADD COLUMN caption_style TEXT", []);
         Ok(())
@@ -628,4 +665,73 @@ fn candidate_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Candidate> {
         rank: row.get(7)?,
         selected: selected == 1,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_db() -> Database {
+        let temp_file = std::env::temp_dir().join(format!("clipon_test_db_{}.sqlite", Uuid::new_v4()));
+        Database::open(&temp_file).expect("open temp db")
+    }
+
+    #[test]
+    fn test_fresh_db_migrations() {
+        let db = temp_db();
+        let conn = db.conn.lock().unwrap();
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(1) FROM schema_migrations", [], |row| row.get(0))
+            .expect("query migrations");
+        assert!(count >= 2, "must have at least 2 migrations applied");
+    }
+
+    #[test]
+    fn test_migrations_idempotence() {
+        let db = temp_db();
+        // Running migrate() repeatedly should succeed without error
+        assert!(db.migrate().is_ok());
+        assert!(db.migrate().is_ok());
+    }
+
+    #[test]
+    fn test_foreign_key_cascade_deletion() {
+        let db = temp_db();
+        let proj = db
+            .create_project("/dummy/path.mp4", "local", "modern-box", Some(60.0))
+            .expect("create project");
+
+        let drafts = vec![CandidateDraft {
+            start: 0.0,
+            end: 15.0,
+            score: 9.0,
+            hook: "Test hook".into(),
+            rationale: "Rationale".into(),
+        }];
+
+        let candidates = db.replace_candidates(&proj.id, &drafts).expect("replace candidates");
+        assert_eq!(candidates.len(), 1);
+
+        // Delete project
+        db.delete_project(&proj.id).expect("delete project");
+
+        // Candidates must be automatically deleted via foreign key cascade
+        let remaining = db.list_candidates(&proj.id).expect("list candidates");
+        assert!(remaining.is_empty(), "cascading delete should clean up candidates");
+    }
+
+    #[test]
+    fn test_foreign_key_constraint_enforced() {
+        let db = temp_db();
+        let conn = db.conn.lock().unwrap();
+
+        // Inserting a candidate pointing to a non-existent project_id must fail
+        let res = conn.execute(
+            "INSERT INTO candidates (id, project_id, start_sec, end_sec, score, hook, rationale, rank, selected)
+             VALUES (?1, ?2, 0.0, 10.0, 8.0, 'Hook', 'Rat', 1, 0)",
+            params!["cand_orphan", "non_existent_project_id"],
+        );
+        assert!(res.is_err(), "foreign key constraint must reject orphan candidate");
+    }
 }

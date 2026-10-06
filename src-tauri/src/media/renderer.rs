@@ -18,9 +18,83 @@ use super::{
     render_plan::{CaptionPlan, ReframePlan, RenderPlan},
 };
 
+pub struct TempDirGuard(Option<PathBuf>);
+
+impl TempDirGuard {
+    pub fn new(path: PathBuf) -> Self {
+        let _ = std::fs::create_dir_all(&path);
+        Self(Some(path))
+    }
+
+    pub fn path(&self) -> &Path {
+        self.0.as_ref().expect("temp dir path")
+    }
+}
+
+impl Drop for TempDirGuard {
+    fn drop(&mut self) {
+        if let Some(path) = self.0.take() {
+            let _ = std::fs::remove_dir_all(&path);
+        }
+    }
+}
+
+pub fn cleanup_stale_temp_dirs() {
+    let temp_dir = std::env::temp_dir();
+    if let Ok(entries) = std::fs::read_dir(temp_dir) {
+        for entry in entries.flatten() {
+            if let Ok(name) = entry.file_name().into_string() {
+                if name.starts_with("clipon_pod_") || name.starts_with("clipon_job_") {
+                    let _ = std::fs::remove_dir_all(entry.path());
+                }
+            }
+        }
+    }
+}
+
+pub fn merge_adjacent_segments(
+    segments: &[crate::dynamic_podcast_reframing::LayoutSegment],
+) -> Vec<crate::dynamic_podcast_reframing::LayoutSegment> {
+    let mut merged: Vec<crate::dynamic_podcast_reframing::LayoutSegment> = Vec::new();
+    for seg in segments {
+        if let Some(last) = merged.last_mut() {
+            if last.layout_type == seg.layout_type && last.person_ids == seg.person_ids {
+                last.end = seg.end;
+                continue;
+            }
+        }
+        merged.push(seg.clone());
+    }
+    merged
+}
+
+pub fn execute_command_cancellable(
+    mut cmd: Command,
+    job_id: Option<&str>,
+) -> std::io::Result<std::process::Output> {
+    if let Some(id) = job_id {
+        if crate::jobs::JobManager::is_cancelled_global(id) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "Job cancelled by user",
+            ));
+        }
+    }
+    let child = cmd.spawn()?;
+    let pid = child.id();
+    if let Some(id) = job_id {
+        crate::jobs::JobManager::register_process_global(id, pid);
+    }
+    let res = child.wait_with_output();
+    if let Some(id) = job_id {
+        crate::jobs::JobManager::unregister_process_global(id, pid);
+    }
+    res
+}
+
 pub fn execute_render_plan(plan: &RenderPlan) -> Result<PathBuf> {
     if !command_exists("ffmpeg") {
-        return Err(anyhow!("ffmpeg is not installed or not available on PATH"));
+        return Err(anyhow!("ffmpeg is not installed or available on PATH. Please install via Homebrew: 'brew install ffmpeg'"));
     }
 
     if let Some(parent) = plan.output_path.parent() {
@@ -100,28 +174,31 @@ pub fn execute_render_plan(plan: &RenderPlan) -> Result<PathBuf> {
 
                     let pod = tracker_info.podcast.as_ref();
                     let people = pod.and_then(|p| p.people.as_deref()).unwrap_or(&[]);
-                    let segments = pod.and_then(|p| p.segments.as_deref()).unwrap_or(&[]);
+                    let raw_segments = pod.and_then(|p| p.segments.as_deref()).unwrap_or(&[]);
+                    let merged_segments = merge_adjacent_segments(raw_segments);
+                    let segments = &merged_segments[..];
 
                     let top_fallback_x = pod.map(|p| p.top_center_x).unwrap_or(0.26);
                     let top_fallback_y = pod.map(|p| p.top_center_y).unwrap_or(0.38);
                     let bot_fallback_x = pod.map(|p| p.bottom_center_x).unwrap_or(0.78);
                     let bot_fallback_y = pod.map(|p| p.bottom_center_y).unwrap_or(0.38);
 
-                    let has_multi_layout = segments.len() > 1 && {
-                        let first_type = &segments[0].layout_type;
-                        let first_ids = &segments[0].person_ids;
-                        segments
-                            .iter()
-                            .any(|s| &s.layout_type != first_type || &s.person_ids != first_ids)
-                    };
+                    let has_multi_layout = segments.len() > 1;
 
                     if has_multi_layout {
-                        let temp_dir = std::env::temp_dir()
-                            .join(format!("clipon_pod_{}", uuid::Uuid::new_v4()));
-                        let _ = std::fs::create_dir_all(&temp_dir);
+                        let temp_guard = TempDirGuard::new(
+                            std::env::temp_dir()
+                                .join(format!("clipon_pod_{}", uuid::Uuid::new_v4())),
+                        );
+                        let temp_dir = temp_guard.path();
 
                         let mut seg_files = Vec::new();
                         for (idx, seg) in segments.iter().enumerate() {
+                            if let Some(id) = plan.job_id.as_deref() {
+                                if crate::jobs::JobManager::is_cancelled_global(id) {
+                                    return Err(anyhow!("Job cancelled by user"));
+                                }
+                            }
                             let seg_dur = (seg.end - seg.start).max(0.1);
                             let seg_abs_start = start_sec + seg.start;
                             let seg_filter = format!(
@@ -163,8 +240,7 @@ pub fn execute_render_plan(plan: &RenderPlan) -> Result<PathBuf> {
                                 plan.output.video_bitrate_kbps,
                             );
                             seg_cmd.arg(&seg_out_path);
-                            if seg_cmd
-                                .output()
+                            if execute_command_cancellable(seg_cmd, plan.job_id.as_deref())
                                 .map(|o| o.status.success())
                                 .unwrap_or(false)
                             {
@@ -194,8 +270,7 @@ pub fn execute_render_plan(plan: &RenderPlan) -> Result<PathBuf> {
                                 "copy",
                                 &concat_out.to_string_lossy(),
                             ]);
-                            if concat_cmd
-                                .output()
+                            if execute_command_cancellable(concat_cmd, plan.job_id.as_deref())
                                 .map(|o| o.status.success())
                                 .unwrap_or(false)
                             {
@@ -266,8 +341,8 @@ pub fn execute_render_plan(plan: &RenderPlan) -> Result<PathBuf> {
                                 }
                                 final_cmd.arg(&plan.output_path);
 
-                                let res = final_cmd.output();
-                                let _ = std::fs::remove_dir_all(&temp_dir);
+                                let res = execute_command_cancellable(final_cmd, plan.job_id.as_deref());
+                                drop(temp_guard);
                                 if let Ok(out) = res {
                                     if out.status.success() {
                                         return Ok(());
@@ -275,7 +350,6 @@ pub fn execute_render_plan(plan: &RenderPlan) -> Result<PathBuf> {
                                 }
                             }
                         }
-                        let _ = std::fs::remove_dir_all(&temp_dir);
                     }
 
                     // Single-pass render
@@ -316,7 +390,8 @@ pub fn execute_render_plan(plan: &RenderPlan) -> Result<PathBuf> {
 
                     let sub_out = if let Some(CaptionPlan::AssSubtitle(ass)) = &plan.captions {
                         if let Some(ass_filter) = build_ass_filter(ass) {
-                            filter_graph = format!("{};{}[v_sub]", filter_graph, ass_filter);
+                            filter_graph =
+                                format!("{};{}{}[v_sub]", filter_graph, pre_sub_stream, ass_filter);
                             "[v_sub]"
                         } else {
                             pre_sub_stream
@@ -429,8 +504,15 @@ pub fn execute_render_plan(plan: &RenderPlan) -> Result<PathBuf> {
         }
         cmd.arg(&plan.output_path);
 
-        let output = cmd.output().context("running ffmpeg clip render")?;
+        let output = execute_command_cancellable(cmd, plan.job_id.as_deref())
+            .context("running ffmpeg clip render")?;
         if !output.status.success() {
+            if let Some(id) = plan.job_id.as_deref() {
+                if crate::jobs::JobManager::is_cancelled_global(id) {
+                    let _ = std::fs::remove_file(&plan.output_path);
+                    return Err(anyhow!("Job cancelled by user"));
+                }
+            }
             return Err(anyhow!(
                 "ffmpeg clip render failed: {}",
                 String::from_utf8_lossy(&output.stderr).trim()
@@ -439,9 +521,22 @@ pub fn execute_render_plan(plan: &RenderPlan) -> Result<PathBuf> {
         Ok(())
     };
 
+    if let Some(id) = plan.job_id.as_deref() {
+        if crate::jobs::JobManager::is_cancelled_global(id) {
+            let _ = std::fs::remove_file(&plan.output_path);
+            return Err(anyhow!("Job cancelled by user"));
+        }
+    }
+
     let vt_available = supports_videotoolbox();
     if vt_available {
         if let Err(vt_err) = run_render(true) {
+            if let Some(id) = plan.job_id.as_deref() {
+                if crate::jobs::JobManager::is_cancelled_global(id) {
+                    let _ = std::fs::remove_file(&plan.output_path);
+                    return Err(anyhow!("Job cancelled by user"));
+                }
+            }
             eprintln!(
                 "VideoToolbox hardware render failed: {vt_err}. Retrying with software libx264..."
             );
@@ -451,7 +546,57 @@ pub fn execute_render_plan(plan: &RenderPlan) -> Result<PathBuf> {
         run_render(false)?;
     }
 
+    if let Some(id) = plan.job_id.as_deref() {
+        if crate::jobs::JobManager::is_cancelled_global(id) {
+            let _ = std::fs::remove_file(&plan.output_path);
+            return Err(anyhow!("Job cancelled by user"));
+        }
+    }
+
     Ok(plan.output_path.clone())
+}
+
+pub fn render_flat_clip_with_job(
+    source_path: &str,
+    start_sec: f64,
+    end_sec: f64,
+    output_path: &Path,
+    drawtext_filters: Option<&str>,
+    ass_subtitle_path: Option<&Path>,
+    reframe_mode: Option<&str>,
+    remove_silence: bool,
+    punch_zoom: bool,
+    studio_audio: bool,
+    job_id: Option<String>,
+) -> Result<PathBuf> {
+    let mode = reframe_mode.unwrap_or("vertical_crop");
+    let effective_punch = punch_zoom || mode == "punch_zoom";
+
+    let captions = if let Some(ass) = ass_subtitle_path {
+        Some(CaptionPlan::AssSubtitle(ass.to_path_buf()))
+    } else if let Some(drawtext) = drawtext_filters {
+        Some(CaptionPlan::Drawtext(drawtext.to_string()))
+    } else {
+        None
+    };
+
+    let mut plan = RenderPlan::single_clip(
+        source_path,
+        start_sec,
+        end_sec,
+        output_path.to_path_buf(),
+        ReframePlan::from_mode_str(reframe_mode),
+        captions,
+        super::render_plan::AudioPlan {
+            studio_audio,
+            remove_silence,
+        },
+        effective_punch,
+        OutputPreset::instagram_reels(),
+    );
+    plan.job_id = job_id;
+
+    execute_render_plan(&plan)
 }
 
 pub fn render_flat_clip(
@@ -466,31 +611,82 @@ pub fn render_flat_clip(
     punch_zoom: bool,
     studio_audio: bool,
 ) -> Result<PathBuf> {
-    let mode = reframe_mode.unwrap_or("vertical_crop");
-    let effective_punch = punch_zoom || mode == "punch_zoom";
-
-    let captions = if let Some(ass) = ass_subtitle_path {
-        Some(CaptionPlan::AssSubtitle(ass.to_path_buf()))
-    } else if let Some(drawtext) = drawtext_filters {
-        Some(CaptionPlan::Drawtext(drawtext.to_string()))
-    } else {
-        None
-    };
-
-    let plan = RenderPlan::single_clip(
+    render_flat_clip_with_job(
         source_path,
         start_sec,
         end_sec,
-        output_path.to_path_buf(),
-        ReframePlan::from_mode_str(reframe_mode),
-        captions,
-        super::render_plan::AudioPlan {
-            studio_audio,
-            remove_silence,
-        },
-        effective_punch,
-        OutputPreset::instagram_reels(),
-    );
+        output_path,
+        drawtext_filters,
+        ass_subtitle_path,
+        reframe_mode,
+        remove_silence,
+        punch_zoom,
+        studio_audio,
+        None,
+    )
+}
 
-    execute_render_plan(&plan)
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dynamic_podcast_reframing::LayoutSegment;
+
+    #[test]
+    fn test_merge_adjacent_segments() {
+        let segs = vec![
+            LayoutSegment {
+                start: 0.0,
+                end: 3.0,
+                number_of_people: 2,
+                layout_type: "split_two".into(),
+                person_ids: vec![1, 2],
+            },
+            LayoutSegment {
+                start: 3.0,
+                end: 6.0,
+                number_of_people: 2,
+                layout_type: "split_two".into(),
+                person_ids: vec![1, 2],
+            },
+            LayoutSegment {
+                start: 6.0,
+                end: 9.0,
+                number_of_people: 1,
+                layout_type: "single".into(),
+                person_ids: vec![1],
+            },
+        ];
+
+        let merged = merge_adjacent_segments(&segs);
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].start, 0.0);
+        assert_eq!(merged[0].end, 6.0);
+        assert_eq!(merged[0].layout_type, "split_two");
+        assert_eq!(merged[1].start, 6.0);
+        assert_eq!(merged[1].end, 9.0);
+        assert_eq!(merged[1].layout_type, "single");
+    }
+
+    #[test]
+    fn test_temp_dir_guard_lifecycle() {
+        let path = std::env::temp_dir().join(format!("clipon_pod_test_{}", uuid::Uuid::new_v4()));
+        {
+            let guard = TempDirGuard::new(path.clone());
+            assert!(guard.path().exists());
+            std::fs::write(guard.path().join("dummy.txt"), "test").unwrap();
+        }
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn test_cleanup_stale_temp_dirs() {
+        let p1 = std::env::temp_dir().join(format!("clipon_pod_stale_{}", uuid::Uuid::new_v4()));
+        let p2 = std::env::temp_dir().join(format!("clipon_job_stale_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&p1).unwrap();
+        std::fs::create_dir_all(&p2).unwrap();
+        assert!(p1.exists() && p2.exists());
+
+        cleanup_stale_temp_dirs();
+        assert!(!p1.exists() && !p2.exists());
+    }
 }

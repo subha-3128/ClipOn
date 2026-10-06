@@ -31,7 +31,10 @@ pub use probe::probe_media;
 #[allow(unused_imports)]
 pub use render_plan::{AudioPlan, CaptionPlan, ReframePlan, RenderPlan, TimelineSegment};
 #[allow(unused_imports)]
-pub use renderer::{execute_render_plan, render_flat_clip};
+pub use renderer::{
+    cleanup_stale_temp_dirs, execute_render_plan, merge_adjacent_segments, render_flat_clip,
+    render_flat_clip_with_job, TempDirGuard,
+};
 
 #[cfg(test)]
 mod tests {

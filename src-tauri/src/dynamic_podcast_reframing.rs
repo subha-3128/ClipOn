@@ -73,6 +73,13 @@ pub struct DynamicPodcastReframing;
 impl DynamicPodcastReframing {
     /// Resolves the face tracker binary dynamically with zero hardcoded developer paths.
     pub fn resolve_tracker_binary() -> Result<PathBuf> {
+        #[cfg(not(target_os = "macos"))]
+        {
+            return Err(anyhow!(
+                "Dynamic podcast tracking requires Apple Vision framework and is currently supported on macOS only"
+            ));
+        }
+
         // 1. Current executable directory (when running packaged application or cargo test/run)
         if let Ok(exe) = std::env::current_exe() {
             if let Some(parent) = exe.parent() {
@@ -135,10 +142,13 @@ impl DynamicPodcastReframing {
         duration_sec: f64,
     ) -> DynamicPodcastReframingResult {
         let cache = crate::analysis_cache::AnalysisCache::global();
-        let cache_key = crate::analysis_cache::AnalysisCache::compute_source_key(
+        let cache_key = crate::analysis_cache::AnalysisCache::compute_source_key_with_params(
             source_path,
             start_sec,
             duration_sec,
+            "face_tracker_v2",
+            "vision_landmarks_prototypes",
+            "min_layout_3.0_confirm_1.0",
         );
 
         if let Some(cached) =
@@ -161,7 +171,6 @@ impl DynamicPodcastReframing {
         };
 
         let mut cmd = Command::new(&binary_path);
-        cmd.arg("-nostdin");
         cmd.arg(source_path);
         cmd.arg(format!("{start_sec:.3}"));
         cmd.arg(format!("{duration_sec:.3}"));

@@ -10,20 +10,24 @@ pub async fn transcribe_deepgram(audio_path: &str, api_key: &str) -> Result<Norm
         .await
         .with_context(|| format!("reading audio file {audio_path}"))?;
 
-    let response = reqwest::Client::new()
-        .post("https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&diarize=true&punctuate=true&filler_words=true")
-        .header("Authorization", format!("Token {api_key}"))
-        .header("Content-Type", "audio/wav")
-        .body(bytes)
-        .send()
-        .await
-        .context("calling Deepgram")?;
+    let client = crate::http_client::build_api_client(120);
+    let bytes_clone = bytes.clone();
+    let api_key_clone = api_key.to_string();
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(anyhow!("Deepgram request failed ({status}): {body}"));
-    }
+    let response = crate::http_client::send_with_retry(
+        &client,
+        || {
+            client
+                .post("https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&diarize=true&punctuate=true&filler_words=true")
+                .header("Authorization", format!("Token {api_key_clone}"))
+                .header("Content-Type", "audio/wav")
+                .body(bytes_clone.clone())
+        },
+        3,
+        1000,
+    )
+    .await
+    .context("calling Deepgram transcription API")?;
 
     let value: Value = response.json().await.context("parsing Deepgram response")?;
     normalize_deepgram(value)

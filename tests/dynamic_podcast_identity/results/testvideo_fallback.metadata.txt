@@ -1,0 +1,17 @@
+tracker_binary=/tmp/clipon-face-tracker-fallback
+input_video=./testvideo.mp4
+start_seconds=0
+duration_seconds=676.033
+index=0
+codec_name=h264
+codec_type=video
+width=1280
+height=720
+avg_frame_rate=60/1
+index=1
+codec_name=aac
+codec_type=audio
+avg_frame_rate=0/0
+filename=./testvideo.mp4
+duration=676.033333
+size=234618536
