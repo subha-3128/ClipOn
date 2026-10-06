@@ -141,6 +141,14 @@ pub struct PodcastShot {
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, serde::Deserialize)]
+pub struct PodcastKeyframe {
+    pub t: f64,
+    pub x: f64,
+    pub y: f64,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct PodcastFaceTracking {
     pub top_center_x: f64,
     pub top_center_y: f64,
@@ -155,6 +163,103 @@ pub struct PodcastFaceTracking {
     pub is_multicam: Option<bool>,
     pub two_faces_detected: bool,
     pub shots: Option<Vec<PodcastShot>>,
+    pub person_1_keyframes: Option<Vec<PodcastKeyframe>>,
+    pub person_2_keyframes: Option<Vec<PodcastKeyframe>>,
+}
+
+pub fn build_dynamic_crop_expr(
+    keyframes: Option<&[PodcastKeyframe]>,
+    iw: f64,
+    ih: f64,
+    cw: f64,
+    ch: f64,
+    fallback_cx: f64,
+    fallback_cy: f64,
+) -> (String, String) {
+    let to_px = |cx: f64, cy: f64| -> (i64, i64) {
+        let max_x = (iw - cw).max(0.0) as i64;
+        let max_y = (ih - ch).max(0.0) as i64;
+        let rx = (cx * iw - (cw / 2.0)).round() as i64;
+        let ry = (cy * ih - (ch * 0.38)).round() as i64;
+        let mut px = rx.clamp(0, max_x);
+        let mut py = ry.clamp(0, max_y);
+        px -= px % 2;
+        py -= py % 2;
+        (px, py)
+    };
+
+    let (fb_px, fb_py) = to_px(fallback_cx, fallback_cy);
+
+    let kfs = match keyframes {
+        Some(k) if !k.is_empty() => k,
+        _ => return (format!("'{}'", fb_px), format!("'{}'", fb_py)),
+    };
+
+    if kfs.len() == 1 {
+        let (px, py) = to_px(kfs[0].x, kfs[0].y);
+        return (format!("'{}'", px), format!("'{}'", py));
+    }
+
+    let points: Vec<(f64, i64, i64)> = kfs
+        .iter()
+        .map(|kf| {
+            let (px, py) = to_px(kf.x, kf.y);
+            (kf.t, px, py)
+        })
+        .collect();
+
+    let simplify = |extract_val: fn(&(f64, i64, i64)) -> i64| -> Vec<(f64, i64)> {
+        let raw: Vec<(f64, i64)> = points.iter().map(|p| (p.0, extract_val(p))).collect();
+        if raw.len() <= 2 {
+            return raw;
+        }
+        let mut simplified = vec![raw[0]];
+        for i in 1..raw.len() - 1 {
+            let prev_v = simplified.last().unwrap().1;
+            let curr_v = raw[i].1;
+            let next_v = raw[i + 1].1;
+            if (curr_v - prev_v).abs() <= 3 && (next_v - curr_v).abs() <= 3 {
+                continue;
+            }
+            simplified.push(raw[i]);
+        }
+        simplified.push(*raw.last().unwrap());
+        simplified
+    };
+
+    let pts_x = simplify(|p| p.1);
+    let pts_y = simplify(|p| p.2);
+
+    let build_expr = |pts: &[(f64, i64)], max_limit: i64| -> String {
+        if pts.is_empty() {
+            return "0".to_string();
+        }
+        if pts.len() == 1 {
+            return format!("{}", pts[0].1);
+        }
+
+        let mut expr = format!("{}", pts.last().unwrap().1);
+        for i in (0..pts.len() - 1).rev() {
+            let (t0, v0) = pts[i];
+            let (t1, v1) = pts[i + 1];
+            let dt = (t1 - t0).max(0.05);
+            let dv = v1 - v0;
+            let segment = if dv == 0 {
+                format!("{}", v0)
+            } else if dv > 0 {
+                format!("({}+{}*(t-{:.2})/{:.2})", v0, dv, t0, dt)
+            } else {
+                format!("({}-{}*(t-{:.2})/{:.2})", v0, dv.abs(), t0, dt)
+            };
+            expr = format!("if(lt(t,{:.2}),{},{})", t1, segment, expr);
+        }
+        format!("'2*trunc(min(max(0,{}),{})/2)'", expr, max_limit)
+    };
+
+    let max_x = (iw - cw).max(0.0) as i64;
+    let max_y = (ih - ch).max(0.0) as i64;
+
+    (build_expr(&pts_x, max_x), build_expr(&pts_y, max_y))
 }
 
 #[allow(dead_code)]
@@ -226,6 +331,8 @@ pub fn detect_faces_full(source_path: &str, start_sec: f64, duration_sec: f64) -
             is_multicam: Some(false),
             two_faces_detected: false,
             shots: None,
+            person_1_keyframes: None,
+            person_2_keyframes: None,
         }),
     }
 }
@@ -321,16 +428,7 @@ pub fn render_flat_clip(
         cmd.arg("-nostdin");
         cmd.args(["-y", "-ss", &start, "-i", source_path, "-t", &duration]);
 
-        if mode == "podcast_split" {
-            let is_multi = tracker_info.podcast.as_ref().and_then(|p| p.is_multicam).unwrap_or(false);
-            let has_two = tracker_info.podcast.as_ref().map(|p| p.two_faces_detected).unwrap_or(false);
-            if is_multi && has_two {
-                let top_r = tracker_info.podcast.as_ref().and_then(|p| p.top_reaction_t).unwrap_or(start_sec);
-                let bot_r = tracker_info.podcast.as_ref().and_then(|p| p.bottom_reaction_t).unwrap_or(start_sec);
-                cmd.args(["-ss", &format!("{top_r:.3}"), "-t", "6.0", "-stream_loop", "-1", "-i", source_path]);
-                cmd.args(["-ss", &format!("{bot_r:.3}"), "-t", "6.0", "-stream_loop", "-1", "-i", source_path]);
-            }
-        }
+
 
         if has_video {
             match mode {
@@ -365,96 +463,52 @@ pub fn render_flat_clip(
                     cmd.args(["-vf", &filter]);
                 }
                 "podcast_split" => {
-                    // Smart Two-Person Face-Tracked Podcast Split-Screen
+                    // Smart Two-Person Dynamic Face-Tracked Podcast Split-Screen (9:16)
                     let iw_f = probe.as_ref().and_then(|p| p.width).unwrap_or(1920) as f64;
                     let ih_f = probe.as_ref().and_then(|p| p.height).unwrap_or(1080) as f64;
 
-                    // 9:8 box, optimal portrait proportion for half-screen (width = ~0.316 * iw)
+                    // 9:8 box for each section (half of 9:16 vertical screen)
                     let ch = ((ih_f * 0.50) / 2.0).round() * 2.0;
                     let cw = ((ch * 9.0 / 8.0) / 2.0).round() * 2.0;
                     let cw_i = cw as i64;
                     let ch_i = ch as i64;
-                    let iw_i = iw_f as i64;
-                    let ih_i = ih_f as i64;
 
                     let pod = tracker_info.podcast.as_ref();
-                    let top_x = pod.map(|p| p.top_center_x).unwrap_or(0.26);
-                    let top_y = pod.map(|p| p.top_center_y).unwrap_or(0.38);
-                    let bot_x = pod.map(|p| p.bottom_center_x).unwrap_or(0.78);
-                    let bot_y = pod.map(|p| p.bottom_center_y).unwrap_or(0.38);
+                    let p1_kfs = pod.and_then(|p| p.person_1_keyframes.as_deref());
+                    let p2_kfs = pod.and_then(|p| p.person_2_keyframes.as_deref());
 
-                    let solo_ax = pod.and_then(|p| p.solo_a_x).unwrap_or(top_x);
-                    let solo_ay = pod.and_then(|p| p.solo_a_y).unwrap_or(top_y);
-                    let solo_bx = pod.and_then(|p| p.solo_b_x).unwrap_or(bot_x);
-                    let solo_by = pod.and_then(|p| p.solo_b_y).unwrap_or(bot_y);
+                    let top_fallback_x = pod.map(|p| p.top_center_x).unwrap_or(0.26);
+                    let top_fallback_y = pod.map(|p| p.top_center_y).unwrap_or(0.38);
+                    let bot_fallback_x = pod.map(|p| p.bottom_center_x).unwrap_or(0.78);
+                    let bot_fallback_y = pod.map(|p| p.bottom_center_y).unwrap_or(0.38);
 
-                    let is_multi = pod.and_then(|p| p.is_multicam).unwrap_or(false);
-                    let has_two = pod.map(|p| p.two_faces_detected).unwrap_or(false);
-                    let shots = pod.and_then(|p| p.shots.as_ref());
+                    let (top_x_expr, top_y_expr) = build_dynamic_crop_expr(
+                        p1_kfs,
+                        iw_f,
+                        ih_f,
+                        cw,
+                        ch,
+                        top_fallback_x,
+                        top_fallback_y,
+                    );
 
-                    let calc_crop = |cx: f64, cy: f64| -> (i64, i64) {
-                        let rx = ((cx * iw_f) - (cw / 2.0)).round() as i64;
-                        let mut x = rx.clamp(0, (iw_i - cw_i).max(0));
-                        x -= x % 2;
-                        let ry = ((cy * ih_f) - (ch * 0.38)).round() as i64;
-                        let mut y = ry.clamp(0, (ih_i - ch_i).max(0));
-                        y -= y % 2;
-                        (x, y)
-                    };
+                    let (bot_x_expr, bot_y_expr) = build_dynamic_crop_expr(
+                        p2_kfs,
+                        iw_f,
+                        ih_f,
+                        cw,
+                        ch,
+                        bot_fallback_x,
+                        bot_fallback_y,
+                    );
 
-                    let (x_top_wide, y_top_wide) = calc_crop(top_x, top_y);
-                    let (x_bot_wide, y_bot_wide) = calc_crop(bot_x, bot_y);
-                    let (x_top_solo, y_top_solo) = calc_crop(solo_ax, solo_ay);
-                    let (x_bot_solo, y_bot_solo) = calc_crop(solo_bx, solo_by);
-
-                    let mut filter_graph = if is_multi && has_two {
-                        // Dynamic 2-Person Multicam Switcher:
-                        // Top Section is ALWAYS Person 1 (Host).
-                        // Bottom Section is ALWAYS Person 2 (Guest).
-                        // Reaction loops keep the listening person visible when the other is speaking solo.
-                        let mut a_live_wide_enables = Vec::new();
-                        let mut a_live_solo_enables = Vec::new();
-                        let mut b_live_wide_enables = Vec::new();
-                        let mut b_reaction_enables = Vec::new();
-
-                        if let Some(shot_list) = shots {
-                            for s in shot_list {
-                                if s.shot_type == "both" {
-                                    a_live_wide_enables.push(format!("between(t,{:.2},{:.2})", s.start, s.end));
-                                    b_live_wide_enables.push(format!("between(t,{:.2},{:.2})", s.start, s.end));
-                                } else if s.shot_type == "a" {
-                                    a_live_solo_enables.push(format!("between(t,{:.2},{:.2})", s.start, s.end));
-                                    b_reaction_enables.push(format!("between(t,{:.2},{:.2})", s.start, s.end));
-                                }
-                            }
-                        }
-
-                        let a_wide_expr = if a_live_wide_enables.is_empty() { "0".to_string() } else { a_live_wide_enables.join("+") };
-                        let a_solo_expr = if a_live_solo_enables.is_empty() { "0".to_string() } else { a_live_solo_enables.join("+") };
-                        let b_wide_expr = if b_live_wide_enables.is_empty() { "0".to_string() } else { b_live_wide_enables.join("+") };
-                        let b_react_expr = if b_reaction_enables.is_empty() { "0".to_string() } else { b_reaction_enables.join("+") };
-
-                        format!(
-                            "[1:v]crop={}:{}:{}:{},scale=1080:960[a_loop];                             [0:v]crop={}:{}:{}:{},scale=1080:960[a_live_w];                             [0:v]crop={}:{}:{}:{},scale=1080:960[a_live_s];                             [0:v]crop={}:{}:{}:{},scale=1080:960[b_live_s];                             [0:v]crop={}:{}:{}:{},scale=1080:960[b_live_w];                             [2:v]crop={}:{}:{}:{},scale=1080:960[b_loop];                             [a_loop][a_live_w]overlay=enable='{}'[top_step1];                             [top_step1][a_live_s]overlay=enable='{}'[top];                             [b_live_s][b_live_w]overlay=enable='{}'[bot_step1];                             [bot_step1][b_loop]overlay=enable='{}'[bot];                             [top][bot]vstack[stacked];                             [stacked]drawbox=x=0:y=956:w=1080:h=8:color=0x0a0d14@0.95:t=fill,                                      drawbox=x=0:y=958:w=1080:h=3:color=0x38bdf8@0.9:t=fill[divided]",
-                            cw_i, ch_i, x_top_solo, y_top_solo,
-                            cw_i, ch_i, x_top_wide, y_top_wide,
-                            cw_i, ch_i, x_top_solo, y_top_solo,
-                            cw_i, ch_i, x_bot_solo, y_bot_solo,
-                            cw_i, ch_i, x_bot_wide, y_bot_wide,
-                            cw_i, ch_i, x_bot_solo, y_bot_solo,
-                            a_wide_expr,
-                            a_solo_expr,
-                            b_wide_expr,
-                            b_react_expr,
-                        )
-                    } else {
-                        // Continuous 2-Person Wide Angle Split-Screen
-                        format!(
-                            "[0:v]crop={}:{}:{}:{},scale=1080:960[top];                             [0:v]crop={}:{}:{}:{},scale=1080:960[bot];                             [top][bot]vstack[stacked];                             [stacked]drawbox=x=0:y=956:w=1080:h=8:color=0x0a0d14@0.95:t=fill,                                      drawbox=x=0:y=958:w=1080:h=3:color=0x38bdf8@0.9:t=fill[divided]",
-                            cw_i, ch_i, x_top_wide, y_top_wide,
-                            cw_i, ch_i, x_bot_wide, y_bot_wide,
-                        )
-                    };
+                    // Top section = Person 1, Bottom section = Person 2
+                    // Both sections represent the EXACT SAME timestamp from the original 16:9 video [0:v]
+                    let mut filter_graph = format!(
+                        "[0:v]crop={}:{}:{}:{},scale=1080:960[top];                         [0:v]crop={}:{}:{}:{},scale=1080:960[bot];                         [top][bot]vstack[stacked];                         [stacked]drawbox=x=0:y=956:w=1080:h=8:color=0x0a0d14@0.95:t=fill,                                  drawbox=x=0:y=958:w=1080:h=3:color=0x38bdf8@0.9:t=fill[divided]",
+                        cw_i, ch_i, top_x_expr, top_y_expr,
+                        cw_i, ch_i, bot_x_expr, bot_y_expr,
+                    );
 
                     let pre_sub_stream = if effective_punch {
                         filter_graph = format!(
@@ -609,4 +663,31 @@ pub fn render_flat_clip(
     }
 
     Ok(output_path.to_path_buf())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_dynamic_crop_expr_fallback() {
+        let (expr_x, expr_y) = build_dynamic_crop_expr(None, 1920.0, 1080.0, 608.0, 540.0, 0.26, 0.38);
+        assert!(expr_x.starts_with('\'') && expr_x.ends_with('\''));
+        assert!(expr_y.starts_with('\'') && expr_y.ends_with('\''));
+        // 0.26 * 1920 - 304 = 195.2 -> 194
+        assert_eq!(expr_x, "'194'");
+    }
+
+    #[test]
+    fn test_build_dynamic_crop_expr_keyframes() {
+        let kfs = vec![
+            PodcastKeyframe { t: 0.0, x: 0.50, y: 0.38 },
+            PodcastKeyframe { t: 5.0, x: 0.26, y: 0.38 },
+            PodcastKeyframe { t: 10.0, x: 0.26, y: 0.38 },
+        ];
+        let (expr_x, expr_y) = build_dynamic_crop_expr(Some(&kfs), 1920.0, 1080.0, 608.0, 540.0, 0.26, 0.38);
+        assert!(expr_x.contains("if(lt(t,"));
+        assert!(expr_x.contains("2*trunc("));
+        assert!(expr_y.contains("2*trunc("));
+    }
 }
