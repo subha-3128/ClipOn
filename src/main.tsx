@@ -286,6 +286,10 @@ function App() {
     return oldMode === "punch_zoom";
   });
 
+  const [studioAudio, setStudioAudio] = useState<boolean>(() => {
+    return localStorage.getItem("clipon_studio_audio") !== "false";
+  });
+
   const [reframeMode, setReframeMode] = useState<ReframeMode>(() => {
     const saved = (localStorage.getItem("clipon_reframe_mode") || localStorage.getItem("autoshorts_reframe_mode")) as any;
     if (saved === "podcast_split" || saved === "original" || saved === "vertical_crop") {
@@ -363,6 +367,7 @@ function App() {
   useEffect(() => { localStorage.setItem("clipon_clips_dir", clipsSaveDir); }, [clipsSaveDir]);
   useEffect(() => { localStorage.setItem("clipon_reframe_mode", reframeMode); }, [reframeMode]);
   useEffect(() => { localStorage.setItem("clipon_punch_zoom", String(punchZoom)); }, [punchZoom]);
+  useEffect(() => { localStorage.setItem("clipon_studio_audio", String(studioAudio)); }, [studioAudio]);
 
   // Initial load
   useEffect(() => {
@@ -940,7 +945,7 @@ function App() {
     setBusy("cut");
     setError(null);
     try {
-      await invoke<string>("render_flat_clip_for_candidate", { candidateId, reframeMode, outputDir: clipsSaveDir.trim() || null, removeSilence, punchZoom });
+      await invoke<string>("render_flat_clip_for_candidate", { candidateId, reframeMode, outputDir: clipsSaveDir.trim() || null, removeSilence, punchZoom, studioAudio });
       showToast("Clip rendered successfully!");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -961,7 +966,7 @@ function App() {
     try {
       for (const candidate of selected) {
         setRenderingCandidateId(candidate.id);
-        await invoke<string>("render_flat_clip_for_candidate", { candidateId: candidate.id, reframeMode, outputDir: clipsSaveDir.trim() || null, removeSilence, punchZoom });
+        await invoke<string>("render_flat_clip_for_candidate", { candidateId: candidate.id, reframeMode, outputDir: clipsSaveDir.trim() || null, removeSilence, punchZoom, studioAudio });
       }
       showToast(`Finished rendering ${selected.length} clips!`);
     } catch (err) {
@@ -1411,7 +1416,7 @@ function App() {
                       </div>
                     </div>
 
-                    {/* Bottom Row: Framing Aspect Ratio, Retention Punch Zoom, Dead-Air Cuts & Studio Audio */}
+                    {/* Video Framing Selector */}
                     <div className="controls-row bottom-row">
                       <div className="reframe-picker">
                         <span className="reframe-label">Framing:</span>
@@ -1425,23 +1430,26 @@ function App() {
                           <option value="original">Original Aspect Ratio</option>
                         </select>
                       </div>
+                    </div>
 
+                    {/* Punch Zoom, Dead Air Cut, and Studio Audio Buttons: Single Horizontal Line, Side by Side, Equal Spacing & Consistent Sizing */}
+                    <div className="feature-buttons-row">
                       <button
                         type="button"
-                        className={`punch-zoom-toggle ${punchZoom ? "active" : ""}`}
+                        className={`feature-toggle-btn punch-zoom ${punchZoom ? "active" : ""}`}
                         onClick={() => {
                           const next = !punchZoom;
                           setPunchZoom(next);
                           localStorage.setItem("clipon_punch_zoom", String(next));
                         }}
-                        title="Auto-Punch 1.14x Retention Zoom Cuts Every 5.5s to Reset Visual Focus Across Any Framing"
+                        title="Auto-Punch 1.14x Retention Zoom Cuts Every 5.5s to Reset Visual Focus"
                       >
                         <Zap size={12} /> {punchZoom ? "Punch Zoom: ON" : "Punch Zoom: OFF"}
                       </button>
 
                       <button
                         type="button"
-                        className={`silence-jump-toggle ${removeSilence ? "active" : ""}`}
+                        className={`feature-toggle-btn dead-air ${removeSilence ? "active" : ""}`}
                         onClick={() => {
                           const next = !removeSilence;
                           setRemoveSilence(next);
@@ -1449,12 +1457,21 @@ function App() {
                         }}
                         title="Auto-Detect & Jump-Cut Dead Air / Pauses >0.45s for 20% Faster Clip Retention"
                       >
-                        <Scissors size={12} /> {removeSilence ? "Dead-Air Cuts: ON" : "Dead-Air Cuts: OFF"}
+                        <Scissors size={12} /> {removeSilence ? "Dead Air Cut: ON" : "Dead Air Cut: OFF"}
                       </button>
 
-                      <span className="studio-audio-tag" title="Studio Sound Auto-Mastering active: -14 LUFS Broadcast Standard & AI Noise Suppression">
-                        <AudioLines size={12} /> Studio Audio (-14 LUFS)
-                      </span>
+                      <button
+                        type="button"
+                        className={`feature-toggle-btn studio-audio ${studioAudio ? "active" : ""}`}
+                        onClick={() => {
+                          const next = !studioAudio;
+                          setStudioAudio(next);
+                          localStorage.setItem("clipon_studio_audio", String(next));
+                        }}
+                        title="Studio Sound Auto-Mastering: -14 LUFS Broadcast Standard & AI Noise Suppression"
+                      >
+                        <AudioLines size={12} /> {studioAudio ? "Studio Audio: ON" : "Studio Audio: OFF"}
+                      </button>
                     </div>
                   </div>
 
@@ -2167,6 +2184,25 @@ function App() {
                       />
                       <label htmlFor="setting_remove_silence" style={{ margin: 0, cursor: "pointer", fontSize: 13, color: "var(--text-secondary)" }}>
                         Automatically skip pauses &amp; dead air &gt;0.45s (Boosts video retention by 20%)
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="settings-field-group">
+                    <label>Studio Sound Mastering</label>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4 }}>
+                      <input
+                        type="checkbox"
+                        id="setting_studio_audio"
+                        checked={studioAudio}
+                        onChange={(e) => {
+                          setStudioAudio(e.target.checked);
+                          localStorage.setItem("clipon_studio_audio", String(e.target.checked));
+                        }}
+                        style={{ width: 16, height: 16, accentColor: "#facc15", cursor: "pointer" }}
+                      />
+                      <label htmlFor="setting_studio_audio" style={{ margin: 0, cursor: "pointer", fontSize: 13, color: "var(--text-secondary)" }}>
+                        Auto-Master Audio to -14 LUFS Broadcast Standard with AI Spectral Noise Suppression
                       </label>
                     </div>
                   </div>

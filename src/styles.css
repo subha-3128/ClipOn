@@ -2956,3 +2956,76 @@ button:disabled {
   color: #c084fc;
   box-shadow: 0 0 10px rgba(168, 85, 247, 0.15);
 }
+
+/* ==========================================================================
+   Feature Action Toggles: Punch Zoom, Dead Air Cut, Studio Audio
+   Single horizontal line, side-by-side, equal spacing & consistent sizing
+   ========================================================================== */
+.feature-buttons-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.feature-toggle-btn {
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 29px;
+  min-width: 0;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.18s ease;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.feature-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+/* Punch Zoom Active State (Vibrant Violet / Purple) */
+.feature-toggle-btn.punch-zoom.active {
+  background: rgba(168, 85, 247, 0.16);
+  border-color: rgba(168, 85, 247, 0.45);
+  color: #c084fc;
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.18);
+}
+
+/* Dead Air Cut Active State (Vibrant Emerald) */
+.feature-toggle-btn.dead-air.active {
+  background: rgba(16, 185, 129, 0.16);
+  border-color: rgba(16, 185, 129, 0.45);
+  color: #34d399;
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.18);
+}
+
+/* Studio Audio Active State (Vibrant Gold / Amber) */
+.feature-toggle-btn.studio-audio.active {
+  background: rgba(250, 204, 21, 0.15);
+  border-color: rgba(250, 204, 21, 0.45);
+  color: #facc15;
+  box-shadow: 0 0 12px rgba(250, 204, 21, 0.18);
+}
+
+@media (max-width: 640px) {
+  .feature-toggle-btn {
+    font-size: 10px;
+    padding: 0 6px;
+    gap: 4px;
+  }
+}

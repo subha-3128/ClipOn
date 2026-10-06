@@ -251,6 +251,7 @@ pub fn render_flat_clip(
     reframe_mode: Option<&str>,
     remove_silence: bool,
     punch_zoom: bool,
+    studio_audio: bool,
 ) -> Result<PathBuf> {
     if !command_exists("ffmpeg") {
         return Err(anyhow!("ffmpeg is not installed or not available on PATH"));
@@ -487,12 +488,20 @@ pub fn render_flat_clip(
             cmd.arg("-vn");
         }
 
-        let mut audio_filter = "loudnorm=I=-14:TP=-1.5:LRA=11,afftdn=nf=-25".to_string();
+        let mut audio_filters = Vec::new();
         if let Some((_, ref a_jump)) = jump_cuts {
-            audio_filter = format!("{},{}", a_jump, audio_filter);
+            audio_filters.push(a_jump.clone());
+        }
+        if studio_audio {
+            audio_filters.push("loudnorm=I=-14:TP=-1.5:LRA=11,afftdn=nf=-25".to_string());
         }
 
-        cmd.args(["-af", &audio_filter, "-c:a", "aac", "-b:a", "192k"]);
+        if !audio_filters.is_empty() {
+            let combined = audio_filters.join(",");
+            cmd.args(["-af", &combined, "-c:a", "aac", "-b:a", "192k"]);
+        } else {
+            cmd.args(["-c:a", "aac", "-b:a", "192k"]);
+        }
         cmd.arg(output_path);
 
         let output = cmd.output().context("running ffmpeg clip render")?;
