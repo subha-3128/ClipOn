@@ -16,7 +16,8 @@ fn clean_leading_discourse_marker(words: &[TranscriptWord], mut start_idx: usize
     }
 
     let filler_words = [
-        "and", "so", "but", "because", "like", "well", "then", "or", "now", "plus", "also", "anyway",
+        "and", "so", "but", "because", "like", "well", "then", "or", "now", "plus", "also",
+        "anyway",
     ];
 
     let first_text = words[start_idx].text.trim().to_lowercase();
@@ -95,7 +96,8 @@ pub fn snap_candidates_to_boundaries(
             // Look forwards up to 4.0s for sentence conclusion (. ? !)
             let mut best_end_idx = end_idx;
             let mut lookforward = end_idx;
-            while lookforward < words.len() && (words[lookforward].end - words[end_idx].end) <= 4.0 {
+            while lookforward < words.len() && (words[lookforward].end - words[end_idx].end) <= 4.0
+            {
                 let curr_word = &words[lookforward];
                 let ends_punct = curr_word.text.ends_with('.')
                     || curr_word.text.ends_with('?')
@@ -275,10 +277,9 @@ pub fn calculate_audio_energy_scores(
             }
 
             // Audio Surge Score: 50 base, boosted by loud hook / vocal delivery
-            let audio_score = (50.0
-                + (hook_energy_ratio - 1.0) * 35.0
-                + (peak_energy_ratio - 1.0) * 15.0)
-                .clamp(45.0, 99.0);
+            let audio_score =
+                (50.0 + (hook_energy_ratio - 1.0) * 35.0 + (peak_energy_ratio - 1.0) * 15.0)
+                    .clamp(45.0, 99.0);
 
             // Multi-modal composite blend: 40% LLM hook + 35% Audio Energy + 25% Speech Pacing
             let composite = (0.40 * draft.score + 0.35 * audio_score + 0.25 * pacing_score).round();
@@ -332,16 +333,23 @@ pub fn generate_kinetic_ass(
     let is_neon = style == "neon-glow";
     let is_submagic = style == "submagic-viral";
 
-    let (font_name, mut font_size, primary_color, highlight_color, border_color, border_w, shadow_w) =
-        if is_hormozi {
-            ("Arial", 84, "&H00FFFFFF", "&H0000E6FF", "&H00000000", 6, 3)
-        } else if is_neon {
-            ("Arial", 80, "&H00FFFFFF", "&H00FFFF00", "&H00330000", 5, 4)
-        } else if is_submagic {
-            ("Arial", 82, "&H00FFFFFF", "&H0000E6FF", "&H00000000", 7, 2)
-        } else {
-            ("Arial", 78, "&H00FFFFFF", "&H0000E6FF", "&H00000000", 5, 2)
-        };
+    let (
+        font_name,
+        mut font_size,
+        primary_color,
+        highlight_color,
+        border_color,
+        border_w,
+        shadow_w,
+    ) = if is_hormozi {
+        ("Arial", 84, "&H00FFFFFF", "&H0000E6FF", "&H00000000", 6, 3)
+    } else if is_neon {
+        ("Arial", 80, "&H00FFFFFF", "&H00FFFF00", "&H00330000", 5, 4)
+    } else if is_submagic {
+        ("Arial", 82, "&H00FFFFFF", "&H0000E6FF", "&H00000000", 7, 2)
+    } else {
+        ("Arial", 78, "&H00FFFFFF", "&H0000E6FF", "&H00000000", 5, 2)
+    };
 
     let (alignment, margin_v) = if is_podcast_split {
         font_size = 72; // Optimized size centered along the 9:16 seam
@@ -362,15 +370,42 @@ pub fn generate_kinetic_ass(
     ass.push_str("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n");
     ass.push_str(&format!(
         "Style: Default,{},{},{},{},{},&H80000000,-1,0,0,0,100,100,1,0,1,{},{},{},60,60,{},1\n\n",
-        font_name, font_size, primary_color, highlight_color, border_color, border_w, shadow_w, alignment, margin_v
+        font_name,
+        font_size,
+        primary_color,
+        highlight_color,
+        border_color,
+        border_w,
+        shadow_w,
+        alignment,
+        margin_v
     ));
 
     ass.push_str("[Events]\n");
-    ass.push_str("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n");
+    ass.push_str(
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n",
+    );
 
     let impact_keywords = [
-        "money", "million", "millionaire", "secret", "viral", "crazy", "insane", "stop", "never",
-        "always", "warning", "danger", "hack", "free", "rich", "power", "truth", "mistake", "fast",
+        "money",
+        "million",
+        "millionaire",
+        "secret",
+        "viral",
+        "crazy",
+        "insane",
+        "stop",
+        "never",
+        "always",
+        "warning",
+        "danger",
+        "hack",
+        "free",
+        "rich",
+        "power",
+        "truth",
+        "mistake",
+        "fast",
     ];
 
     let pos_prefix = if is_podcast_split {
@@ -378,8 +413,6 @@ pub fn generate_kinetic_ass(
     } else {
         ""
     };
-
-
 
     // Group into 2 or 3 words per line for high-velocity retention
     for chunk in candidate_words.chunks(3) {
@@ -515,7 +548,6 @@ pub fn build_silence_jumpcut_filter(
     Some((video_filter, audio_filter))
 }
 
-
 // =========================================================================
 // 5. ATTENTION RETENTION PUNCH-ZOOM ENGINE
 // =========================================================================
@@ -536,9 +568,24 @@ mod tests {
     #[test]
     fn test_clean_leading_discourse_marker() {
         let words = vec![
-            TranscriptWord { text: "And".to_string(), start: 1.0, end: 1.2, speaker: None },
-            TranscriptWord { text: "this".to_string(), start: 1.3, end: 1.6, speaker: None },
-            TranscriptWord { text: "happened".to_string(), start: 1.7, end: 2.2, speaker: None },
+            TranscriptWord {
+                text: "And".to_string(),
+                start: 1.0,
+                end: 1.2,
+                speaker: None,
+            },
+            TranscriptWord {
+                text: "this".to_string(),
+                start: 1.3,
+                end: 1.6,
+                speaker: None,
+            },
+            TranscriptWord {
+                text: "happened".to_string(),
+                start: 1.7,
+                end: 2.2,
+                speaker: None,
+            },
         ];
         let idx = clean_leading_discourse_marker(&words, 0);
         assert_eq!(idx, 1);
@@ -547,12 +594,42 @@ mod tests {
     #[test]
     fn test_snap_candidates_to_boundaries() {
         let words = vec![
-            TranscriptWord { text: "Hello".to_string(), start: 0.0, end: 0.4, speaker: None },
-            TranscriptWord { text: "world.".to_string(), start: 0.5, end: 0.9, speaker: None },
-            TranscriptWord { text: "This".to_string(), start: 1.4, end: 1.8, speaker: None },
-            TranscriptWord { text: "is".to_string(), start: 1.9, end: 2.1, speaker: None },
-            TranscriptWord { text: "viral.".to_string(), start: 2.2, end: 2.7, speaker: None },
-            TranscriptWord { text: "Next".to_string(), start: 3.5, end: 4.0, speaker: None },
+            TranscriptWord {
+                text: "Hello".to_string(),
+                start: 0.0,
+                end: 0.4,
+                speaker: None,
+            },
+            TranscriptWord {
+                text: "world.".to_string(),
+                start: 0.5,
+                end: 0.9,
+                speaker: None,
+            },
+            TranscriptWord {
+                text: "This".to_string(),
+                start: 1.4,
+                end: 1.8,
+                speaker: None,
+            },
+            TranscriptWord {
+                text: "is".to_string(),
+                start: 1.9,
+                end: 2.1,
+                speaker: None,
+            },
+            TranscriptWord {
+                text: "viral.".to_string(),
+                start: 2.2,
+                end: 2.7,
+                speaker: None,
+            },
+            TranscriptWord {
+                text: "Next".to_string(),
+                start: 3.5,
+                end: 4.0,
+                speaker: None,
+            },
         ];
         let transcript = NormalizedTranscript {
             language: "en".to_string(),
@@ -598,8 +675,18 @@ mod tests {
     #[test]
     fn test_generate_kinetic_ass() {
         let words = vec![
-            TranscriptWord { text: "Insane".to_string(), start: 0.0, end: 0.5, speaker: None },
-            TranscriptWord { text: "Money".to_string(), start: 0.6, end: 1.1, speaker: None },
+            TranscriptWord {
+                text: "Insane".to_string(),
+                start: 0.0,
+                end: 0.5,
+                speaker: None,
+            },
+            TranscriptWord {
+                text: "Money".to_string(),
+                start: 0.6,
+                end: 1.1,
+                speaker: None,
+            },
         ];
         let ass = generate_kinetic_ass(&words, 0.0, 2.0, "hormozi-kinetic", false);
         let ass_split = generate_kinetic_ass(&words, 0.0, 2.0, "hormozi-kinetic", true);
@@ -619,5 +706,4 @@ mod tests {
         let f_16_9 = build_punch_zoom_filter(1920, 1080);
         assert!(f_16_9.contains("scale=1920:1080"));
     }
-
 }

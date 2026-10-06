@@ -13,29 +13,14 @@ pub struct EnvironmentStatus {
     pub has_openai_key: bool,
     pub has_openrouter_key: bool,
     pub has_groq_key: bool,
+    pub has_instagram_token: bool,
     pub llm_provider: String,
     pub has_local_whisper_model: bool,
     pub has_ollama: bool,
     pub has_ytdlp: bool,
     pub has_hardware_accel: bool,
     #[serde(default)]
-    pub deepgram_key: Option<String>,
-    #[serde(default)]
-    pub gemini_key: Option<String>,
-    #[serde(default)]
-    pub deepseek_key: Option<String>,
-    #[serde(default)]
-    pub anthropic_key: Option<String>,
-    #[serde(default)]
-    pub groq_key: Option<String>,
-    #[serde(default)]
-    pub openai_key: Option<String>,
-    #[serde(default)]
-    pub openrouter_key: Option<String>,
-    #[serde(default)]
     pub instagram_account_id: Option<String>,
-    #[serde(default)]
-    pub instagram_access_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

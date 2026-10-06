@@ -145,14 +145,21 @@ pub fn find_python_command() -> Option<String> {
     };
 
     for &cmd in candidates {
-        if let Ok(out) = std::process::Command::new(cmd).args(["-c", "import whisper"]).output() {
+        if let Ok(out) = std::process::Command::new(cmd)
+            .args(["-c", "import whisper"])
+            .output()
+        {
             if out.status.success() {
                 return Some(cmd.to_string());
             }
         }
     }
     for &cmd in candidates {
-        if std::process::Command::new(cmd).arg("--version").output().is_ok() {
+        if std::process::Command::new(cmd)
+            .arg("--version")
+            .output()
+            .is_ok()
+        {
             return Some(cmd.to_string());
         }
     }
@@ -184,7 +191,10 @@ pub fn whisper_python_exists() -> bool {
     };
 
     for &cmd in candidates {
-        if let Ok(out) = std::process::Command::new(cmd).args(["-c", "import whisper"]).output() {
+        if let Ok(out) = std::process::Command::new(cmd)
+            .args(["-c", "import whisper"])
+            .output()
+        {
             if out.status.success() {
                 return true;
             }
@@ -194,16 +204,19 @@ pub fn whisper_python_exists() -> bool {
 }
 
 fn normalize_whisper_raw_json(raw: serde_json::Value) -> Result<NormalizedTranscript> {
-    let language = raw.get("language")
+    let language = raw
+        .get("language")
         .and_then(|v| v.as_str())
         .unwrap_or("en")
         .to_string();
 
-    let segments_arr = raw.get("segments")
+    let segments_arr = raw
+        .get("segments")
         .and_then(|v| v.as_array())
         .ok_or_else(|| anyhow!("Missing 'segments' in Whisper JSON"))?;
 
-    let duration = segments_arr.last()
+    let duration = segments_arr
+        .last()
         .and_then(|s| s.get("end").and_then(|e| e.as_f64()))
         .unwrap_or(0.0);
 
@@ -213,7 +226,12 @@ fn normalize_whisper_raw_json(raw: serde_json::Value) -> Result<NormalizedTransc
     for seg in segments_arr {
         let start = seg.get("start").and_then(|v| v.as_f64()).unwrap_or(0.0);
         let end = seg.get("end").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        let text = seg.get("text").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+        let text = seg
+            .get("text")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
 
         segments.push(TranscriptSegment {
             start,
@@ -224,7 +242,12 @@ fn normalize_whisper_raw_json(raw: serde_json::Value) -> Result<NormalizedTransc
 
         if let Some(words_arr) = seg.get("words").and_then(|v| v.as_array()) {
             for w in words_arr {
-                let word_text = w.get("word").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                let word_text = w
+                    .get("word")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
                 let word_start = w.get("start").and_then(|v| v.as_f64()).unwrap_or(0.0);
                 let word_end = w.get("end").and_then(|v| v.as_f64()).unwrap_or(0.0);
 
@@ -253,9 +276,14 @@ pub async fn transcribe_local(audio_path: &str, model_path: &str) -> Result<Norm
 
     if whisper_cli_exists() {
         let audio_path_buf = std::path::Path::new(&audio_path);
-        let audio_dir = audio_path_buf.parent().ok_or_else(|| anyhow!("Invalid audio path parent"))?;
-        let audio_stem = audio_path_buf.file_stem().ok_or_else(|| anyhow!("Invalid audio file stem"))?.to_string_lossy();
-        
+        let audio_dir = audio_path_buf
+            .parent()
+            .ok_or_else(|| anyhow!("Invalid audio path parent"))?;
+        let audio_stem = audio_path_buf
+            .file_stem()
+            .ok_or_else(|| anyhow!("Invalid audio file stem"))?
+            .to_string_lossy();
+
         let output_json_path = audio_dir.join(format!("{}.json", audio_stem));
         let output_json_path_str = output_json_path.to_string_lossy().to_string();
         let audio_dir_str = audio_dir.to_string_lossy().to_string();
@@ -275,15 +303,21 @@ pub async fn transcribe_local(audio_path: &str, model_path: &str) -> Result<Norm
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
                 let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                return Err(anyhow!("Whisper CLI failed:\nStderr: {}\nStdout: {}", stderr, stdout));
+                return Err(anyhow!(
+                    "Whisper CLI failed:\nStderr: {}\nStdout: {}",
+                    stderr,
+                    stdout
+                ));
             }
 
-            let json_bytes = std::fs::read(&output_json_path_str).context("reading output transcript JSON from CLI")?;
-            let raw_json: serde_json::Value = serde_json::from_slice(&json_bytes).context("parsing output transcript JSON")?;
-            
+            let json_bytes = std::fs::read(&output_json_path_str)
+                .context("reading output transcript JSON from CLI")?;
+            let raw_json: serde_json::Value =
+                serde_json::from_slice(&json_bytes).context("parsing output transcript JSON")?;
+
             // Clean up the output JSON file
             let _ = std::fs::remove_file(&output_json_path_str);
-            
+
             // Clean up any extra formats whisper CLI might have written (it sometimes generates them by default)
             for ext in &["txt", "srt", "vtt", "tsv"] {
                 let extra_file = audio_dir_clone.join(format!("{}.{}", audio_stem_clone, ext));
@@ -301,7 +335,7 @@ pub async fn transcribe_local(audio_path: &str, model_path: &str) -> Result<Norm
         let model_dir = std::path::Path::new(&model_path)
             .parent()
             .ok_or_else(|| anyhow!("Invalid model path"))?;
-        
+
         let script_path = model_dir.join("transcribe.py");
         if !script_path.exists() {
             let script_content = r#"import sys
@@ -357,7 +391,8 @@ if __name__ == "__main__":
             std::fs::write(&script_path, script_content).context("writing transcribe.py script")?;
         }
 
-        let output_json_path = model_dir.join(format!("temp_transcript_{}.json", uuid::Uuid::new_v4()));
+        let output_json_path =
+            model_dir.join(format!("temp_transcript_{}.json", uuid::Uuid::new_v4()));
         let script_path_str = script_path.to_string_lossy().to_string();
         let output_json_path_str = output_json_path.to_string_lossy().to_string();
 
@@ -374,12 +409,18 @@ if __name__ == "__main__":
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
                 let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                return Err(anyhow!("Python transcription script failed:\nStderr: {}\nStdout: {}", stderr, stdout));
+                return Err(anyhow!(
+                    "Python transcription script failed:\nStderr: {}\nStdout: {}",
+                    stderr,
+                    stdout
+                ));
             }
 
-            let json_bytes = std::fs::read(&output_json_path_str).context("reading output transcript JSON")?;
-            let transcript: NormalizedTranscript = serde_json::from_slice(&json_bytes).context("parsing output transcript JSON")?;
-            
+            let json_bytes =
+                std::fs::read(&output_json_path_str).context("reading output transcript JSON")?;
+            let transcript: NormalizedTranscript =
+                serde_json::from_slice(&json_bytes).context("parsing output transcript JSON")?;
+
             // Cleanup temp file
             let _ = std::fs::remove_file(&output_json_path_str);
 

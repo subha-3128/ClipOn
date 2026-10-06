@@ -8,7 +8,7 @@ use tokio::time::{sleep, Duration};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstagramConfig {
     pub enabled: bool,
-    pub min_score: f64, // e.g. 0.90 for 90%
+    pub min_score: f64,   // e.g. 0.90 for 90%
     pub provider: String, // "graph_api", "webhook"
     pub account_id: Option<String>,
     pub access_token: Option<String>,
@@ -71,7 +71,11 @@ async fn upload_to_temp_stream_url(client: &reqwest::Client, video_path: &Path) 
         .unwrap_or("clip.mp4")
         .to_string();
 
-    eprintln!("[Instagram] Uploading video for Meta Reels ingest: {} ({} bytes)", filename, file_bytes.len());
+    eprintln!(
+        "[Instagram] Uploading video for Meta Reels ingest: {} ({} bytes)",
+        filename,
+        file_bytes.len()
+    );
 
     // 1. Primary: Uguu.se (Proven compatibility with Meta video ingester)
     let uguu_part = reqwest::multipart::Part::bytes(file_bytes.clone())
@@ -80,7 +84,12 @@ async fn upload_to_temp_stream_url(client: &reqwest::Client, video_path: &Path) 
 
     let uguu_form = reqwest::multipart::Form::new().part("files[]", uguu_part);
 
-    match client.post("https://uguu.se/upload.php").multipart(uguu_form).send().await {
+    match client
+        .post("https://uguu.se/upload.php")
+        .multipart(uguu_form)
+        .send()
+        .await
+    {
         Ok(res) if res.status().is_success() => {
             if let Ok(uguu) = res.json::<UguuResponse>().await {
                 if let Some(files) = uguu.files {
@@ -92,7 +101,10 @@ async fn upload_to_temp_stream_url(client: &reqwest::Client, video_path: &Path) 
             }
         }
         Ok(res) => {
-            eprintln!("[Instagram] Uguu upload failed with status: {}", res.status());
+            eprintln!(
+                "[Instagram] Uguu upload failed with status: {}",
+                res.status()
+            );
         }
         Err(e) => {
             eprintln!("[Instagram] Uguu request error: {}", e);
@@ -114,12 +126,18 @@ async fn upload_to_temp_stream_url(client: &reqwest::Client, video_path: &Path) 
         .mime_str("video/mp4")?;
     let tmp_form = reqwest::multipart::Form::new().part("file", tmp_part);
 
-    match client.post("https://tmpfiles.org/api/v1/upload").multipart(tmp_form).send().await {
+    match client
+        .post("https://tmpfiles.org/api/v1/upload")
+        .multipart(tmp_form)
+        .send()
+        .await
+    {
         Ok(res) if res.status().is_success() => {
             if let Ok(json_res) = res.json::<TmpResponse>().await {
                 if let Some(data) = json_res.data {
                     if let Some(raw_url) = data.url {
-                        let direct_url = raw_url.replace("https://tmpfiles.org/", "https://tmpfiles.org/dl/");
+                        let direct_url =
+                            raw_url.replace("https://tmpfiles.org/", "https://tmpfiles.org/dl/");
                         eprintln!("[Instagram] tmpfiles upload successful: {}", direct_url);
                         return Ok(direct_url);
                     }
@@ -127,7 +145,10 @@ async fn upload_to_temp_stream_url(client: &reqwest::Client, video_path: &Path) 
             }
         }
         Ok(res) => {
-            eprintln!("[Instagram] tmpfiles upload returned status: {}", res.status());
+            eprintln!(
+                "[Instagram] tmpfiles upload returned status: {}",
+                res.status()
+            );
         }
         Err(e) => {
             eprintln!("[Instagram] tmpfiles request error: {}", e);
@@ -143,7 +164,12 @@ async fn upload_to_temp_stream_url(client: &reqwest::Client, video_path: &Path) 
         .text("reqtype", "fileupload")
         .part("fileToUpload", catbox_part);
 
-    match client.post("https://catbox.moe/user/api.php").multipart(catbox_form).send().await {
+    match client
+        .post("https://catbox.moe/user/api.php")
+        .multipart(catbox_form)
+        .send()
+        .await
+    {
         Ok(res) if res.status().is_success() => {
             if let Ok(text) = res.text().await {
                 let trimmed = text.trim();
@@ -154,14 +180,19 @@ async fn upload_to_temp_stream_url(client: &reqwest::Client, video_path: &Path) 
             }
         }
         Ok(res) => {
-            eprintln!("[Instagram] Catbox upload returned status: {}", res.status());
+            eprintln!(
+                "[Instagram] Catbox upload returned status: {}",
+                res.status()
+            );
         }
         Err(e) => {
             eprintln!("[Instagram] Catbox request error: {}", e);
         }
     }
 
-    Err(anyhow!("Failed to prepare video for Instagram ingest. Please check internet connection."))
+    Err(anyhow!(
+        "Failed to prepare video for Instagram ingest. Please check internet connection."
+    ))
 }
 
 /// Test connection to Instagram (Graph API or Webhook)
@@ -238,8 +269,13 @@ pub async fn test_connection(
                 .map_err(|e| anyhow!("Failed to parse Instagram profile response: {e}"))?;
 
             let username = user.username.unwrap_or_else(|| "creator".to_string());
-            let acc_type = user.account_type.map(|t| format!(" ({t})")).unwrap_or_default();
-            Ok(format!("Connected successfully to Instagram as @{username}{acc_type}"))
+            let acc_type = user
+                .account_type
+                .map(|t| format!(" ({t})"))
+                .unwrap_or_default();
+            Ok(format!(
+                "Connected successfully to Instagram as @{username}{acc_type}"
+            ))
         }
     }
 }
@@ -261,15 +297,29 @@ pub async fn publish_reel_graph_api(
         return Err(anyhow!("Video file does not exist at: {video_path}"));
     }
 
-    let is_ig_platform = access_token.trim().starts_with("IGA") || access_token.trim().starts_with("IGQ");
+    let is_ig_platform =
+        access_token.trim().starts_with("IGA") || access_token.trim().starts_with("IGQ");
 
     if is_ig_platform {
         // Resolve account ID if missing
         let resolved_account_id = if account_id.trim().is_empty() || account_id == "me" {
-            let me_url = format!("https://graph.instagram.com/v20.0/me?fields=id&access_token={}", access_token.trim());
-            let me_res = client.get(&me_url).send().await.map_err(|e| anyhow!("Failed to fetch account info: {e}"))?;
-            let me_json: serde_json::Value = me_res.json().await.map_err(|e| anyhow!("Invalid account response: {e}"))?;
-            me_json["id"].as_str().map(|s| s.to_string()).ok_or_else(|| anyhow!("Failed to resolve Instagram account ID"))?
+            let me_url = format!(
+                "https://graph.instagram.com/v20.0/me?fields=id&access_token={}",
+                access_token.trim()
+            );
+            let me_res = client
+                .get(&me_url)
+                .send()
+                .await
+                .map_err(|e| anyhow!("Failed to fetch account info: {e}"))?;
+            let me_json: serde_json::Value = me_res
+                .json()
+                .await
+                .map_err(|e| anyhow!("Invalid account response: {e}"))?;
+            me_json["id"]
+                .as_str()
+                .map(|s| s.to_string())
+                .ok_or_else(|| anyhow!("Failed to resolve Instagram account ID"))?
         } else {
             account_id.trim().to_string()
         };
@@ -322,19 +372,31 @@ pub async fn publish_reel_graph_api(
                         match code {
                             "FINISHED" => {
                                 is_ready = true;
-                                eprintln!("[Instagram] Container {} is FINISHED and ready to publish!", container_id);
+                                eprintln!(
+                                    "[Instagram] Container {} is FINISHED and ready to publish!",
+                                    container_id
+                                );
                                 break;
                             }
                             "ERROR" => {
-                                let err_detail = st.error_message.unwrap_or_else(|| "Instagram rejected video format or processing failed".to_string());
-                                eprintln!("[Instagram] Container {} error: {}", container_id, err_detail);
+                                let err_detail = st.error_message.unwrap_or_else(|| {
+                                    "Instagram rejected video format or processing failed"
+                                        .to_string()
+                                });
+                                eprintln!(
+                                    "[Instagram] Container {} error: {}",
+                                    container_id, err_detail
+                                );
                                 return Err(anyhow!("Instagram processing error: {err_detail}"));
                             }
                             "EXPIRED" => {
                                 return Err(anyhow!("Instagram container upload session expired"));
                             }
                             _ => {
-                                eprintln!("[Instagram] Container {} status: {} (attempt {}/80)", container_id, code, attempts);
+                                eprintln!(
+                                    "[Instagram] Container {} status: {} (attempt {}/80)",
+                                    container_id, code, attempts
+                                );
                             }
                         }
                     }
@@ -343,7 +405,9 @@ pub async fn publish_reel_graph_api(
         }
 
         if !is_ready {
-            return Err(anyhow!("Instagram video processing timed out after 4 minutes"));
+            return Err(anyhow!(
+                "Instagram video processing timed out after 4 minutes"
+            ));
         }
 
         // 4. Publish Media
@@ -466,12 +530,23 @@ pub async fn publish_reel_graph_api(
                                 break;
                             }
                             "ERROR" => {
-                                let err_detail = st.error_message.unwrap_or_else(|| st.status.unwrap_or_else(|| "Unknown processing error".to_string()));
-                                eprintln!("[Instagram FB] Container {} error: {}", container_id, err_detail);
-                                return Err(anyhow!("Instagram failed to process video: {err_detail}"));
+                                let err_detail = st.error_message.unwrap_or_else(|| {
+                                    st.status
+                                        .unwrap_or_else(|| "Unknown processing error".to_string())
+                                });
+                                eprintln!(
+                                    "[Instagram FB] Container {} error: {}",
+                                    container_id, err_detail
+                                );
+                                return Err(anyhow!(
+                                    "Instagram failed to process video: {err_detail}"
+                                ));
                             }
                             _ => {
-                                eprintln!("[Instagram FB] Container {} status: {} (attempt {}/80)", container_id, code, attempts);
+                                eprintln!(
+                                    "[Instagram FB] Container {} status: {} (attempt {}/80)",
+                                    container_id, code, attempts
+                                );
                             }
                         }
                     }
@@ -480,7 +555,9 @@ pub async fn publish_reel_graph_api(
         }
 
         if !is_ready {
-            return Err(anyhow!("Timed out waiting for Instagram to process the video."));
+            return Err(anyhow!(
+                "Timed out waiting for Instagram to process the video."
+            ));
         }
 
         let publish_url = format!(
@@ -556,6 +633,9 @@ pub async fn publish_reel_webhook(
     if res.status().is_success() {
         Ok("Published via Webhook successfully".to_string())
     } else {
-        Err(anyhow!("Webhook endpoint returned status: {}", res.status()))
+        Err(anyhow!(
+            "Webhook endpoint returned status: {}",
+            res.status()
+        ))
     }
 }

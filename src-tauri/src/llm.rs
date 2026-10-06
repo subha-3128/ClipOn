@@ -53,7 +53,11 @@ Transcript:
     let model = model_name
         .filter(|m| !m.trim().is_empty())
         .map(|m| m.trim().to_string())
-        .or_else(|| std::env::var("DEEPSEEK_MODEL").ok().filter(|m| !m.trim().is_empty()))
+        .or_else(|| {
+            std::env::var("DEEPSEEK_MODEL")
+                .ok()
+                .filter(|m| !m.trim().is_empty())
+        })
         .unwrap_or(default_model);
 
     let response = reqwest::Client::new()
@@ -142,7 +146,8 @@ Transcript:
 {segments}"
     );
 
-    let preferred_model = std::env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-3.5-flash".to_string());
+    let preferred_model =
+        std::env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-3.5-flash".to_string());
     let mut models_to_try = vec![
         preferred_model,
         "gemini-3.5-flash".to_string(),
@@ -230,7 +235,9 @@ Transcript:
         return parse_candidate_json(&text, min_duration);
     }
 
-    Err(anyhow!("All Gemini models failed. Last error: {last_error}"))
+    Err(anyhow!(
+        "All Gemini models failed. Last error: {last_error}"
+    ))
 }
 
 #[derive(Debug, Deserialize)]
@@ -333,7 +340,11 @@ Transcript:
     let model = model_name
         .filter(|m| !m.trim().is_empty())
         .map(|m| m.trim().to_string())
-        .or_else(|| std::env::var("OPENROUTER_MODEL").ok().filter(|m| !m.trim().is_empty()))
+        .or_else(|| {
+            std::env::var("OPENROUTER_MODEL")
+                .ok()
+                .filter(|m| !m.trim().is_empty())
+        })
         .unwrap_or(default_model);
 
     let response = reqwest::Client::new()
@@ -427,10 +438,8 @@ Transcript:
         return Err(anyhow!("Groq request failed ({status}): {body}"));
     }
 
-    let res_body: ChatCompletionResponse = response
-        .json()
-        .await
-        .context("parsing Groq response")?;
+    let res_body: ChatCompletionResponse =
+        response.json().await.context("parsing Groq response")?;
     let text = res_body
         .choices
         .first()
@@ -770,7 +779,6 @@ fn parse_candidate_json(text: &str, min_duration: f64) -> Result<Vec<CandidateDr
     Ok(candidates)
 }
 
-
 #[derive(Debug, Deserialize)]
 struct SocialKitJson {
     titles: Option<Vec<String>>,
@@ -779,7 +787,11 @@ struct SocialKitJson {
     call_to_action: Option<String>,
 }
 
-pub fn generate_heuristic_social_kit(candidate_id: &str, hook: &str, transcript_text: &str) -> SocialKit {
+pub fn generate_heuristic_social_kit(
+    candidate_id: &str,
+    hook: &str,
+    transcript_text: &str,
+) -> SocialKit {
     let clean_hook = hook.trim().trim_end_matches('.').trim_end_matches('!');
     let titles = vec![
         format!("🔥 {clean_hook}"),
@@ -796,9 +808,11 @@ pub fn generate_heuristic_social_kit(candidate_id: &str, hook: &str, transcript_
     let description = if snippet.is_empty() {
         format!("{clean_hook}. What do you think about this? Let me know below! 👇")
     } else {
-        format!("{clean_hook} — {snippet}
+        format!(
+            "{clean_hook} — {snippet}
 
-Save this for later! 📌")
+Save this for later! 📌"
+        )
     };
 
     let hashtags = vec![
@@ -849,7 +863,8 @@ Return JSON matching exactly: \
 {{\"titles\": [\"title 1\", \"title 2\", \"title 3\"], \"description\": \"...\", \"hashtags\": [\"#tag1\", \"#tag2\"], \"call_to_action\": \"...\"}}"
     );
 
-    let preferred_model = std::env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-3.5-flash".to_string());
+    let preferred_model =
+        std::env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-3.5-flash".to_string());
     let models_to_try = vec![
         preferred_model,
         "gemini-3.5-flash".to_string(),
@@ -888,14 +903,29 @@ Return JSON matching exactly: \
         if let Ok(resp) = response {
             if resp.status().is_success() {
                 if let Ok(body) = resp.json::<GeminiResponse>().await {
-                    if let Some(content) = body.candidates.first().and_then(|c| c.content.parts.first()).and_then(|p| p.text.as_ref()) {
+                    if let Some(content) = body
+                        .candidates
+                        .first()
+                        .and_then(|c| c.content.parts.first())
+                        .and_then(|p| p.text.as_ref())
+                    {
                         if let Ok(kit) = serde_json::from_str::<SocialKitJson>(content) {
                             return Ok(SocialKit {
                                 candidate_id: candidate_id.to_string(),
                                 titles: kit.titles.unwrap_or_else(|| vec![hook.to_string()]),
-                                description: kit.description.unwrap_or_else(|| format!("{hook} - Watch till the end!")),
-                                hashtags: kit.hashtags.unwrap_or_else(|| vec!["#shorts".to_string(), "#viral".to_string(), "#fyp".to_string()]),
-                                call_to_action: kit.call_to_action.unwrap_or_else(|| "What do you think? Let me know below! 👇".to_string()),
+                                description: kit
+                                    .description
+                                    .unwrap_or_else(|| format!("{hook} - Watch till the end!")),
+                                hashtags: kit.hashtags.unwrap_or_else(|| {
+                                    vec![
+                                        "#shorts".to_string(),
+                                        "#viral".to_string(),
+                                        "#fyp".to_string(),
+                                    ]
+                                }),
+                                call_to_action: kit.call_to_action.unwrap_or_else(|| {
+                                    "What do you think? Let me know below! 👇".to_string()
+                                }),
                             });
                         }
                     }
@@ -904,7 +934,11 @@ Return JSON matching exactly: \
         }
     }
 
-    Ok(generate_heuristic_social_kit(candidate_id, hook, transcript_text))
+    Ok(generate_heuristic_social_kit(
+        candidate_id,
+        hook,
+        transcript_text,
+    ))
 }
 
 pub async fn generate_social_kit_with_deepseek(
@@ -958,9 +992,19 @@ Return JSON matching exactly: \
     Ok(SocialKit {
         candidate_id: candidate_id.to_string(),
         titles: parsed.titles.unwrap_or_else(|| vec![hook.to_string()]),
-        description: parsed.description.unwrap_or_else(|| format!("{hook} - Watch till the end!")),
-        hashtags: parsed.hashtags.unwrap_or_else(|| vec!["#shorts".to_string(), "#viral".to_string(), "#reels".to_string()]),
-        call_to_action: parsed.call_to_action.unwrap_or_else(|| "What are your thoughts? Drop a comment! 👇".to_string()),
+        description: parsed
+            .description
+            .unwrap_or_else(|| format!("{hook} - Watch till the end!")),
+        hashtags: parsed.hashtags.unwrap_or_else(|| {
+            vec![
+                "#shorts".to_string(),
+                "#viral".to_string(),
+                "#reels".to_string(),
+            ]
+        }),
+        call_to_action: parsed
+            .call_to_action
+            .unwrap_or_else(|| "What are your thoughts? Drop a comment! 👇".to_string()),
     })
 }
 
@@ -971,7 +1015,9 @@ pub async fn generate_social_kit(
 ) -> SocialKit {
     if let Ok(key) = std::env::var("GEMINI_API_KEY") {
         if !key.trim().is_empty() {
-            if let Ok(kit) = generate_social_kit_with_gemini(candidate_id, hook, transcript_text, &key).await {
+            if let Ok(kit) =
+                generate_social_kit_with_gemini(candidate_id, hook, transcript_text, &key).await
+            {
                 return kit;
             }
         }
@@ -979,7 +1025,9 @@ pub async fn generate_social_kit(
 
     if let Ok(key) = std::env::var("DEEPSEEK_API_KEY") {
         if !key.trim().is_empty() {
-            if let Ok(kit) = generate_social_kit_with_deepseek(candidate_id, hook, transcript_text, &key).await {
+            if let Ok(kit) =
+                generate_social_kit_with_deepseek(candidate_id, hook, transcript_text, &key).await
+            {
                 return kit;
             }
         }

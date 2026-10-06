@@ -1,7 +1,7 @@
-use std::path::PathBuf;
-use std::process::Command;
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use std::process::Command;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PersonKeyframe {
@@ -57,7 +57,7 @@ pub struct PodcastFaceTracking {
     pub segments: Option<Vec<LayoutSegment>>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DynamicPodcastReframingResult {
     pub avg_center_x: f64,
     pub face_detected: bool,
@@ -129,7 +129,24 @@ impl DynamicPodcastReframing {
     }
 
     /// Analyzes the video clip timeline and produces continuous tracking and layout segment metadata.
-    pub fn analyze(source_path: &str, start_sec: f64, duration_sec: f64) -> DynamicPodcastReframingResult {
+    pub fn analyze(
+        source_path: &str,
+        start_sec: f64,
+        duration_sec: f64,
+    ) -> DynamicPodcastReframingResult {
+        let cache = crate::analysis_cache::AnalysisCache::global();
+        let cache_key = crate::analysis_cache::AnalysisCache::compute_source_key(
+            source_path,
+            start_sec,
+            duration_sec,
+        );
+
+        if let Some(cached) =
+            cache.get::<DynamicPodcastReframingResult>(&cache_key, "podcast_analysis")
+        {
+            return cached;
+        }
+
         let binary_path = match Self::resolve_tracker_binary() {
             Ok(p) => p,
             Err(_) => {
@@ -163,7 +180,7 @@ impl DynamicPodcastReframing {
         };
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        serde_json::from_str::<DynamicPodcastReframingResult>(stdout.trim()).unwrap_or(
+        let res = serde_json::from_str::<DynamicPodcastReframingResult>(stdout.trim()).unwrap_or(
             DynamicPodcastReframingResult {
                 avg_center_x: 0.5,
                 face_detected: false,
@@ -171,7 +188,13 @@ impl DynamicPodcastReframing {
                 height: None,
                 podcast: None,
             },
-        )
+        );
+
+        if res.face_detected || res.podcast.is_some() {
+            let _ = cache.put(&cache_key, "podcast_analysis", &res);
+        }
+
+        res
     }
 }
 
@@ -183,6 +206,10 @@ mod tests {
     fn test_resolve_tracker_binary() {
         // Binary resolution should succeed when run in the project or installed app
         let res = DynamicPodcastReframing::resolve_tracker_binary();
-        assert!(res.is_ok(), "Tracker binary should resolve: {:?}", res.err());
+        assert!(
+            res.is_ok(),
+            "Tracker binary should resolve: {:?}",
+            res.err()
+        );
     }
 }

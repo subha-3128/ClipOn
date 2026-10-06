@@ -49,6 +49,10 @@ import {
   Users
 } from "lucide-react";
 import "./styles.css";
+import { JobProgressBar } from "./features/jobs/JobProgressBar";
+import { PodcastTimelinePreview } from "./features/podcast/PodcastTimelinePreview";
+import { ExportPresetSelector } from "./features/export/ExportPresetSelector";
+import type { ExportPresetPlatform } from "./types";
 
 // ===== TypeScript Types =====
 export type EnvironmentStatus = {
@@ -62,20 +66,13 @@ export type EnvironmentStatus = {
   hasOpenaiKey: boolean;
   hasOpenrouterKey: boolean;
   hasGroqKey: boolean;
+  hasInstagramToken: boolean;
   llmProvider: string;
   hasLocalWhisperModel: boolean;
   hasOllama: boolean;
   hasYtdlp: boolean;
   hasHardwareAccel?: boolean;
-  deepgramKey?: string;
-  geminiKey?: string;
-  deepseekKey?: string;
-  anthropicKey?: string;
-  groqKey?: string;
-  openaiKey?: string;
-  openrouterKey?: string;
   instagramAccountId?: string;
-  instagramAccessToken?: string;
 };
 
 export type Project = {
@@ -257,19 +254,15 @@ function App() {
   const [localLlmModel, setLocalLlmModel] = useState(() => {
     return (localStorage.getItem("clipon_local_llm_model") || localStorage.getItem("autoshorts_local_llm_model")) || "llama3.2";
   });
-  const [deepgramKey, setDeepgramKey] = useState(() => (localStorage.getItem("clipon_deepgram_key") || localStorage.getItem("autoshorts_deepgram_key")) || "");
-  const [anthropicKey, setAnthropicKey] = useState(() => (localStorage.getItem("clipon_anthropic_key") || localStorage.getItem("autoshorts_anthropic_key")) || "");
-  const [deepseekKey, setDeepseekKey] = useState(() => (localStorage.getItem("clipon_deepseek_key") || localStorage.getItem("autoshorts_deepseek_key")) || "");
+  const [deepgramKey, setDeepgramKey] = useState("");
+  const [anthropicKey, setAnthropicKey] = useState("");
+  const [deepseekKey, setDeepseekKey] = useState("");
   const [deepseekModel, setDeepseekModel] = useState(() => (localStorage.getItem("clipon_deepseek_model") || localStorage.getItem("autoshorts_deepseek_model")) || "");
-  const [geminiKey, setGeminiKey] = useState(() => {
-    let k = (localStorage.getItem("clipon_gemini_key") || localStorage.getItem("autoshorts_gemini_key")) || "";
-    if (k.startsWith("Q.Ab8")) k = "A" + k;
-    return k;
-  });
-  const [openaiKey, setOpenaiKey] = useState(() => (localStorage.getItem("clipon_openai_key") || localStorage.getItem("autoshorts_openai_key")) || "");
-  const [openrouterKey, setOpenrouterKey] = useState(() => (localStorage.getItem("clipon_openrouter_key") || localStorage.getItem("autoshorts_openrouter_key")) || "");
+  const [geminiKey, setGeminiKey] = useState("");
+  const [openaiKey, setOpenaiKey] = useState("");
+  const [openrouterKey, setOpenrouterKey] = useState("");
   const [openrouterModel, setOpenrouterModel] = useState(() => (localStorage.getItem("clipon_openrouter_model") || localStorage.getItem("autoshorts_openrouter_model")) || "");
-  const [groqKey, setGroqKey] = useState(() => (localStorage.getItem("clipon_groq_key") || localStorage.getItem("autoshorts_groq_key")) || "");
+  const [groqKey, setGroqKey] = useState("");
 
   // Folder paths
   const [youtubeSaveDir, setYoutubeSaveDir] = useState(() => (localStorage.getItem("clipon_youtube_dir") || localStorage.getItem("autoshorts_youtube_dir")) || "");
@@ -317,6 +310,11 @@ function App() {
     }
   };
 
+  const [exportPreset, setExportPreset] = useState<ExportPresetPlatform>(() => {
+    return (localStorage.getItem("clipon_export_preset") as ExportPresetPlatform) || "instagram_reels";
+  });
+  useEffect(() => { localStorage.setItem("clipon_export_preset", exportPreset); }, [exportPreset]);
+
   // Instagram Reels API State
   const [instagramProvider, setInstagramProvider] = useState<"graph_api" | "webhook">(() => {
     return (localStorage.getItem("clipon_instagram_provider") as any) || "graph_api";
@@ -324,9 +322,7 @@ function App() {
   const [instagramAccountId, setInstagramAccountId] = useState(() => {
     return localStorage.getItem("clipon_instagram_account_id") || "";
   });
-  const [instagramAccessToken, setInstagramAccessToken] = useState(() => {
-    return localStorage.getItem("clipon_instagram_access_token") || "";
-  });
+  const [instagramAccessToken, setInstagramAccessToken] = useState("");
   const [instagramWebhookUrl, setInstagramWebhookUrl] = useState(() => {
     return localStorage.getItem("clipon_instagram_webhook_url") || "";
   });
@@ -345,7 +341,6 @@ function App() {
 
   useEffect(() => { localStorage.setItem("clipon_instagram_provider", instagramProvider); }, [instagramProvider]);
   useEffect(() => { localStorage.setItem("clipon_instagram_account_id", instagramAccountId); }, [instagramAccountId]);
-  useEffect(() => { localStorage.setItem("clipon_instagram_access_token", instagramAccessToken); }, [instagramAccessToken]);
   useEffect(() => { localStorage.setItem("clipon_instagram_webhook_url", instagramWebhookUrl); }, [instagramWebhookUrl]);
 
   // UI Filters
@@ -357,12 +352,12 @@ function App() {
 
   function getActiveLlmKey(): string {
     let key =
-      llmEngine === "claude" ? (anthropicKey.trim() || environment?.anthropicKey || "") :
-      llmEngine === "deepseek" ? (deepseekKey.trim() || environment?.deepseekKey || "") :
-      llmEngine === "gemini" ? (geminiKey.trim() || environment?.geminiKey || "") :
-      llmEngine === "openai" ? (openaiKey.trim() || environment?.openaiKey || "") :
-      llmEngine === "openrouter" ? (openrouterKey.trim() || environment?.openrouterKey || "") :
-      llmEngine === "groq" ? (groqKey.trim() || environment?.groqKey || "") : "";
+      llmEngine === "claude" ? anthropicKey.trim() :
+      llmEngine === "deepseek" ? deepseekKey.trim() :
+      llmEngine === "gemini" ? geminiKey.trim() :
+      llmEngine === "openai" ? openaiKey.trim() :
+      llmEngine === "openrouter" ? openrouterKey.trim() :
+      llmEngine === "groq" ? groqKey.trim() : "";
     if (llmEngine === "gemini" && key.startsWith("Q.Ab8")) {
       key = "A" + key;
     }
@@ -373,15 +368,8 @@ function App() {
   useEffect(() => { localStorage.setItem("clipon_transcription_engine", transcriptionEngine); }, [transcriptionEngine]);
   useEffect(() => { localStorage.setItem("clipon_llm_engine", llmEngine); }, [llmEngine]);
   useEffect(() => { localStorage.setItem("clipon_local_llm_model", localLlmModel); }, [localLlmModel]);
-  useEffect(() => { localStorage.setItem("clipon_deepgram_key", deepgramKey); }, [deepgramKey]);
-  useEffect(() => { localStorage.setItem("clipon_anthropic_key", anthropicKey); }, [anthropicKey]);
-  useEffect(() => { localStorage.setItem("clipon_deepseek_key", deepseekKey); }, [deepseekKey]);
   useEffect(() => { localStorage.setItem("clipon_deepseek_model", deepseekModel); }, [deepseekModel]);
-  useEffect(() => { localStorage.setItem("clipon_gemini_key", geminiKey); }, [geminiKey]);
-  useEffect(() => { localStorage.setItem("clipon_openai_key", openaiKey); }, [openaiKey]);
-  useEffect(() => { localStorage.setItem("clipon_openrouter_key", openrouterKey); }, [openrouterKey]);
   useEffect(() => { localStorage.setItem("clipon_openrouter_model", openrouterModel); }, [openrouterModel]);
-  useEffect(() => { localStorage.setItem("clipon_groq_key", groqKey); }, [groqKey]);
   useEffect(() => { localStorage.setItem("clipon_youtube_dir", youtubeSaveDir); }, [youtubeSaveDir]);
   useEffect(() => { localStorage.setItem("clipon_clips_dir", clipsSaveDir); }, [clipsSaveDir]);
   useEffect(() => { localStorage.setItem("clipon_reframe_mode", reframeMode); }, [reframeMode]);
@@ -428,33 +416,9 @@ function App() {
       if (env.hasDeepgramKey && !localStorage.getItem("clipon_transcription_engine")) {
         setTranscriptionEngine("deepgram");
       }
-      if (env.deepgramKey && (!deepgramKey || !localStorage.getItem("clipon_deepgram_key"))) {
-        setDeepgramKey(env.deepgramKey);
-        localStorage.setItem("clipon_deepgram_key", env.deepgramKey);
-      }
-      if (env.geminiKey && (!geminiKey || geminiKey.startsWith("Q.Ab8") || !localStorage.getItem("clipon_gemini_key"))) {
-        setGeminiKey(env.geminiKey);
-        localStorage.setItem("clipon_gemini_key", env.geminiKey);
-      }
-      if (env.deepseekKey && (!deepseekKey || !localStorage.getItem("clipon_deepseek_key"))) {
-        setDeepseekKey(env.deepseekKey);
-        localStorage.setItem("clipon_deepseek_key", env.deepseekKey);
-      }
-      if (env.anthropicKey && (!anthropicKey || !localStorage.getItem("clipon_anthropic_key"))) {
-        setAnthropicKey(env.anthropicKey);
-        localStorage.setItem("clipon_anthropic_key", env.anthropicKey);
-      }
-      if (env.groqKey && (!groqKey || !localStorage.getItem("clipon_groq_key"))) {
-        setGroqKey(env.groqKey);
-        localStorage.setItem("clipon_groq_key", env.groqKey);
-      }
       if (env.instagramAccountId && (!instagramAccountId || !localStorage.getItem("clipon_instagram_account_id"))) {
         setInstagramAccountId(env.instagramAccountId);
         localStorage.setItem("clipon_instagram_account_id", env.instagramAccountId);
-      }
-      if (env.instagramAccessToken && (!instagramAccessToken || !localStorage.getItem("clipon_instagram_access_token"))) {
-        setInstagramAccessToken(env.instagramAccessToken);
-        localStorage.setItem("clipon_instagram_access_token", env.instagramAccessToken);
       }
 
       if (env.hasDeepgramKey || env.hasGeminiKey || env.hasDeepseekKey || env.hasAnthropicKey || env.hasGroqKey || env.hasLocalWhisperModel || env.hasOllama || projectList.length > 0) {
@@ -518,13 +482,9 @@ function App() {
       environment?.instagramAccountId?.trim() ||
       ""
     );
-    const currentToken = (
-      instagramAccessToken.trim() ||
-      environment?.instagramAccessToken?.trim() ||
-      ""
-    );
+    const hasToken = Boolean(instagramAccessToken.trim() || environment?.hasInstagramToken);
 
-    if (instagramProvider === "graph_api" && (!currentAccId || !currentToken)) {
+    if (instagramProvider === "graph_api" && (!currentAccId || !hasToken)) {
       setSettingsTab("ai");
       setShowSettings(true);
       showToast("Configure your Instagram Reels API credentials in Settings");
@@ -537,7 +497,7 @@ function App() {
       return;
     }
 
-    await executeInstagramPublish(candidateId, currentAccId, currentToken);
+    await executeInstagramPublish(candidateId, currentAccId, instagramAccessToken.trim() || undefined);
   }
 
   async function executeInstagramPublish(candidateId: string, accId?: string, token?: string) {
@@ -545,7 +505,7 @@ function App() {
     setPublishingCandidateId(candidateId);
     try {
       const activeAccId = accId || instagramAccountId.trim() || environment?.instagramAccountId?.trim() || null;
-      const activeToken = token || instagramAccessToken.trim() || environment?.instagramAccessToken?.trim() || null;
+      const activeToken = token || (instagramAccessToken.trim() ? instagramAccessToken.trim() : null);
 
       await invoke<InstagramPost>("publish_candidate_to_instagram", {
         candidateId,
@@ -1066,6 +1026,24 @@ function App() {
     );
   }
 
+  const closeAndSaveSettings = async () => {
+    setShowSettings(false);
+    try {
+      await invoke("save_api_credentials", {
+        deepgramKey: deepgramKey.trim() || null,
+        geminiKey: geminiKey.trim() || null,
+        openaiKey: openaiKey.trim() || null,
+        anthropicKey: anthropicKey.trim() || null,
+        deepseekKey: deepseekKey.trim() || null,
+        groqKey: groqKey.trim() || null,
+        openrouterKey: openrouterKey.trim() || null,
+      });
+      await refresh();
+    } catch (err) {
+      console.error("Error saving API credentials on settings close:", err);
+    }
+  };
+
   if (isOnboarded === false) {
     return (
       <Onboarding
@@ -1573,6 +1551,19 @@ function App() {
                         <AudioLines size={12} /> {studioAudio ? "Studio Audio: ON" : "Studio Audio: OFF"}
                       </button>
                     </div>
+
+                    <ExportPresetSelector selectedPreset={exportPreset} onSelectPreset={setExportPreset} />
+
+                    <JobProgressBar
+                      onJobComplete={() => {
+                        showToast("Render completed!");
+                        if (detail) refresh(detail.project.id);
+                      }}
+                      onJobCancel={() => {
+                        showToast("Render cancelled by user");
+                        if (detail) refresh(detail.project.id);
+                      }}
+                    />
                   </div>
 
                   {/* Candidates Cards List */}
@@ -1676,6 +1667,14 @@ function App() {
                                   <span className="path-label">Export:</span>
                                   <span className="path-value truncate">{clip.outputPath}</span>
                                 </div>
+                              )}
+
+                              {(appSection === "podcast" || reframeMode === "podcast_split") && (
+                                <PodcastTimelinePreview
+                                  sourcePath={detail.project.sourcePath}
+                                  startSec={candidate.startSec}
+                                  durationSec={candidate.endSec - candidate.startSec}
+                                />
                               )}
                             </div>
 
@@ -1896,7 +1895,7 @@ function App() {
 
       {/* Unified Settings Modal */}
       {showSettings && (
-        <div className="modal-overlay" onClick={() => setShowSettings(false)}>
+        <div className="modal-overlay" onClick={closeAndSaveSettings}>
           <div className="settings-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div className="modal-header-left">
@@ -1908,7 +1907,7 @@ function App() {
                   <p>Configure AI engines, storage directories, and video exports</p>
                 </div>
               </div>
-              <button className="modal-close-btn" onClick={() => setShowSettings(false)}><X size={16} /></button>
+              <button className="modal-close-btn" onClick={closeAndSaveSettings}><X size={16} /></button>
             </div>
 
             {/* Tab navigation */}
@@ -2381,7 +2380,7 @@ function App() {
             </div>
 
             <div className="modal-footer">
-              <button className="studio-btn primary" onClick={() => setShowSettings(false)}>
+              <button className="studio-btn primary" onClick={closeAndSaveSettings}>
                 Done
               </button>
             </div>
@@ -2914,11 +2913,11 @@ function Onboarding({
 }: OnboardingProps) {
   const [setupMode, setSetupMode] = useState<"choose" | "local" | "cloud" | "downloading">("choose");
   const [selectedModel, setSelectedModel] = useState<string>("llama3.2");
-  const [dgKey, setDgKey] = useState(initialDeepgramKey || environment?.deepgramKey || "");
-  const [gmKey, setGmKey] = useState(initialGeminiKey || environment?.geminiKey || "");
-  const [antKey, setAntKey] = useState(initialAnthropicKey || environment?.anthropicKey || "");
-  const [dsKey, setDsKey] = useState(initialDeepseekKey || environment?.deepseekKey || "");
-  const [grKey, setGrKey] = useState(initialGroqKey || environment?.groqKey || "");
+  const [dgKey, setDgKey] = useState(initialDeepgramKey || "");
+  const [gmKey, setGmKey] = useState(initialGeminiKey || "");
+  const [antKey, setAntKey] = useState(initialAnthropicKey || "");
+  const [dsKey, setDsKey] = useState(initialDeepseekKey || "");
+  const [grKey, setGrKey] = useState(initialGroqKey || "");
   const [downloadStatus, setDownloadStatus] = useState("Initializing download...");
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -2931,11 +2930,11 @@ function Onboarding({
   };
 
   useEffect(() => {
-    if (!dgKey && (initialDeepgramKey || environment?.deepgramKey)) setDgKey(initialDeepgramKey || environment?.deepgramKey || "");
-    if (!gmKey && (initialGeminiKey || environment?.geminiKey)) setGmKey(initialGeminiKey || environment?.geminiKey || "");
-    if (!antKey && (initialAnthropicKey || environment?.anthropicKey)) setAntKey(initialAnthropicKey || environment?.anthropicKey || "");
-    if (!dsKey && (initialDeepseekKey || environment?.deepseekKey)) setDsKey(initialDeepseekKey || environment?.deepseekKey || "");
-    if (!grKey && (initialGroqKey || environment?.groqKey)) setGrKey(initialGroqKey || environment?.groqKey || "");
+    if (!dgKey && initialDeepgramKey) setDgKey(initialDeepgramKey);
+    if (!gmKey && initialGeminiKey) setGmKey(initialGeminiKey);
+    if (!antKey && initialAnthropicKey) setAntKey(initialAnthropicKey);
+    if (!dsKey && initialDeepseekKey) setDsKey(initialDeepseekKey);
+    if (!grKey && initialGroqKey) setGrKey(initialGroqKey);
   }, [environment, initialDeepgramKey, initialGeminiKey, initialAnthropicKey, initialDeepseekKey, initialGroqKey]);
 
   const copyWhisperCommand = () => {
@@ -2944,37 +2943,48 @@ function Onboarding({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleCloudSubmit = (e: React.FormEvent) => {
+  const handleCloudSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (dgKey.trim()) {
       setTranscriptionEngine("deepgram");
       setDeepgramKey(dgKey.trim());
-      localStorage.setItem("clipon_deepgram_key", dgKey.trim());
       localStorage.setItem("clipon_transcription_engine", "deepgram");
     }
 
-    if (gmKey.trim()) {
-      let clean = gmKey.trim();
-      if (clean.startsWith("Q.Ab8")) clean = "A" + clean;
+    let cleanGm = gmKey.trim();
+    if (cleanGm.startsWith("Q.Ab8")) cleanGm = "A" + cleanGm;
+
+    if (cleanGm) {
       setLlmEngine("gemini");
-      setGeminiKey(clean);
-      localStorage.setItem("clipon_gemini_key", clean);
+      setGeminiKey(cleanGm);
       localStorage.setItem("clipon_llm_engine", "gemini");
     } else if (antKey.trim()) {
       setLlmEngine("claude");
       setAnthropicKey(antKey.trim());
-      localStorage.setItem("clipon_anthropic_key", antKey.trim());
       localStorage.setItem("clipon_llm_engine", "claude");
     } else if (dsKey.trim()) {
       setLlmEngine("deepseek");
       setDeepseekKey(dsKey.trim());
-      localStorage.setItem("clipon_deepseek_key", dsKey.trim());
       localStorage.setItem("clipon_llm_engine", "deepseek");
     } else if (grKey.trim()) {
       setLlmEngine("groq");
       setGroqKey(grKey.trim());
-      localStorage.setItem("clipon_groq_key", grKey.trim());
       localStorage.setItem("clipon_llm_engine", "groq");
+    }
+
+    try {
+      await invoke("save_api_credentials", {
+        deepgramKey: dgKey.trim() || null,
+        geminiKey: cleanGm || null,
+        openaiKey: null,
+        anthropicKey: antKey.trim() || null,
+        deepseekKey: dsKey.trim() || null,
+        groqKey: grKey.trim() || null,
+        openrouterKey: null,
+      });
+      await refreshEnv();
+    } catch (err) {
+      console.error("Failed to persist credentials safely:", err);
     }
 
     localStorage.setItem("clipon_onboarded", "true");

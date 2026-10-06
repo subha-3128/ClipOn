@@ -1,11 +1,13 @@
+pub mod analysis_cache;
 mod db;
+pub mod dynamic_podcast_reframing;
 mod instagram;
+pub mod jobs;
 mod llm;
 mod media;
 mod models;
-mod transcription;
 mod pro_editor;
-pub mod dynamic_podcast_reframing;
+mod transcription;
 
 use std::path::PathBuf;
 
@@ -30,10 +32,13 @@ struct PullProgressPayload {
 struct AppState {
     db: Database,
     data_dir: PathBuf,
+    jobs: jobs::JobManager,
 }
 
 #[tauri::command]
-async fn environment_status(state: tauri::State<'_, AppState>) -> Result<EnvironmentStatus, String> {
+async fn environment_status(
+    state: tauri::State<'_, AppState>,
+) -> Result<EnvironmentStatus, String> {
     let env_file = state.data_dir.join(".env");
     if env_file.exists() {
         let _ = dotenvy::from_path(&env_file);
@@ -42,7 +47,8 @@ async fn environment_status(state: tauri::State<'_, AppState>) -> Result<Environ
         .unwrap_or_else(|_| "deepseek".to_string())
         .to_lowercase();
 
-    let has_local_whisper_model = transcription::whisper_cli_exists() || transcription::whisper_python_exists();
+    let has_local_whisper_model =
+        transcription::whisper_cli_exists() || transcription::whisper_python_exists();
 
     let has_ollama = reqwest::Client::new()
         .get("http://localhost:11434")
@@ -62,30 +68,20 @@ async fn environment_status(state: tauri::State<'_, AppState>) -> Result<Environ
         has_openai_key: std::env::var("OPENAI_API_KEY").is_ok(),
         has_openrouter_key: std::env::var("OPENROUTER_API_KEY").is_ok(),
         has_groq_key: std::env::var("GROQ_API_KEY").is_ok(),
+        has_instagram_token: std::env::var("INSTAGRAM_ACCESS_TOKEN").is_ok(),
         llm_provider,
         has_local_whisper_model,
         has_ollama,
         has_ytdlp: media::command_exists("yt-dlp"),
         has_hardware_accel: media::supports_videotoolbox(),
-        deepgram_key: std::env::var("DEEPGRAM_API_KEY").ok(),
-        gemini_key: std::env::var("GEMINI_API_KEY").ok(),
-        deepseek_key: std::env::var("DEEPSEEK_API_KEY").ok(),
-        anthropic_key: std::env::var("ANTHROPIC_API_KEY").ok(),
-        groq_key: std::env::var("GROQ_API_KEY").ok(),
-        openai_key: std::env::var("OPENAI_API_KEY").ok(),
-        openrouter_key: std::env::var("OPENROUTER_API_KEY").ok(),
         instagram_account_id: std::env::var("INSTAGRAM_ACCOUNT_ID").ok(),
-        instagram_access_token: std::env::var("INSTAGRAM_ACCESS_TOKEN").ok(),
     })
 }
 
 #[tauri::command]
-async fn pull_ollama_model(
-    app: tauri::AppHandle,
-    model_name: String,
-) -> Result<(), String> {
+async fn pull_ollama_model(app: tauri::AppHandle, model_name: String) -> Result<(), String> {
     let client = reqwest::Client::new();
-    
+
     let mut response = client
         .post("http://localhost:11434/api/pull")
         .json(&serde_json::json!({
@@ -124,7 +120,8 @@ async fn pull_ollama_model(
                 let completed = val.get("completed").and_then(|v| v.as_u64());
                 let total = val.get("total").and_then(|v| v.as_u64());
 
-                let mut status = val.get("status")
+                let mut status = val
+                    .get("status")
                     .and_then(|v| v.as_str())
                     .unwrap_or("Downloading...")
                     .to_string();
@@ -134,15 +131,19 @@ async fn pull_ollama_model(
                         let c_mb = c as f64 / 1024.0 / 1024.0;
                         let t_mb = t as f64 / 1024.0 / 1024.0;
                         if t_mb > 100.0 {
-                            status = format!("Downloading weights: {:.1} MB / {:.1} MB", c_mb, t_mb);
+                            status =
+                                format!("Downloading weights: {:.1} MB / {:.1} MB", c_mb, t_mb);
                         } else {
-                            status = format!("Downloading model components: {:.1} MB / {:.1} MB", c_mb, t_mb);
+                            status = format!(
+                                "Downloading model components: {:.1} MB / {:.1} MB",
+                                c_mb, t_mb
+                            );
                         }
                     } else {
                         status = "Downloading model components...".to_string();
                     }
                 }
-                
+
                 let percentage = if let (Some(c), Some(t)) = (completed, total) {
                     if t > 0 {
                         Some((c as f64 / t as f64) * 100.0)
@@ -170,17 +171,25 @@ async fn pull_ollama_model(
 
 #[tauri::command]
 async fn install_ollama(app: tauri::AppHandle) -> Result<(), String> {
-    let _ = app.emit("ollama-install-status", "Checking if Ollama is already installed...");
+    let _ = app.emit(
+        "ollama-install-status",
+        "Checking if Ollama is already installed...",
+    );
     let launch = std::process::Command::new("open")
         .args(["-a", "Ollama"])
         .output();
-    
+
     if let Ok(out) = launch {
         if out.status.success() {
             let _ = app.emit("ollama-install-status", "Ollama is installed. Launching...");
             for _ in 0..12 {
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                if reqwest::Client::new().get("http://localhost:11434").send().await.is_ok() {
+                if reqwest::Client::new()
+                    .get("http://localhost:11434")
+                    .send()
+                    .await
+                    .is_ok()
+                {
                     let _ = app.emit("ollama-install-status", "Ollama started successfully!");
                     return Ok(());
                 }
@@ -197,8 +206,11 @@ async fn install_ollama(app: tauri::AppHandle) -> Result<(), String> {
     };
 
     if let Some(path) = brew_path {
-        let _ = app.emit("ollama-install-status", "Installing Ollama via Homebrew Cask...");
-        
+        let _ = app.emit(
+            "ollama-install-status",
+            "Installing Ollama via Homebrew Cask...",
+        );
+
         let output = std::process::Command::new(path)
             .args(["install", "--cask", "ollama"])
             .output()
@@ -215,12 +227,17 @@ async fn install_ollama(app: tauri::AppHandle) -> Result<(), String> {
         let launch = std::process::Command::new("open")
             .args(["-a", "Ollama"])
             .output();
-        
+
         if let Ok(out) = launch {
             if out.status.success() {
                 for _ in 0..12 {
                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                    if reqwest::Client::new().get("http://localhost:11434").send().await.is_ok() {
+                    if reqwest::Client::new()
+                        .get("http://localhost:11434")
+                        .send()
+                        .await
+                        .is_ok()
+                    {
                         let _ = app.emit("ollama-install-status", "Ollama started successfully!");
                         return Ok(());
                     }
@@ -229,30 +246,47 @@ async fn install_ollama(app: tauri::AppHandle) -> Result<(), String> {
         }
     }
 
-    let _ = app.emit("ollama-install-status", "Downloading Ollama zip from official source...");
+    let _ = app.emit(
+        "ollama-install-status",
+        "Downloading Ollama zip from official source...",
+    );
     let temp_dir = std::env::temp_dir();
     let zip_path = temp_dir.join("Ollama-darwin.zip");
-    
+
     let response = reqwest::get("https://ollama.com/download/Ollama-darwin.zip")
         .await
         .map_err(|e| format!("Failed to download Ollama: {e}"))?;
 
-    let bytes = response.bytes().await.map_err(|e| format!("Failed to read Ollama bytes: {e}"))?;
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read Ollama bytes: {e}"))?;
     std::fs::write(&zip_path, bytes).map_err(|e| format!("Failed to save Ollama zip: {e}"))?;
 
     let _ = app.emit("ollama-install-status", "Unzipping Ollama package...");
     let unzip_output = std::process::Command::new("unzip")
-        .args(["-o", &zip_path.to_string_lossy().to_string(), "-d", &temp_dir.to_string_lossy().to_string()])
+        .args([
+            "-o",
+            &zip_path.to_string_lossy().to_string(),
+            "-d",
+            &temp_dir.to_string_lossy().to_string(),
+        ])
         .output()
         .map_err(|e| format!("Failed to unzip Ollama: {e}"))?;
 
     if !unzip_output.status.success() {
-        return Err(format!("Failed to unzip: {}", String::from_utf8_lossy(&unzip_output.stderr)));
+        return Err(format!(
+            "Failed to unzip: {}",
+            String::from_utf8_lossy(&unzip_output.stderr)
+        ));
     }
 
-    let _ = app.emit("ollama-install-status", "Installing to Applications folder...");
+    let _ = app.emit(
+        "ollama-install-status",
+        "Installing to Applications folder...",
+    );
     let app_src = temp_dir.join("Ollama.app");
-    
+
     let mv_output = std::process::Command::new("mv")
         .args([&app_src.to_string_lossy().to_string(), "/Applications/"])
         .output()
@@ -262,15 +296,22 @@ async fn install_ollama(app: tauri::AppHandle) -> Result<(), String> {
         let user_apps = dirs::home_dir()
             .ok_or_else(|| "Could not find home directory".to_string())?
             .join("Applications");
-        std::fs::create_dir_all(&user_apps).map_err(|e| format!("Failed to create ~/Applications: {e}"))?;
-        
+        std::fs::create_dir_all(&user_apps)
+            .map_err(|e| format!("Failed to create ~/Applications: {e}"))?;
+
         let mv_user_output = std::process::Command::new("mv")
-            .args([&app_src.to_string_lossy().to_string(), &user_apps.to_string_lossy().to_string()])
+            .args([
+                &app_src.to_string_lossy().to_string(),
+                &user_apps.to_string_lossy().to_string(),
+            ])
             .output()
             .map_err(|e| format!("Failed to move Ollama to ~/Applications: {e}"))?;
 
         if !mv_user_output.status.success() {
-            return Err(format!("Failed to install Ollama to Applications folder: {}", String::from_utf8_lossy(&mv_user_output.stderr)));
+            return Err(format!(
+                "Failed to install Ollama to Applications folder: {}",
+                String::from_utf8_lossy(&mv_user_output.stderr)
+            ));
         }
     }
 
@@ -282,7 +323,12 @@ async fn install_ollama(app: tauri::AppHandle) -> Result<(), String> {
     if launch.is_ok() {
         for _ in 0..12 {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            if reqwest::Client::new().get("http://localhost:11434").send().await.is_ok() {
+            if reqwest::Client::new()
+                .get("http://localhost:11434")
+                .send()
+                .await
+                .is_ok()
+            {
                 let _ = app.emit("ollama-install-status", "Ollama started successfully!");
                 return Ok(());
             }
@@ -392,7 +438,8 @@ async fn transcribe_project(
                 .map_err(to_command_error)?
         }
         "local" => {
-            let has_whisper = transcription::whisper_cli_exists() || transcription::whisper_python_exists();
+            let has_whisper =
+                transcription::whisper_cli_exists() || transcription::whisper_python_exists();
             if !has_whisper {
                 return Err("Whisper is not installed. Please install it (e.g., via Homebrew 'brew install whisper-cli' or via Python 'pip3 install openai-whisper').".to_string());
             }
@@ -401,9 +448,12 @@ async fn transcribe_project(
                 &data_dir.join("projects").join(&project_id),
             )
             .map_err(to_command_error)?;
-            transcription::transcribe_local(&audio_path.to_string_lossy(), &data_dir.to_string_lossy())
-                .await
-                .map_err(to_command_error)?
+            transcription::transcribe_local(
+                &audio_path.to_string_lossy(),
+                &data_dir.to_string_lossy(),
+            )
+            .await
+            .map_err(to_command_error)?
         }
         other => return Err(format!("Unsupported transcription provider: {other}")),
     };
@@ -467,7 +517,10 @@ async fn generate_candidates(
             let key = api_key
                 .filter(|k| !k.trim().is_empty())
                 .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
-                .ok_or_else(|| "Set ANTHROPIC_API_KEY or supply Claude API Key to generate candidates.".to_string())?;
+                .ok_or_else(|| {
+                    "Set ANTHROPIC_API_KEY or supply Claude API Key to generate candidates."
+                        .to_string()
+                })?;
             llm::detect_candidates_with_claude(&normalized, &key)
                 .await
                 .map_err(to_command_error)?
@@ -485,7 +538,10 @@ async fn generate_candidates(
             let key = api_key
                 .filter(|k| !k.trim().is_empty())
                 .or_else(|| std::env::var("GEMINI_API_KEY").ok())
-                .ok_or_else(|| "Set GEMINI_API_KEY or supply Gemini API Key to generate candidates.".to_string())?;
+                .ok_or_else(|| {
+                    "Set GEMINI_API_KEY or supply Gemini API Key to generate candidates."
+                        .to_string()
+                })?;
             llm::detect_candidates_with_gemini(&normalized, &key)
                 .await
                 .map_err(to_command_error)?
@@ -494,7 +550,10 @@ async fn generate_candidates(
             let key = api_key
                 .filter(|k| !k.trim().is_empty())
                 .or_else(|| std::env::var("OPENAI_API_KEY").ok())
-                .ok_or_else(|| "Set OPENAI_API_KEY or supply OpenAI API Key to generate candidates.".to_string())?;
+                .ok_or_else(|| {
+                    "Set OPENAI_API_KEY or supply OpenAI API Key to generate candidates."
+                        .to_string()
+                })?;
             llm::detect_candidates_with_openai(&normalized, &key)
                 .await
                 .map_err(to_command_error)?
@@ -503,7 +562,10 @@ async fn generate_candidates(
             let key = api_key
                 .filter(|k| !k.trim().is_empty())
                 .or_else(|| std::env::var("OPENROUTER_API_KEY").ok())
-                .ok_or_else(|| "Set OPENROUTER_API_KEY or supply OpenRouter API Key to generate candidates.".to_string())?;
+                .ok_or_else(|| {
+                    "Set OPENROUTER_API_KEY or supply OpenRouter API Key to generate candidates."
+                        .to_string()
+                })?;
             llm::detect_candidates_with_openrouter(&normalized, &key, model_name.as_deref())
                 .await
                 .map_err(to_command_error)?
@@ -512,7 +574,9 @@ async fn generate_candidates(
             let key = api_key
                 .filter(|k| !k.trim().is_empty())
                 .or_else(|| std::env::var("GROQ_API_KEY").ok())
-                .ok_or_else(|| "Set GROQ_API_KEY or supply Groq API Key to generate candidates.".to_string())?;
+                .ok_or_else(|| {
+                    "Set GROQ_API_KEY or supply Groq API Key to generate candidates.".to_string()
+                })?;
             llm::detect_candidates_with_groq(&normalized, &key)
                 .await
                 .map_err(to_command_error)?
@@ -521,7 +585,10 @@ async fn generate_candidates(
             let key = api_key
                 .filter(|k| !k.trim().is_empty())
                 .or_else(|| std::env::var("DEEPSEEK_API_KEY").ok())
-                .ok_or_else(|| "Set DEEPSEEK_API_KEY or supply DeepSeek API Key to generate candidates.".to_string())?;
+                .ok_or_else(|| {
+                    "Set DEEPSEEK_API_KEY or supply DeepSeek API Key to generate candidates."
+                        .to_string()
+                })?;
             llm::detect_candidates_with_deepseek(&normalized, &key, model_name.as_deref())
                 .await
                 .map_err(to_command_error)?
@@ -582,12 +649,15 @@ async fn update_candidate_timing(
     let valid_end = end_sec.max(valid_start + 1.0);
     db.update_candidate_timing(&candidate_id, valid_start, valid_end)
         .map_err(to_command_error)?;
-    let (candidate, _) = db.get_candidate_with_project(&candidate_id).map_err(to_command_error)?;
+    let (candidate, _) = db
+        .get_candidate_with_project(&candidate_id)
+        .map_err(to_command_error)?;
     Ok(candidate)
 }
 
 #[tauri::command]
 async fn render_flat_clip_for_candidate(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     candidate_id: String,
     reframe_mode: Option<String>,
@@ -603,13 +673,28 @@ async fn render_flat_clip_for_candidate(
     let silence_removal = remove_silence;
     let punch = punch_zoom.unwrap_or(false);
     let studio = studio_audio.unwrap_or(true);
+    let job_mgr = state.jobs.clone();
+    let app_clone = app.clone();
+
+    let job_id = job_mgr.create_job(&candidate_id, "Preparing clip render");
+    job_mgr.update_progress(
+        &job_id,
+        jobs::JobState::Analyzing,
+        20,
+        "Analyzing media & faces",
+        Some(&app),
+    );
 
     tokio::task::spawn_blocking(move || {
         let (candidate, project) = db
             .get_candidate_with_project(&candidate_id)
             .map_err(to_command_error)?;
-        db
-            .update_clip_for_candidate(&candidate_id, "cutting", None, None, None)
+
+        if job_mgr.is_cancelled(&job_id) {
+            return Err("Cancelled by user".to_string());
+        }
+
+        db.update_clip_for_candidate(&candidate_id, "cutting", None, None, None)
             .map_err(to_command_error)?;
 
         let output_path = documents_project_dir(&project, out_dir.as_deref())?
@@ -619,6 +704,14 @@ async fn render_flat_clip_for_candidate(
         let mut srt_path = None;
         let mut ass_path = None;
         let mut drawtext_filters = None;
+
+        job_mgr.update_progress(
+            &job_id,
+            jobs::JobState::Processing,
+            45,
+            "Generating subtitles & layout",
+            Some(&app_clone),
+        );
 
         let probe = media::probe_media(&project.source_path).ok();
         let cropped_width = if let Some(p) = &probe {
@@ -631,13 +724,22 @@ async fn render_flat_clip_for_candidate(
         };
 
         if let Ok(Some(transcript_record)) = db.latest_transcript(&project.id) {
-            if let Ok(normalized) = serde_json::from_str::<NormalizedTranscript>(&transcript_record.raw_json) {
-                let srt_content = generate_srt(&normalized.words, candidate.start_sec, candidate.end_sec);
-                let clip_srt_path = data_dir.join("projects").join(&project.id).join(format!("clip-{}.srt", candidate.id));
+            if let Ok(normalized) =
+                serde_json::from_str::<NormalizedTranscript>(&transcript_record.raw_json)
+            {
+                let srt_content =
+                    generate_srt(&normalized.words, candidate.start_sec, candidate.end_sec);
+                let clip_srt_path = data_dir
+                    .join("projects")
+                    .join(&project.id)
+                    .join(format!("clip-{}.srt", candidate.id));
                 if std::fs::write(&clip_srt_path, srt_content).is_ok() {
                     srt_path = Some(clip_srt_path);
                 }
-                let style = project.caption_style.as_deref().unwrap_or("hormozi-kinetic");
+                let style = project
+                    .caption_style
+                    .as_deref()
+                    .unwrap_or("hormozi-kinetic");
 
                 let is_split = mode.as_deref() == Some("podcast_split");
 
@@ -649,7 +751,10 @@ async fn render_flat_clip_for_candidate(
                     style,
                     is_split,
                 );
-                let clip_ass_path = data_dir.join("projects").join(&project.id).join(format!("clip-{}.ass", candidate.id));
+                let clip_ass_path = data_dir
+                    .join("projects")
+                    .join(&project.id)
+                    .join(format!("clip-{}.ass", candidate.id));
                 if std::fs::write(&clip_ass_path, ass_content).is_ok() {
                     ass_path = Some(clip_ass_path);
                 }
@@ -668,7 +773,18 @@ async fn render_flat_clip_for_candidate(
             }
         }
 
+        if job_mgr.is_cancelled(&job_id) {
+            return Err("Cancelled by user".to_string());
+        }
+
         let should_remove_silence = silence_removal.unwrap_or(false);
+        job_mgr.update_progress(
+            &job_id,
+            jobs::JobState::Encoding,
+            70,
+            "Rendering & hardware encoding",
+            Some(&app_clone),
+        );
 
         match media::render_flat_clip(
             &project.source_path,
@@ -685,15 +801,15 @@ async fn render_flat_clip_for_candidate(
             Ok(path) => {
                 let path_string = path.to_string_lossy().to_string();
                 let srt_string = srt_path.map(|p| p.to_string_lossy().to_string());
-                db
-                    .update_clip_for_candidate(
-                        &candidate_id,
-                        "done",
-                        Some(&path_string),
-                        srt_string.as_deref(),
-                        None,
-                    )
-                    .map_err(to_command_error)?;
+                db.update_clip_for_candidate(
+                    &candidate_id,
+                    "done",
+                    Some(&path_string),
+                    srt_string.as_deref(),
+                    None,
+                )
+                .map_err(to_command_error)?;
+                job_mgr.complete_job(&job_id, Some(&app_clone));
                 Ok(path_string)
             }
             Err(error) => {
@@ -718,22 +834,28 @@ async fn render_flat_clip_for_candidate(
                             "Clip rendered successfully, but captions were skipped. Error: {}",
                             err_msg
                         );
-                        db
-                            .update_clip_for_candidate(
-                                &candidate_id,
-                                "done",
-                                Some(&path_string),
-                                srt_string.as_deref(),
-                                Some(&warning_msg),
-                            )
-                            .map_err(to_command_error)?;
+                        db.update_clip_for_candidate(
+                            &candidate_id,
+                            "done",
+                            Some(&path_string),
+                            srt_string.as_deref(),
+                            Some(&warning_msg),
+                        )
+                        .map_err(to_command_error)?;
+                        job_mgr.complete_job(&job_id, Some(&app_clone));
                         Ok(path_string)
                     }
                     Err(retry_err) => {
                         let message = retry_err.to_string();
-                        db
-                            .update_clip_for_candidate(&candidate_id, "error", None, None, Some(&message))
-                            .map_err(to_command_error)?;
+                        db.update_clip_for_candidate(
+                            &candidate_id,
+                            "error",
+                            None,
+                            None,
+                            Some(&message),
+                        )
+                        .map_err(to_command_error)?;
+                        job_mgr.fail_job(&job_id, &message, Some(&app_clone));
                         Err(message)
                     }
                 }
@@ -746,7 +868,10 @@ async fn render_flat_clip_for_candidate(
 
 #[tauri::command]
 fn delete_project(state: tauri::State<'_, AppState>, project_id: String) -> Result<(), String> {
-    state.db.delete_project(&project_id).map_err(to_command_error)
+    state
+        .db
+        .delete_project(&project_id)
+        .map_err(to_command_error)
 }
 
 #[tauri::command]
@@ -755,7 +880,10 @@ fn rename_project(
     project_id: String,
     name: String,
 ) -> Result<(), String> {
-    state.db.rename_project(&project_id, &name).map_err(to_command_error)
+    state
+        .db
+        .rename_project(&project_id, &name)
+        .map_err(to_command_error)
 }
 
 /// Open a folder or reveal a file in the native file manager (Finder on macOS).
@@ -857,22 +985,20 @@ fn get_default_folders() -> Result<DefaultFolders, String> {
     let youtube_download_dir = std::env::var("CLIPON_YOUTUBE_DIR")
         .or_else(|_| std::env::var("AUTOSHORTS_YOUTUBE_DIR"))
         .ok()
-        .or_else(|| {
-            dirs::download_dir().map(|d| d.join("ClipOn").to_string_lossy().to_string())
-        })
+        .or_else(|| dirs::download_dir().map(|d| d.join("ClipOn").to_string_lossy().to_string()))
         .unwrap_or_else(|| "~/Downloads/ClipOn".to_string());
 
     let clips_output_dir = std::env::var("CLIPON_CLIPS_DIR")
         .or_else(|_| std::env::var("AUTOSHORTS_CLIPS_DIR"))
         .ok()
-        .or_else(|| {
-            dirs::document_dir().map(|d| d.join("ClipOn").to_string_lossy().to_string())
-        })
+        .or_else(|| dirs::document_dir().map(|d| d.join("ClipOn").to_string_lossy().to_string()))
         .unwrap_or_else(|| "~/Documents/ClipOn".to_string());
 
-    Ok(DefaultFolders { youtube_download_dir, clips_output_dir })
+    Ok(DefaultFolders {
+        youtube_download_dir,
+        clips_output_dir,
+    })
 }
-
 
 #[tauri::command]
 async fn generate_social_kit_for_candidate(
@@ -886,7 +1012,9 @@ async fn generate_social_kit_for_candidate(
 
     let mut transcript_text = String::new();
     if let Ok(Some(transcript_record)) = db.latest_transcript(&project.id) {
-        if let Ok(normalized) = serde_json::from_str::<NormalizedTranscript>(&transcript_record.raw_json) {
+        if let Ok(normalized) =
+            serde_json::from_str::<NormalizedTranscript>(&transcript_record.raw_json)
+        {
             let words: Vec<&str> = normalized
                 .words
                 .iter()
@@ -905,7 +1033,10 @@ pub fn run() {
     let _ = dotenvy::dotenv();
 
     let current_path = std::env::var("PATH").unwrap_or_default();
-    let extended_path = format!("/opt/homebrew/bin:/opt/homebrew/opt/ffmpeg-full/bin:/usr/local/bin:/usr/bin:/bin:{}", current_path);
+    let extended_path = format!(
+        "/opt/homebrew/bin:/opt/homebrew/opt/ffmpeg-full/bin:/usr/local/bin:/usr/bin:/bin:{}",
+        current_path
+    );
     std::env::set_var("PATH", extended_path);
 
     tauri::Builder::default()
@@ -916,13 +1047,11 @@ pub fn run() {
                 .app_data_dir()
                 .context("resolving app data directory")?;
             std::fs::create_dir_all(&data_dir).context("creating app data directory")?;
-            std::fs::create_dir_all(data_dir.join("models")).context("creating models directory")?;
+            std::fs::create_dir_all(data_dir.join("models"))
+                .context("creating models directory")?;
             let env_path = data_dir.join(".env");
             if !env_path.exists() {
-                let candidates = [
-                    PathBuf::from(".env"),
-                    PathBuf::from("../.env"),
-                ];
+                let candidates = [PathBuf::from(".env"), PathBuf::from("../.env")];
                 for cand in &candidates {
                     if cand.exists() {
                         let _ = std::fs::copy(cand, &env_path);
@@ -936,13 +1065,20 @@ pub fn run() {
             let db_path = if data_dir.join("clipon.sqlite").exists() {
                 data_dir.join("clipon.sqlite")
             } else if data_dir.join("autoshorts.sqlite").exists() {
-                let _ = std::fs::copy(data_dir.join("autoshorts.sqlite"), data_dir.join("clipon.sqlite"));
+                let _ = std::fs::copy(
+                    data_dir.join("autoshorts.sqlite"),
+                    data_dir.join("clipon.sqlite"),
+                );
                 data_dir.join("clipon.sqlite")
             } else {
                 data_dir.join("clipon.sqlite")
             };
             let db = Database::open(&db_path)?;
-            app.manage(AppState { db, data_dir });
+            app.manage(AppState {
+                db,
+                data_dir,
+                jobs: jobs::JobManager::new(),
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -969,8 +1105,12 @@ pub fn run() {
             test_instagram_connection,
             publish_candidate_to_instagram,
             save_instagram_credentials,
+            save_api_credentials,
             update_candidate_timing,
-            clear_all_storage
+            clear_all_storage,
+            cancel_job,
+            get_active_jobs,
+            get_podcast_preview
         ])
         .run(tauri::generate_context!())
         .expect("error while running ClipOn");
@@ -995,12 +1135,17 @@ async fn check_youtube_copyright(url: String) -> Result<CopyrightCheckResult, St
         }
 
         let json_str = String::from_utf8_lossy(&output.stdout);
-        let parsed: serde_json::Value = serde_json::from_str(&json_str).map_err(|_| "Failed to parse yt-dlp output".to_string())?;
+        let parsed: serde_json::Value = serde_json::from_str(&json_str)
+            .map_err(|_| "Failed to parse yt-dlp output".to_string())?;
 
-        let license = parsed.get("license").and_then(|v| v.as_str()).map(|s| s.to_string());
-        
+        let license = parsed
+            .get("license")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
         let is_safe = if let Some(lic) = &license {
-            lic.to_lowercase().contains("creative commons") || lic.to_lowercase().contains("reuse allowed")
+            lic.to_lowercase().contains("creative commons")
+                || lic.to_lowercase().contains("reuse allowed")
         } else {
             false
         };
@@ -1016,7 +1161,11 @@ async fn download_youtube_video(url: String, output_dir: Option<String>) -> Resu
     tokio::task::spawn_blocking(move || {
         let save_dir = output_dir
             .filter(|s| !s.is_empty())
-            .or_else(|| std::env::var("CLIPON_YOUTUBE_DIR").or_else(|_| std::env::var("AUTOSHORTS_YOUTUBE_DIR")).ok())
+            .or_else(|| {
+                std::env::var("CLIPON_YOUTUBE_DIR")
+                    .or_else(|_| std::env::var("AUTOSHORTS_YOUTUBE_DIR"))
+                    .ok()
+            })
             .map(std::path::PathBuf::from)
             .or_else(|| dirs::download_dir().map(|d| d.join("ClipOn")))
             .ok_or_else(|| "Could not find Downloads folder".to_string())?;
@@ -1028,12 +1177,16 @@ async fn download_youtube_video(url: String, output_dir: Option<String>) -> Resu
 
         let output = std::process::Command::new(media::resolve_binary("yt-dlp"))
             .args(&[
-                "--format", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-                "--merge-output-format", "mp4",
-                "-o", &output_template_str,
-                "--print", "after_move:filepath",
+                "--format",
+                "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                "--merge-output-format",
+                "mp4",
+                "-o",
+                &output_template_str,
+                "--print",
+                "after_move:filepath",
                 "--no-simulate",
-                &url
+                &url,
             ])
             .output()
             .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
@@ -1072,7 +1225,9 @@ fn documents_project_dir(project: &Project, custom_dir: Option<&str>) -> Result<
         } else {
             PathBuf::from(trimmed)
         }
-    } else if let Ok(env_dir) = std::env::var("CLIPON_CLIPS_DIR").or_else(|_| std::env::var("AUTOSHORTS_CLIPS_DIR")) {
+    } else if let Ok(env_dir) =
+        std::env::var("CLIPON_CLIPS_DIR").or_else(|_| std::env::var("AUTOSHORTS_CLIPS_DIR"))
+    {
         let trimmed = env_dir.trim().to_string();
         if trimmed.starts_with("~/") {
             if let Some(home) = dirs::home_dir() {
@@ -1205,10 +1360,7 @@ fn generate_srt(words: &[TranscriptWord], start_sec: f64, end_sec: f64) -> Strin
             .join(" ");
 
         srt.push_str(&format!("{index}\n"));
-        srt.push_str(&format!(
-            "{}\n",
-            format_srt_time(start_rel, end_rel)
-        ));
+        srt.push_str(&format!("{}\n", format_srt_time(start_rel, end_rel)));
         srt.push_str(&format!("{text}\n\n"));
         index += 1;
     }
@@ -1229,31 +1381,98 @@ fn format_srt_time(start: f64, end: f64) -> String {
 
 fn get_contextual_emoji(text: &str) -> Option<&'static str> {
     let lower = text.to_lowercase();
-    if lower.contains("money") || lower.contains("dollar") || lower.contains("cash") || lower.contains("rich") || lower.contains("cost") || lower.contains("paid") || lower.contains("price") {
+    if lower.contains("money")
+        || lower.contains("dollar")
+        || lower.contains("cash")
+        || lower.contains("rich")
+        || lower.contains("cost")
+        || lower.contains("paid")
+        || lower.contains("price")
+    {
         Some("💰")
-    } else if lower.contains("fire") || lower.contains("lit") || lower.contains("hot") || lower.contains("burn") {
+    } else if lower.contains("fire")
+        || lower.contains("lit")
+        || lower.contains("hot")
+        || lower.contains("burn")
+    {
         Some("🔥")
-    } else if lower.contains("crazy") || lower.contains("mind") || lower.contains("insane") || lower.contains("shock") || lower.contains("unbelievable") {
+    } else if lower.contains("crazy")
+        || lower.contains("mind")
+        || lower.contains("insane")
+        || lower.contains("shock")
+        || lower.contains("unbelievable")
+    {
         Some("🤯")
-    } else if lower.contains("rocket") || lower.contains("fast") || lower.contains("speed") || lower.contains("growth") || lower.contains("explode") || lower.contains("scale") {
+    } else if lower.contains("rocket")
+        || lower.contains("fast")
+        || lower.contains("speed")
+        || lower.contains("growth")
+        || lower.contains("explode")
+        || lower.contains("scale")
+    {
         Some("🚀")
-    } else if lower.contains("laugh") || lower.contains("funny") || lower.contains("joke") || lower.contains("hilarious") || lower.contains("lol") {
+    } else if lower.contains("laugh")
+        || lower.contains("funny")
+        || lower.contains("joke")
+        || lower.contains("hilarious")
+        || lower.contains("lol")
+    {
         Some("😂")
-    } else if lower.contains("party") || lower.contains("boat") || lower.contains("trip") || lower.contains("drink") || lower.contains("fun") || lower.contains("celebrat") {
+    } else if lower.contains("party")
+        || lower.contains("boat")
+        || lower.contains("trip")
+        || lower.contains("drink")
+        || lower.contains("fun")
+        || lower.contains("celebrat")
+    {
         Some("🥳")
-    } else if lower.contains("time") || lower.contains("late") || lower.contains("clock") || lower.contains("wait") || lower.contains("minute") || lower.contains("hour") || lower.contains("second") {
+    } else if lower.contains("time")
+        || lower.contains("late")
+        || lower.contains("clock")
+        || lower.contains("wait")
+        || lower.contains("minute")
+        || lower.contains("hour")
+        || lower.contains("second")
+    {
         Some("⏱️")
-    } else if lower.contains("danger") || lower.contains("warn") || lower.contains("stop") || lower.contains("threat") || lower.contains("trouble") {
+    } else if lower.contains("danger")
+        || lower.contains("warn")
+        || lower.contains("stop")
+        || lower.contains("threat")
+        || lower.contains("trouble")
+    {
         Some("⚠️")
-    } else if lower.contains("dead") || lower.contains("die") || lower.contains("kill") || lower.contains("skull") {
+    } else if lower.contains("dead")
+        || lower.contains("die")
+        || lower.contains("kill")
+        || lower.contains("skull")
+    {
         Some("💀")
-    } else if lower.contains("love") || lower.contains("heart") || lower.contains("best") || lower.contains("friend") {
+    } else if lower.contains("love")
+        || lower.contains("heart")
+        || lower.contains("best")
+        || lower.contains("friend")
+    {
         Some("❤️")
-    } else if lower.contains("win") || lower.contains("won") || lower.contains("champ") || lower.contains("first") || lower.contains("trophy") {
+    } else if lower.contains("win")
+        || lower.contains("won")
+        || lower.contains("champ")
+        || lower.contains("first")
+        || lower.contains("trophy")
+    {
         Some("🏆")
-    } else if lower.contains("food") || lower.contains("eat") || lower.contains("dinner") || lower.contains("lunch") || lower.contains("cook") {
+    } else if lower.contains("food")
+        || lower.contains("eat")
+        || lower.contains("dinner")
+        || lower.contains("lunch")
+        || lower.contains("cook")
+    {
         Some("🍔")
-    } else if lower.contains("look") || lower.contains("see") || lower.contains("watch") || lower.contains("eyes") {
+    } else if lower.contains("look")
+        || lower.contains("see")
+        || lower.contains("watch")
+        || lower.contains("eyes")
+    {
         Some("👀")
     } else if lower.contains("secret") || lower.contains("quiet") || lower.contains("shh") {
         Some("🤫")
@@ -1340,14 +1559,14 @@ fn build_drawtext_filters(
             .join(" ");
 
         // Clean text to avoid breaking filter parameters
-        let clean_text: String = text.chars()
+        let clean_text: String = text
+            .chars()
             .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '!' || *c == '?')
             .collect();
 
         // Responsive font size and padding box
         let fontsize = ((cropped_width as f64) * 0.075).clamp(16.0, 80.0).round() as i64;
         let padding = ((fontsize as f64) * 0.3).clamp(4.0, 24.0).round() as i64;
-
 
         let emoji_suffix = get_contextual_emoji(&clean_text).unwrap_or("");
         let display_text = if !emoji_suffix.is_empty() {
@@ -1356,9 +1575,21 @@ fn build_drawtext_filters(
             clean_text.clone()
         };
 
-        let y_default = if is_podcast_split { "(h-text_h)/2" } else { "h*0.72" };
-        let y_high = if is_podcast_split { "(h-text_h)/2" } else { "h*0.7" };
-        let y_classic = if is_podcast_split { "(h-text_h)/2" } else { "h*0.65" };
+        let y_default = if is_podcast_split {
+            "(h-text_h)/2"
+        } else {
+            "h*0.72"
+        };
+        let y_high = if is_podcast_split {
+            "(h-text_h)/2"
+        } else {
+            "h*0.7"
+        };
+        let y_classic = if is_podcast_split {
+            "(h-text_h)/2"
+        } else {
+            "h*0.65"
+        };
 
         let drawtext = match caption_style {
             "submagic-viral" => {
@@ -1529,6 +1760,113 @@ async fn save_instagram_credentials(
 }
 
 #[tauri::command]
+async fn save_api_credentials(
+    state: tauri::State<'_, AppState>,
+    deepgram_key: Option<String>,
+    gemini_key: Option<String>,
+    openai_key: Option<String>,
+    anthropic_key: Option<String>,
+    deepseek_key: Option<String>,
+    groq_key: Option<String>,
+    openrouter_key: Option<String>,
+) -> Result<(), String> {
+    let mut updates: Vec<(&str, String)> = Vec::new();
+    if let Some(k) = deepgram_key {
+        let trimmed = k.trim().to_string();
+        if !trimmed.is_empty() {
+            std::env::set_var("DEEPGRAM_API_KEY", &trimmed);
+            updates.push(("DEEPGRAM_API_KEY", trimmed));
+        }
+    }
+    if let Some(k) = gemini_key {
+        let trimmed = k.trim().to_string();
+        if !trimmed.is_empty() {
+            std::env::set_var("GEMINI_API_KEY", &trimmed);
+            updates.push(("GEMINI_API_KEY", trimmed));
+        }
+    }
+    if let Some(k) = openai_key {
+        let trimmed = k.trim().to_string();
+        if !trimmed.is_empty() {
+            std::env::set_var("OPENAI_API_KEY", &trimmed);
+            updates.push(("OPENAI_API_KEY", trimmed));
+        }
+    }
+    if let Some(k) = anthropic_key {
+        let trimmed = k.trim().to_string();
+        if !trimmed.is_empty() {
+            std::env::set_var("ANTHROPIC_API_KEY", &trimmed);
+            updates.push(("ANTHROPIC_API_KEY", trimmed));
+        }
+    }
+    if let Some(k) = deepseek_key {
+        let trimmed = k.trim().to_string();
+        if !trimmed.is_empty() {
+            std::env::set_var("DEEPSEEK_API_KEY", &trimmed);
+            updates.push(("DEEPSEEK_API_KEY", trimmed));
+        }
+    }
+    if let Some(k) = groq_key {
+        let trimmed = k.trim().to_string();
+        if !trimmed.is_empty() {
+            std::env::set_var("GROQ_API_KEY", &trimmed);
+            updates.push(("GROQ_API_KEY", trimmed));
+        }
+    }
+    if let Some(k) = openrouter_key {
+        let trimmed = k.trim().to_string();
+        if !trimmed.is_empty() {
+            std::env::set_var("OPENROUTER_API_KEY", &trimmed);
+            updates.push(("OPENROUTER_API_KEY", trimmed));
+        }
+    }
+
+    if updates.is_empty() {
+        return Ok(());
+    }
+
+    let mut paths = vec![state.data_dir.join(".env")];
+    if PathBuf::from(".env").exists() {
+        paths.push(PathBuf::from(".env"));
+    }
+
+    for path in paths {
+        let mut lines = Vec::new();
+        let mut found_keys = std::collections::HashSet::new();
+
+        if path.exists() {
+            if let Ok(file_content) = std::fs::read_to_string(&path) {
+                for line in file_content.lines() {
+                    let mut matched = false;
+                    for (k, v) in &updates {
+                        let prefix = format!("{k}=");
+                        if line.starts_with(&prefix) {
+                            lines.push(format!("{k}={v}"));
+                            found_keys.insert(*k);
+                            matched = true;
+                            break;
+                        }
+                    }
+                    if !matched {
+                        lines.push(line.to_string());
+                    }
+                }
+            }
+        }
+
+        for (k, v) in &updates {
+            if !found_keys.contains(*k) {
+                lines.push(format!("{k}={v}"));
+            }
+        }
+
+        let _ = std::fs::write(&path, lines.join("\n") + "\n");
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 async fn test_instagram_connection(
     provider: String,
     account_id: Option<String>,
@@ -1547,6 +1885,7 @@ async fn test_instagram_connection(
 
 #[tauri::command]
 async fn publish_candidate_to_instagram(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     candidate_id: String,
     caption_override: Option<String>,
@@ -1567,12 +1906,11 @@ async fn publish_candidate_to_instagram(
         .find(|c| c.candidate_id == candidate_id);
 
     let output_path = match &clip {
-        Some(c) if c.status == "done" && c.output_path.is_some() => {
-            c.output_path.clone().unwrap()
-        }
+        Some(c) if c.status == "done" && c.output_path.is_some() => c.output_path.clone().unwrap(),
         _ => {
             // Automatically render clip with 9:16 vertical blur and subtitles
             render_flat_clip_for_candidate(
+                app,
                 state.clone(),
                 candidate_id.clone(),
                 Some("vertical_crop".to_string()),
@@ -1595,7 +1933,9 @@ async fn publish_candidate_to_instagram(
     } else {
         let mut transcript_text = candidate.hook.clone();
         if let Ok(Some(transcript_record)) = db.latest_transcript(&project.id) {
-            if let Ok(normalized) = serde_json::from_str::<NormalizedTranscript>(&transcript_record.raw_json) {
+            if let Ok(normalized) =
+                serde_json::from_str::<NormalizedTranscript>(&transcript_record.raw_json)
+            {
                 let words: Vec<&str> = normalized
                     .words
                     .iter()
@@ -1712,6 +2052,39 @@ async fn clear_all_storage(state: tauri::State<'_, AppState>) -> Result<String, 
         }
     }
 
+    let cache = analysis_cache::AnalysisCache::new(&state.data_dir);
+    let _ = cache.clear_all();
+
     Ok("All project storage, clips, cache, and database records cleared successfully.".to_string())
 }
 
+#[tauri::command]
+async fn cancel_job(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    job_id: String,
+) -> Result<(), String> {
+    state.jobs.cancel_job(&job_id, Some(&app))
+}
+
+#[tauri::command]
+async fn get_active_jobs(state: tauri::State<'_, AppState>) -> Result<Vec<jobs::JobInfo>, String> {
+    Ok(state.jobs.list_active_jobs())
+}
+
+#[tauri::command]
+async fn get_podcast_preview(
+    source_path: String,
+    start_sec: f64,
+    duration_sec: f64,
+) -> Result<media::DynamicPodcastReframingResult, String> {
+    tokio::task::spawn_blocking(move || {
+        Ok(media::detect_faces_full(
+            &source_path,
+            start_sec,
+            duration_sec,
+        ))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}

@@ -321,7 +321,12 @@ impl Database {
         Ok(candidates)
     }
 
-    pub fn update_candidate_timing(&self, candidate_id: &str, start_sec: f64, end_sec: f64) -> Result<()> {
+    pub fn update_candidate_timing(
+        &self,
+        candidate_id: &str,
+        start_sec: f64,
+        end_sec: f64,
+    ) -> Result<()> {
         let conn = self.conn.lock().expect("database mutex poisoned");
         conn.execute(
             "UPDATE candidates SET start_sec = ?1, end_sec = ?2 WHERE id = ?3",
@@ -399,7 +404,13 @@ impl Database {
                  caption_ass_path = COALESCE(?3, caption_ass_path),
                  render_log = COALESCE(?4, render_log)
              WHERE candidate_id = ?5",
-            params![status, output_path, caption_ass_path, render_log, candidate_id],
+            params![
+                status,
+                output_path,
+                caption_ass_path,
+                render_log,
+                candidate_id
+            ],
         )?;
         Ok(())
     }
@@ -521,13 +532,19 @@ impl Database {
     ) -> Result<InstagramPost> {
         let conn = self.conn.lock().expect("database mutex poisoned");
         let now = Utc::now().to_rfc3339();
-        let existing: Option<String> = conn.query_row(
-            "SELECT id FROM instagram_posts WHERE candidate_id = ?1",
-            params![candidate_id],
-            |row| row.get(0),
-        ).optional()?;
+        let existing: Option<String> = conn
+            .query_row(
+                "SELECT id FROM instagram_posts WHERE candidate_id = ?1",
+                params![candidate_id],
+                |row| row.get(0),
+            )
+            .optional()?;
 
-        let published_at = if status == "published" { Some(now.clone()) } else { None };
+        let published_at = if status == "published" {
+            Some(now.clone())
+        } else {
+            None
+        };
 
         let post = if let Some(id) = existing {
             conn.execute(
