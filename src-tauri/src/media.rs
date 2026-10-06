@@ -132,12 +132,29 @@ pub fn extract_audio(source_path: &str, project_dir: &Path) -> Result<PathBuf> {
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, serde::Deserialize)]
+pub struct PodcastShot {
+    pub start: f64,
+    pub end: f64,
+    #[serde(rename = "type")]
+    pub shot_type: String, // "both", "a", "b"
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct PodcastFaceTracking {
     pub top_center_x: f64,
     pub top_center_y: f64,
     pub bottom_center_x: f64,
     pub bottom_center_y: f64,
+    pub solo_a_x: Option<f64>,
+    pub solo_a_y: Option<f64>,
+    pub solo_b_x: Option<f64>,
+    pub solo_b_y: Option<f64>,
+    pub top_reaction_t: Option<f64>,
+    pub bottom_reaction_t: Option<f64>,
+    pub is_multicam: Option<bool>,
     pub two_faces_detected: bool,
+    pub shots: Option<Vec<PodcastShot>>,
 }
 
 #[allow(dead_code)]
@@ -200,7 +217,15 @@ pub fn detect_faces_full(source_path: &str, start_sec: f64, duration_sec: f64) -
             top_center_y: 0.36,
             bottom_center_x: 0.72,
             bottom_center_y: 0.36,
+            solo_a_x: None,
+            solo_a_y: None,
+            solo_b_x: None,
+            solo_b_y: None,
+            top_reaction_t: None,
+            bottom_reaction_t: None,
+            is_multicam: Some(false),
             two_faces_detected: false,
+            shots: None,
         }),
     }
 }
@@ -279,9 +304,33 @@ pub fn render_flat_clip(
         None
     };
 
+    let tracker_info = if mode == "podcast_split" || mode == "smart_face_track" {
+        detect_faces_full(source_path, start_sec, duration_sec)
+    } else {
+        FaceTrackerResult {
+            avg_center_x: 0.5,
+            face_detected: false,
+            width: None,
+            height: None,
+            podcast: None,
+        }
+    };
+
     let run_render = |use_videotoolbox: bool| -> Result<()> {
         let mut cmd = Command::new(resolve_binary("ffmpeg"));
+        cmd.arg("-nostdin");
         cmd.args(["-y", "-ss", &start, "-i", source_path, "-t", &duration]);
+
+        if mode == "podcast_split" {
+            let is_multi = tracker_info.podcast.as_ref().and_then(|p| p.is_multicam).unwrap_or(false);
+            let has_two = tracker_info.podcast.as_ref().map(|p| p.two_faces_detected).unwrap_or(false);
+            if is_multi && has_two {
+                let top_r = tracker_info.podcast.as_ref().and_then(|p| p.top_reaction_t).unwrap_or(start_sec);
+                let bot_r = tracker_info.podcast.as_ref().and_then(|p| p.bottom_reaction_t).unwrap_or(start_sec);
+                cmd.args(["-ss", &format!("{top_r:.3}"), "-t", "6.0", "-stream_loop", "-1", "-i", source_path]);
+                cmd.args(["-ss", &format!("{bot_r:.3}"), "-t", "6.0", "-stream_loop", "-1", "-i", source_path]);
+            }
+        }
 
         if has_video {
             match mode {
@@ -351,7 +400,6 @@ pub fn render_flat_clip(
                 }
                 "podcast_split" => {
                     // Smart Two-Person Face-Tracked Podcast Split-Screen
-                    let tracker_info = detect_faces_full(source_path, start_sec, duration_sec);
                     let iw_f = probe.as_ref().and_then(|p| p.width).unwrap_or(1920) as f64;
                     let ih_f = probe.as_ref().and_then(|p| p.height).unwrap_or(1080) as f64;
 
@@ -367,39 +415,100 @@ pub fn render_flat_clip(
                     let iw_i = iw_f as i64;
                     let ih_i = ih_f as i64;
 
-                    let (top_x, top_y, bot_x, bot_y) = if let Some(ref pod) = tracker_info.podcast {
-                        (pod.top_center_x, pod.top_center_y, pod.bottom_center_x, pod.bottom_center_y)
-                    } else {
-                        (0.28, 0.36, 0.72, 0.36)
+                    let pod = tracker_info.podcast.as_ref();
+                    let top_x = pod.map(|p| p.top_center_x).unwrap_or(0.28);
+                    let top_y = pod.map(|p| p.top_center_y).unwrap_or(0.38);
+                    let bot_x = pod.map(|p| p.bottom_center_x).unwrap_or(0.72);
+                    let bot_y = pod.map(|p| p.bottom_center_y).unwrap_or(0.38);
+
+                    let solo_ax = pod.and_then(|p| p.solo_a_x).unwrap_or(top_x);
+                    let solo_ay = pod.and_then(|p| p.solo_a_y).unwrap_or(top_y);
+                    let solo_bx = pod.and_then(|p| p.solo_b_x).unwrap_or(bot_x);
+                    let solo_by = pod.and_then(|p| p.solo_b_y).unwrap_or(bot_y);
+
+                    let is_multi = pod.and_then(|p| p.is_multicam).unwrap_or(false);
+                    let has_two = pod.map(|p| p.two_faces_detected).unwrap_or(false);
+                    let shots = pod.and_then(|p| p.shots.as_ref());
+
+                    let calc_crop = |cx: f64, cy: f64| -> (i64, i64) {
+                        let rx = ((cx * iw_f) - (cw / 2.0)).round() as i64;
+                        let mut x = rx.clamp(0, (iw_i - cw_i).max(0));
+                        x -= x % 2;
+                        let ry = ((cy * ih_f) - (ch * 0.36)).round() as i64;
+                        let mut y = ry.clamp(0, (ih_i - ch_i).max(0));
+                        y -= y % 2;
+                        (x, y)
                     };
 
-                    // Top speaker crop (Left / Host): centered on face horizontally, upper 36% headroom vertically
-                    let raw_x_top = ((top_x * iw_f) - (cw / 2.0)).round() as i64;
-                    let mut x_top = raw_x_top.clamp(0, (iw_i - cw_i).max(0));
-                    x_top -= x_top % 2;
+                    let (x_top_wide, y_top_wide) = calc_crop(top_x, top_y);
+                    let (x_bot_wide, y_bot_wide) = calc_crop(bot_x, bot_y);
+                    let (x_top_solo, y_top_solo) = calc_crop(solo_ax, solo_ay);
+                    let (x_bot_solo, y_bot_solo) = calc_crop(solo_bx, solo_by);
 
-                    let raw_y_top = ((top_y * ih_f) - (ch * 0.36)).round() as i64;
-                    let mut y_top = raw_y_top.clamp(0, (ih_i - ch_i).max(0));
-                    y_top -= y_top % 2;
+                    let mut filter_graph = if is_multi && has_two {
+                        // Dynamic 2-Person Multicam Switcher:
+                        // Top Section is ALWAYS Person A (Host).
+                        // Bottom Section is ALWAYS Person B (Guest).
+                        // Reaction loops keep the listening person visible when the other is speaking solo.
+                        let mut a_live_wide_enables = Vec::new();
+                        let mut a_live_solo_enables = Vec::new();
+                        let mut b_live_wide_enables = Vec::new();
+                        let mut b_reaction_enables = Vec::new();
 
-                    // Bottom speaker crop (Right / Guest): centered on face horizontally, upper 36% headroom vertically
-                    let raw_x_bot = ((bot_x * iw_f) - (cw / 2.0)).round() as i64;
-                    let mut x_bot = raw_x_bot.clamp(0, (iw_i - cw_i).max(0));
-                    x_bot -= x_bot % 2;
+                        if let Some(shot_list) = shots {
+                            for s in shot_list {
+                                if s.shot_type == "both" {
+                                    a_live_wide_enables.push(format!("between(t,{:.2},{:.2})", s.start, s.end));
+                                    b_live_wide_enables.push(format!("between(t,{:.2},{:.2})", s.start, s.end));
+                                } else if s.shot_type == "a" {
+                                    a_live_solo_enables.push(format!("between(t,{:.2},{:.2})", s.start, s.end));
+                                    b_reaction_enables.push(format!("between(t,{:.2},{:.2})", s.start, s.end));
+                                }
+                            }
+                        }
 
-                    let raw_y_bot = ((bot_y * ih_f) - (ch * 0.36)).round() as i64;
-                    let mut y_bot = raw_y_bot.clamp(0, (ih_i - ch_i).max(0));
-                    y_bot -= y_bot % 2;
+                        let a_wide_expr = if a_live_wide_enables.is_empty() { "0".to_string() } else { a_live_wide_enables.join("+") };
+                        let a_solo_expr = if a_live_solo_enables.is_empty() { "0".to_string() } else { a_live_solo_enables.join("+") };
+                        let b_wide_expr = if b_live_wide_enables.is_empty() { "0".to_string() } else { b_live_wide_enables.join("+") };
+                        let b_react_expr = if b_reaction_enables.is_empty() { "0".to_string() } else { b_reaction_enables.join("+") };
 
-                    let mut filter_graph = format!(
-                        "[0:v]crop={}:{}:{}:{},scale=1080:960[top];\
-                         [0:v]crop={}:{}:{}:{},scale=1080:960[bot];\
-                         [top][bot]vstack[stacked];\
-                         [stacked]drawbox=x=0:y=956:w=1080:h=8:color=0x0a0d14@0.95:t=fill,\
-                                  drawbox=x=0:y=958:w=1080:h=3:color=0x38bdf8@0.9:t=fill[divided]",
-                        cw_i, ch_i, x_top, y_top,
-                        cw_i, ch_i, x_bot, y_bot,
-                    );
+                        format!(
+                            "[1:v]crop={}:{}:{}:{},scale=1080:960[a_loop];\
+                             [0:v]crop={}:{}:{}:{},scale=1080:960[a_live_w];\
+                             [0:v]crop={}:{}:{}:{},scale=1080:960[a_live_s];\
+                             [0:v]crop={}:{}:{}:{},scale=1080:960[b_live_s];\
+                             [0:v]crop={}:{}:{}:{},scale=1080:960[b_live_w];\
+                             [2:v]crop={}:{}:{}:{},scale=1080:960[b_loop];\
+                             [a_loop][a_live_w]overlay=enable='{}'[top_step1];\
+                             [top_step1][a_live_s]overlay=enable='{}'[top];\
+                             [b_live_s][b_live_w]overlay=enable='{}'[bot_step1];\
+                             [bot_step1][b_loop]overlay=enable='{}'[bot];\
+                             [top][bot]vstack[stacked];\
+                             [stacked]drawbox=x=0:y=956:w=1080:h=8:color=0x0a0d14@0.95:t=fill,\
+                                      drawbox=x=0:y=958:w=1080:h=3:color=0x38bdf8@0.9:t=fill[divided]",
+                            cw_i, ch_i, x_top_wide, y_top_wide,
+                            cw_i, ch_i, x_top_wide, y_top_wide,
+                            cw_i, ch_i, x_top_solo, y_top_solo,
+                            cw_i, ch_i, x_bot_solo, y_bot_solo,
+                            cw_i, ch_i, x_bot_wide, y_bot_wide,
+                            cw_i, ch_i, x_bot_wide, y_bot_wide,
+                            a_wide_expr,
+                            a_solo_expr,
+                            b_wide_expr,
+                            b_react_expr,
+                        )
+                    } else {
+                        // Continuous 2-Person Wide Angle Split-Screen
+                        format!(
+                            "[0:v]crop={}:{}:{}:{},scale=1080:960[top];\
+                             [0:v]crop={}:{}:{}:{},scale=1080:960[bot];\
+                             [top][bot]vstack[stacked];\
+                             [stacked]drawbox=x=0:y=956:w=1080:h=8:color=0x0a0d14@0.95:t=fill,\
+                                      drawbox=x=0:y=958:w=1080:h=3:color=0x38bdf8@0.9:t=fill[divided]",
+                            cw_i, ch_i, x_top_wide, y_top_wide,
+                            cw_i, ch_i, x_bot_wide, y_bot_wide,
+                        )
+                    };
 
                     let pre_sub_stream = if effective_punch {
                         filter_graph = format!(
