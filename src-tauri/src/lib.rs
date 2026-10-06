@@ -634,12 +634,15 @@ async fn render_flat_clip_for_candidate(
                 }
                 let style = project.caption_style.as_deref().unwrap_or("hormozi-kinetic");
 
+                let is_split = mode.as_deref() == Some("podcast_split");
+
                 // Generate kinetic ASS subtitles
                 let ass_content = pro_editor::generate_kinetic_ass(
                     &normalized.words,
                     candidate.start_sec,
                     candidate.end_sec,
                     style,
+                    is_split,
                 );
                 let clip_ass_path = data_dir.join("projects").join(&project.id).join(format!("clip-{}.ass", candidate.id));
                 if std::fs::write(&clip_ass_path, ass_content).is_ok() {
@@ -652,6 +655,7 @@ async fn render_flat_clip_for_candidate(
                     candidate.end_sec,
                     cropped_width,
                     style,
+                    is_split,
                 );
                 if !drawtext.is_empty() {
                     drawtext_filters = Some(drawtext);
@@ -1249,6 +1253,7 @@ fn build_drawtext_filters(
     end_sec: f64,
     cropped_width: i64,
     caption_style: &str,
+    is_podcast_split: bool,
 ) -> String {
     let candidate_words: Vec<&TranscriptWord> = words
         .iter()
@@ -1336,78 +1341,82 @@ fn build_drawtext_filters(
             clean_text.clone()
         };
 
+        let y_default = if is_podcast_split { "(h-text_h)/2" } else { "h*0.72" };
+        let y_high = if is_podcast_split { "(h-text_h)/2" } else { "h*0.7" };
+        let y_classic = if is_podcast_split { "(h-text_h)/2" } else { "h*0.65" };
+
         let drawtext = match caption_style {
             "submagic-viral" => {
                 // Feature 3: Submagic style - high-visibility vibrant yellow with dark glass pillbox and emojis
                 format!(
-                    "drawtext={}text='{}':x=(w-text_w)/2:y=h*0.72:fontsize={}:fontcolor=0xFFE600:box=1:boxcolor=0x000000d0:boxborderw={}:shadowcolor=black@0.7:shadowx=2:shadowy=2:enable='between(t,{:.3},{:.3})'",
-                    font_option, display_text, fontsize, padding, start_rel, end_rel
+                    "drawtext={}text='{}':x=(w-text_w)/2:y={}:fontsize={}:fontcolor=0xFFE600:box=1:boxcolor=0x000000d0:boxborderw={}:shadowcolor=black@0.7:shadowx=2:shadowy=2:enable='between(t,{:.3},{:.3})'",
+                    font_option, display_text, y_default, fontsize, padding, start_rel, end_rel
                 )
             }
             "hormozi-punch" => {
                 // Feature 3: Hormozi punch - heavy black text on vibrant yellow pill with auto-emojis
                 format!(
-                    "drawtext={}text='{}':x=(w-text_w)/2:y=h*0.72:fontsize={}:fontcolor=black:box=1:boxcolor=0xFFE600f0:boxborderw={}:enable='between(t,{:.3},{:.3})'",
-                    font_option, display_text, fontsize, padding, start_rel, end_rel
+                    "drawtext={}text='{}':x=(w-text_w)/2:y={}:fontsize={}:fontcolor=black:box=1:boxcolor=0xFFE600f0:boxborderw={}:enable='between(t,{:.3},{:.3})'",
+                    font_option, display_text, y_default, fontsize, padding, start_rel, end_rel
                 )
             }
             "neon-glow" => {
                 // Feature 3: Cyberpunk neon cyan with dark shadow & auto-emojis
                 format!(
-                    "drawtext={}text='{}':x=(w-text_w)/2:y=h*0.7:fontsize={}:fontcolor=0x00FFFF:borderw=3:bordercolor=0x003366:shadowcolor=black@0.8:shadowx=3:shadowy=3:enable='between(t,{:.3},{:.3})'",
-                    font_option, display_text, fontsize, start_rel, end_rel
+                    "drawtext={}text='{}':x=(w-text_w)/2:y={}:fontsize={}:fontcolor=0x00FFFF:borderw=3:bordercolor=0x003366:shadowcolor=black@0.8:shadowx=3:shadowy=3:enable='between(t,{:.3},{:.3})'",
+                    font_option, display_text, y_high, fontsize, start_rel, end_rel
                 )
             }
             "classic-outline" => {
                 // Classic yellow text with a bold outline (CapCut style)
                 let borderw = ((fontsize as f64) * 0.1).clamp(2.0, 8.0).round() as i64;
                 format!(
-                    "drawtext={}text='{}':x=(w-text_w)/2:y=h*0.65:fontsize={}:fontcolor=yellow:borderw={}:bordercolor=black:enable='between(t,{:.3},{:.3})'",
-                    font_option, clean_text, fontsize, borderw, start_rel, end_rel
+                    "drawtext={}text='{}':x=(w-text_w)/2:y={}:fontsize={}:fontcolor=yellow:borderw={}:bordercolor=black:enable='between(t,{:.3},{:.3})'",
+                    font_option, clean_text, y_classic, fontsize, borderw, start_rel, end_rel
                 )
             }
             "minimal-shadow" => {
                 // Sleek white text with a soft drop shadow (Minimalist)
                 format!(
-                    "drawtext={}text='{}':x=(w-text_w)/2:y=h*0.7:fontsize={}:fontcolor=white:shadowcolor=black@0.5:shadowx=2:shadowy=2:enable='between(t,{:.3},{:.3})'",
-                    font_option, clean_text, fontsize, start_rel, end_rel
+                    "drawtext={}text='{}':x=(w-text_w)/2:y={}:fontsize={}:fontcolor=white:shadowcolor=black@0.5:shadowx=2:shadowy=2:enable='between(t,{:.3},{:.3})'",
+                    font_option, clean_text, y_high, fontsize, start_rel, end_rel
                 )
             }
             "vibrant-cyan" => {
                 // Modern Avenir Next look with clean cyan color and thin shadow
                 format!(
-                    "drawtext={}text='{}':x=(w-text_w)/2:y=h*0.7:fontsize={}:fontcolor=0x00FFFF:shadowcolor=black@0.6:shadowx=2:shadowy=2:enable='between(t,{:.3},{:.3})'",
-                    font_option, clean_text, fontsize, start_rel, end_rel
+                    "drawtext={}text='{}':x=(w-text_w)/2:y={}:fontsize={}:fontcolor=0x00FFFF:shadowcolor=black@0.6:shadowx=2:shadowy=2:enable='between(t,{:.3},{:.3})'",
+                    font_option, clean_text, y_high, fontsize, start_rel, end_rel
                 )
             }
             "vibrant-yellow-box" => {
                 // Vibrant black text inside a solid yellow background box (Motivational/TikTok style)
                 format!(
-                    "drawtext={}text='{}':x=(w-text_w)/2:y=h*0.72:fontsize={}:fontcolor=black:box=1:boxcolor=0xffff00e0:boxborderw={}:enable='between(t,{:.3},{:.3})'",
-                    font_option, clean_text, fontsize, padding, start_rel, end_rel
+                    "drawtext={}text='{}':x=(w-text_w)/2:y={}:fontsize={}:fontcolor=black:box=1:boxcolor=0xffff00e0:boxborderw={}:enable='between(t,{:.3},{:.3})'",
+                    font_option, clean_text, y_default, fontsize, padding, start_rel, end_rel
                 )
             }
             "vibrant-green" => {
                 // High-energy neon green text with outline & drop shadow (Hormozi style)
                 let borderw = ((fontsize as f64) * 0.08).clamp(1.5, 6.0).round() as i64;
                 format!(
-                    "drawtext={}text='{}':x=(w-text_w)/2:y=h*0.7:fontsize={}:fontcolor=0x39FF14:borderw={}:bordercolor=black:shadowcolor=black@0.6:shadowx=2:shadowy=2:enable='between(t,{:.3},{:.3})'",
-                    font_option, clean_text, fontsize, borderw, start_rel, end_rel
+                    "drawtext={}text='{}':x=(w-text_w)/2:y={}:fontsize={}:fontcolor=0x39FF14:borderw={}:bordercolor=black:shadowcolor=black@0.6:shadowx=2:shadowy=2:enable='between(t,{:.3},{:.3})'",
+                    font_option, clean_text, y_high, fontsize, borderw, start_rel, end_rel
                 )
             }
             "vibrant-red" => {
                 // Dramatic red text with outline & drop shadow (Gaming/Drama style)
                 let borderw = ((fontsize as f64) * 0.08).clamp(1.5, 6.0).round() as i64;
                 format!(
-                    "drawtext={}text='{}':x=(w-text_w)/2:y=h*0.7:fontsize={}:fontcolor=0xFF3B30:borderw={}:bordercolor=black:shadowcolor=black@0.6:shadowx=2:shadowy=2:enable='between(t,{:.3},{:.3})'",
-                    font_option, clean_text, fontsize, borderw, start_rel, end_rel
+                    "drawtext={}text='{}':x=(w-text_w)/2:y={}:fontsize={}:fontcolor=0xFF3B30:borderw={}:bordercolor=black:shadowcolor=black@0.6:shadowx=2:shadowy=2:enable='between(t,{:.3},{:.3})'",
+                    font_option, clean_text, y_high, fontsize, borderw, start_rel, end_rel
                 )
             }
             _ => {
                 // modern-box (Default): white text with clean box background
                 format!(
-                    "drawtext={}text='{}':x=(w-text_w)/2:y=h*0.72:fontsize={}:fontcolor=white:box=1:boxcolor=0x000000b0:boxborderw={}:enable='between(t,{:.3},{:.3})'",
-                    font_option, clean_text, fontsize, padding, start_rel, end_rel
+                    "drawtext={}text='{}':x=(w-text_w)/2:y={}:fontsize={}:fontcolor=white:box=1:boxcolor=0x000000b0:boxborderw={}:enable='between(t,{:.3},{:.3})'",
+                    font_option, clean_text, y_default, fontsize, padding, start_rel, end_rel
                 )
             }
         };
@@ -1439,7 +1448,9 @@ mod tests {
             },
         ];
 
-        let result = build_drawtext_filters(&words, 0.0, 5.0, 1080, "classic-outline");
+        let result = build_drawtext_filters(&words, 0.0, 5.0, 1080, "classic-outline", false);
+        let split_result = build_drawtext_filters(&words, 0.0, 5.0, 1080, "classic-outline", true);
+        assert!(split_result.contains("y=(h-text_h)/2"));
         assert!(!result.is_empty());
         assert!(result.contains("drawtext="));
         assert!(result.contains("text='HELLO WORLD'"));

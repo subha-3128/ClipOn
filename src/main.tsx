@@ -1412,7 +1412,7 @@ function App() {
                         >
                           <option value="smart_face_track">🤖 Smart Face-Tracking (Vision)</option>
                           <option value="vertical_crop">9:16 Center Crop</option>
-                          <option value="podcast_split">9:16 Podcast Split-Screen</option>
+                          <option value="podcast_split">🎙️ Smart Podcast Split (Dual-Face Tracked)</option>
                           <option value="punch_zoom">9:16 Retention Punch-Zoom</option>
                           <option value="original">16:9 Original</option>
                         </select>
@@ -2108,7 +2108,7 @@ function App() {
                     >
                       <option value="smart_face_track">🤖 Smart Face-Tracking (Apple Vision Neural Engine)</option>
                       <option value="vertical_crop">9:16 Center Crop (Standard 9:16)</option>
-                      <option value="podcast_split">9:16 Podcast Split-Screen (Host on top, Guest on bottom)</option>
+                      <option value="podcast_split">🎙️ Smart Podcast Split (Host on top, Guest on bottom, Dual-Face Tracked)</option>
                       <option value="punch_zoom">9:16 Retention Punch-Zoom (Attention cuts every 5.5s)</option>
                       <option value="original">16:9 Original</option>
                     </select>

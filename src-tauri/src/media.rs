@@ -130,8 +130,27 @@ pub fn extract_audio(source_path: &str, project_dir: &Path) -> Result<PathBuf> {
     Ok(output_path)
 }
 
-/// Detect face horizontal center X in normalized coords [0.0, 1.0] using Apple Vision.
-pub fn detect_face_center_x(source_path: &str, start_sec: f64, duration_sec: f64) -> f64 {
+#[allow(dead_code)]
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct PodcastFaceTracking {
+    pub top_center_x: f64,
+    pub top_center_y: f64,
+    pub bottom_center_x: f64,
+    pub bottom_center_y: f64,
+    pub two_faces_detected: bool,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct FaceTrackerResult {
+    pub avg_center_x: f64,
+    pub face_detected: bool,
+    pub width: Option<f64>,
+    pub height: Option<f64>,
+    pub podcast: Option<PodcastFaceTracking>,
+}
+
+pub fn detect_faces_full(source_path: &str, start_sec: f64, duration_sec: f64) -> FaceTrackerResult {
     let mut tracker_candidates = vec![
         "/Users/subhajitbepari/Desktop/AutoShorts/src-tauri/bin/clipon-face-tracker".to_string(),
         "/Applications/ClipOn.app/Contents/MacOS/clipon-face-tracker".to_string(),
@@ -164,16 +183,33 @@ pub fn detect_face_center_x(source_path: &str, start_sec: f64, duration_sec: f64
             .output()
         {
             if output.status.success() {
-                if let Ok(v) = serde_json::from_slice::<Value>(&output.stdout) {
-                    if let Some(center) = v.get("avg_center_x").and_then(Value::as_f64) {
-                        return center.clamp(0.20, 0.80);
-                    }
+                if let Ok(res) = serde_json::from_slice::<FaceTrackerResult>(&output.stdout) {
+                    return res;
                 }
             }
         }
     }
 
-    0.50
+    FaceTrackerResult {
+        avg_center_x: 0.50,
+        face_detected: false,
+        width: None,
+        height: None,
+        podcast: Some(PodcastFaceTracking {
+            top_center_x: 0.28,
+            top_center_y: 0.36,
+            bottom_center_x: 0.72,
+            bottom_center_y: 0.36,
+            two_faces_detected: false,
+        }),
+    }
+}
+
+/// Detect face horizontal center X in normalized coords [0.0, 1.0] using Apple Vision.
+pub fn detect_face_center_x(source_path: &str, start_sec: f64, duration_sec: f64) -> f64 {
+    detect_faces_full(source_path, start_sec, duration_sec)
+        .avg_center_x
+        .clamp(0.20, 0.80)
 }
 
 /// Detect silences longer than 0.40s using FFmpeg silencedetect.
@@ -295,8 +331,57 @@ pub fn render_flat_clip(
                     cmd.args(["-vf", &filter]);
                 }
                 "podcast_split" => {
-                    // Feature 1: Host & Guest Stacked Split-Screen for Podcasts & Interviews
-                    let mut filter_graph = "[0:v]crop=iw/2:ih:0:0,scale=1080:960[top];[0:v]crop=iw/2:ih:iw/2:0,scale=1080:960[bot];[top][bot]vstack[stacked]".to_string();
+                    // Smart Two-Person Face-Tracked Podcast Split-Screen
+                    let tracker_info = detect_faces_full(source_path, start_sec, duration_sec);
+                    let iw_f = probe.as_ref().and_then(|p| p.width).unwrap_or(1920) as f64;
+                    let ih_f = probe.as_ref().and_then(|p| p.height).unwrap_or(1080) as f64;
+
+                    // 9:8 aspect ratio box for 1080x960
+                    let mut cw = ((iw_f * 0.52).min(ih_f * 9.0 / 8.0) / 2.0).floor() * 2.0;
+                    let mut ch = ((cw * 8.0 / 9.0) / 2.0).floor() * 2.0;
+                    if ch > ih_f {
+                        ch = (ih_f / 2.0).floor() * 2.0;
+                        cw = ((ch * 9.0 / 8.0) / 2.0).floor() * 2.0;
+                    }
+                    let cw_i = cw as i64;
+                    let ch_i = ch as i64;
+                    let iw_i = iw_f as i64;
+                    let ih_i = ih_f as i64;
+
+                    let (top_x, top_y, bot_x, bot_y) = if let Some(ref pod) = tracker_info.podcast {
+                        (pod.top_center_x, pod.top_center_y, pod.bottom_center_x, pod.bottom_center_y)
+                    } else {
+                        (0.28, 0.36, 0.72, 0.36)
+                    };
+
+                    // Top speaker crop (Left / Host): centered on face horizontally, upper 36% headroom vertically
+                    let raw_x_top = ((top_x * iw_f) - (cw / 2.0)).round() as i64;
+                    let mut x_top = raw_x_top.clamp(0, (iw_i - cw_i).max(0));
+                    x_top -= x_top % 2;
+
+                    let raw_y_top = ((top_y * ih_f) - (ch * 0.36)).round() as i64;
+                    let mut y_top = raw_y_top.clamp(0, (ih_i - ch_i).max(0));
+                    y_top -= y_top % 2;
+
+                    // Bottom speaker crop (Right / Guest): centered on face horizontally, upper 36% headroom vertically
+                    let raw_x_bot = ((bot_x * iw_f) - (cw / 2.0)).round() as i64;
+                    let mut x_bot = raw_x_bot.clamp(0, (iw_i - cw_i).max(0));
+                    x_bot -= x_bot % 2;
+
+                    let raw_y_bot = ((bot_y * ih_f) - (ch * 0.36)).round() as i64;
+                    let mut y_bot = raw_y_bot.clamp(0, (ih_i - ch_i).max(0));
+                    y_bot -= y_bot % 2;
+
+                    let mut filter_graph = format!(
+                        "[0:v]crop={}:{}:{}:{},scale=1080:960[top];\
+                         [0:v]crop={}:{}:{}:{},scale=1080:960[bot];\
+                         [top][bot]vstack[stacked];\
+                         [stacked]drawbox=x=0:y=956:w=1080:h=8:color=0x0a0d14@0.95:t=fill,\
+                                  drawbox=x=0:y=958:w=1080:h=3:color=0x38bdf8@0.9:t=fill[divided]",
+                        cw_i, ch_i, x_top, y_top,
+                        cw_i, ch_i, x_bot, y_bot,
+                    );
+
                     if let Some(ass) = ass_subtitle_path {
                         if ass.exists() {
                             let escaped = ass
@@ -304,31 +389,31 @@ pub fn render_flat_clip(
                                 .replace('\\', "/")
                                 .replace(':', "\\:")
                                 .replace('\'', "'\\''");
-                            filter_graph = format!("{};[stacked]ass='{}'[v_sub]", filter_graph, escaped);
+                            filter_graph = format!("{};[divided]ass='{}'[v_sub]", filter_graph, escaped);
                             if let Some((ref v_jump, _)) = jump_cuts {
                                 filter_graph = format!("{};[v_sub]{}[v_out]", filter_graph, v_jump);
                             } else {
                                 filter_graph = format!("{};[v_sub]null[v_out]", filter_graph);
                             }
                         } else {
-                            filter_graph = format!("{};[stacked]null[v_out]", filter_graph);
+                            filter_graph = format!("{};[divided]null[v_out]", filter_graph);
                         }
                     } else if let Some(drawtext) = drawtext_filters {
                         if !drawtext.is_empty() {
-                            filter_graph = format!("{};[stacked]{}[v_draw]", filter_graph, drawtext);
+                            filter_graph = format!("{};[divided]{}[v_draw]", filter_graph, drawtext);
                             if let Some((ref v_jump, _)) = jump_cuts {
                                 filter_graph = format!("{};[v_draw]{}[v_out]", filter_graph, v_jump);
                             } else {
                                 filter_graph = format!("{};[v_draw]null[v_out]", filter_graph);
                             }
                         } else {
-                            filter_graph = format!("{};[stacked]null[v_out]", filter_graph);
+                            filter_graph = format!("{};[divided]null[v_out]", filter_graph);
                         }
                     } else {
                         if let Some((ref v_jump, _)) = jump_cuts {
-                            filter_graph = format!("{};[stacked]{}[v_out]", filter_graph, v_jump);
+                            filter_graph = format!("{};[divided]{}[v_out]", filter_graph, v_jump);
                         } else {
-                            filter_graph = format!("{};[stacked]null[v_out]", filter_graph);
+                            filter_graph = format!("{};[divided]null[v_out]", filter_graph);
                         }
                     }
                     cmd.args(["-filter_complex", &filter_graph, "-map", "[v_out]", "-map", "0:a?"]);
