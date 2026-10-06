@@ -45,7 +45,8 @@ import {
   Monitor,
   Activity,
   CheckCircle2,
-  Menu
+  Menu,
+  Users
 } from "lucide-react";
 import "./styles.css";
 
@@ -171,7 +172,8 @@ export type BusyState =
   | "clipCount"
   | "cut";
 
-export type ReframeMode = "vertical_crop" | "original";
+export type ReframeMode = "vertical_crop" | "podcast_split" | "original";
+export type AppSection = "shorts" | "podcast";
 export type SettingsTab = "ai" | "storage" | "export" | "system";
 
 // ===== Utility Helpers =====
@@ -290,13 +292,30 @@ function App() {
     return localStorage.getItem("clipon_studio_audio") !== "false";
   });
 
+  const [appSection, setAppSection] = useState<AppSection>(() => {
+    const saved = localStorage.getItem("clipon_app_section");
+    return saved === "podcast" ? "podcast" : "shorts";
+  });
+
   const [reframeMode, setReframeMode] = useState<ReframeMode>(() => {
     const saved = (localStorage.getItem("clipon_reframe_mode") || localStorage.getItem("autoshorts_reframe_mode")) as any;
-    if (saved === "original" || saved === "vertical_crop") {
+    if (saved === "podcast_split" || saved === "original" || saved === "vertical_crop") {
       return saved as ReframeMode;
     }
     return "vertical_crop";
   });
+
+  const handleSectionChange = (section: AppSection) => {
+    setAppSection(section);
+    localStorage.setItem("clipon_app_section", section);
+    if (section === "podcast") {
+      setReframeMode("podcast_split");
+      localStorage.setItem("clipon_reframe_mode", "podcast_split");
+    } else if (reframeMode === "podcast_split") {
+      setReframeMode("vertical_crop");
+      localStorage.setItem("clipon_reframe_mode", "vertical_crop");
+    }
+  };
 
   // Instagram Reels API State
   const [instagramProvider, setInstagramProvider] = useState<"graph_api" | "webhook">(() => {
@@ -1092,11 +1111,35 @@ function App() {
             </div>
           </div>
 
+          {/* Section Switcher: Shorts & Reels vs Podcast */}
+          <div className="sidebar-section-header">
+            <span>Studio Mode</span>
+          </div>
+          <div className="sidebar-mode-switcher">
+            <button
+              className={`sidebar-mode-btn ${appSection === "shorts" ? "active" : ""}`}
+              onClick={() => handleSectionChange("shorts")}
+              title="Shorts & Reels Studio: Single-speaker 9:16 vertical crop"
+            >
+              <Sparkles size={14} />
+              <span>Shorts & Reels</span>
+            </button>
+            <button
+              className={`sidebar-mode-btn podcast ${appSection === "podcast" ? "active" : ""}`}
+              onClick={() => handleSectionChange("podcast")}
+              title="Podcast Studio: 2-Person 9:16 split-screen for table recordings"
+            >
+              <Mic size={14} />
+              <span>Podcast (9:16)</span>
+              <span className="mode-pill-split">2-Face</span>
+            </button>
+          </div>
+
           {/* Quick Actions */}
           <div className="sidebar-actions">
             <button className="sidebar-action-btn primary" onClick={importMedia} disabled={busy !== "idle"}>
               {busy === "import" ? <Loader2 className="spin" size={15} /> : <FileVideo size={15} />}
-              Import Recording
+              {appSection === "podcast" ? "Import Podcast Video" : "Import Recording"}
             </button>
             <button
               className="sidebar-action-btn secondary"
@@ -1105,7 +1148,7 @@ function App() {
               title={!environment?.hasYtdlp ? "yt-dlp required" : "Import from YouTube"}
             >
               <Youtube size={15} />
-              Import YouTube
+              {appSection === "podcast" ? "Podcast YouTube URL" : "Import YouTube"}
             </button>
           </div>
 
@@ -1182,6 +1225,25 @@ function App() {
                 </div>
 
                 <div className="topbar-right">
+                  <div className="topbar-mode-toggle">
+                    <button
+                      className={`topbar-mode-tab ${appSection === "shorts" ? "active" : ""}`}
+                      onClick={() => handleSectionChange("shorts")}
+                      title="Switch to Shorts & Reels Studio"
+                    >
+                      <Sparkles size={12} />
+                      <span>Shorts & Reels</span>
+                    </button>
+                    <button
+                      className={`topbar-mode-tab podcast ${appSection === "podcast" ? "active" : ""}`}
+                      onClick={() => handleSectionChange("podcast")}
+                      title="Switch to Podcast 2-Person Split Studio"
+                    >
+                      <Mic size={12} />
+                      <span>Podcast Split</span>
+                    </button>
+                  </div>
+
                   <button
                     className="topbar-action-btn"
                     onClick={() => {
@@ -1355,6 +1417,44 @@ function App() {
 
                 {/* Right Panel: Viral Moments Studio */}
                 <section className="studio-panel moments-studio">
+                  {appSection === "podcast" && (
+                    <div className="podcast-studio-banner">
+                      <div className="podcast-banner-header">
+                        <div className="podcast-badge-icon">
+                          <Mic size={14} />
+                        </div>
+                        <div>
+                          <div className="podcast-banner-title">Podcast Split-Screen Mode (16:9 → 9:16)</div>
+                          <p className="podcast-banner-desc">
+                            Two-person table podcast reframing. Top section tracks Speaker 1 (Left), Bottom section tracks Speaker 2 (Right). Both speakers remain visible in their own sections throughout all cuts with synchronized captions.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="podcast-tracking-status-grid">
+                        <div className="tracking-status-item">
+                          <span className="dot dot-blue" />
+                          <span className="tracking-label">Top Section:</span>
+                          <span className="tracking-val">Speaker 1 (Left Table)</span>
+                        </div>
+                        <div className="tracking-status-item">
+                          <span className="dot dot-purple" />
+                          <span className="tracking-label">Bottom Section:</span>
+                          <span className="tracking-val">Speaker 2 (Right Table)</span>
+                        </div>
+                        <div className="tracking-status-item">
+                          <span className="dot dot-green" />
+                          <span className="tracking-label">Synchronization:</span>
+                          <span className="tracking-val">1:1 Original Timestamps</span>
+                        </div>
+                        <div className="tracking-status-item">
+                          <span className="dot dot-amber" />
+                          <span className="tracking-label">Captions:</span>
+                          <span className="tracking-val">Divider Seam-Aligned</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="panel-header">
                     <div>
                       <h3>Viral Moment Candidates</h3>
@@ -1426,6 +1526,7 @@ function App() {
                           title="Video Framing Aspect Ratio"
                         >
                           <option value="vertical_crop">Center Crop (9:16)</option>
+                          <option value="podcast_split">Podcast Split Screen (9:16 Dual-Person)</option>
                           <option value="original">Original Aspect Ratio</option>
                         </select>
                       </div>
@@ -1507,6 +1608,11 @@ function App() {
                                 {candidate.rationale.includes("High Audio Energy") && (
                                   <span className="moment-audio-energy-badge" title="High-Energy Audio Hook & Vocal Surge">
                                     ⚡ High Audio Energy
+                                  </span>
+                                )}
+                                {reframeMode === "podcast_split" && (
+                                  <span className="candidate-podcast-pill" title="9:16 Two-Person Table Split Screen">
+                                    <Users size={11} /> 2-Person Split
                                   </span>
                                 )}
                                 <span className="moment-duration-badge">
@@ -1671,13 +1777,17 @@ function App() {
             <div className="home-dashboard">
               <header className="home-header">
                 <div className="home-header-info">
-                  <h2>All Projects</h2>
-                  <p>Select a project below or import a new media file to get started.</p>
+                  <h2>{appSection === "podcast" ? "Podcast Studio (9:16 Split)" : "All Projects"}</h2>
+                  <p>
+                    {appSection === "podcast"
+                      ? "Transform 16:9 two-person table podcasts into 9:16 vertical split-screen clips for Instagram Reels."
+                      : "Select a project below or import a new media file to get started."}
+                  </p>
                 </div>
                 <div className="home-header-actions">
                   <button className="btn-minimal-primary" onClick={importMedia} disabled={busy !== "idle"}>
                     {busy === "import" ? <Loader2 className="spin" size={15} /> : <FileVideo size={15} />}
-                    Import Recording
+                    {appSection === "podcast" ? "Import Podcast Video" : "Import Recording"}
                   </button>
                   <button
                     className="btn-minimal-secondary"
@@ -1686,7 +1796,7 @@ function App() {
                     title={!environment?.hasYtdlp ? "yt-dlp required" : "Download a video from YouTube"}
                   >
                     <Youtube size={15} />
-                    Import from YouTube
+                    {appSection === "podcast" ? "Podcast YouTube URL" : "Import from YouTube"}
                   </button>
                 </div>
               </header>
@@ -2144,7 +2254,8 @@ function App() {
                       onChange={(e) => setReframeMode(e.target.value as ReframeMode)}
                     >
                       <option value="vertical_crop">1. Center Crop (Standard 9:16)</option>
-                      <option value="original">2. Original Aspect Ratio</option>
+                      <option value="podcast_split">2. Podcast Split Screen (Dual-Face Tracked 9:16)</option>
+                      <option value="original">3. Original Aspect Ratio</option>
                     </select>
                   </div>
 
@@ -2162,7 +2273,7 @@ function App() {
                         style={{ width: 16, height: 16, accentColor: "#a855f7", cursor: "pointer" }}
                       />
                       <label htmlFor="setting_punch_zoom" style={{ margin: 0, cursor: "pointer", fontSize: 13, color: "var(--text-secondary)" }}>
-                        Retention Punch Zoom Cuts (Punches 1.14x visual zoom every 5.5s to maintain viewer attention across Center Crop or Original)
+                        Retention Punch Zoom Cuts (Punches 1.14x visual zoom every 5.5s to maintain viewer attention across Center Crop, Podcast Split Screen, or Original)
                       </label>
                     </div>
                   </div>

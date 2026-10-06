@@ -638,12 +638,15 @@ async fn render_flat_clip_for_candidate(
                 }
                 let style = project.caption_style.as_deref().unwrap_or("hormozi-kinetic");
 
+                let is_split = mode.as_deref() == Some("podcast_split");
+
                 // Generate kinetic ASS subtitles
                 let ass_content = pro_editor::generate_kinetic_ass(
                     &normalized.words,
                     candidate.start_sec,
                     candidate.end_sec,
                     style,
+                    is_split,
                 );
                 let clip_ass_path = data_dir.join("projects").join(&project.id).join(format!("clip-{}.ass", candidate.id));
                 if std::fs::write(&clip_ass_path, ass_content).is_ok() {
@@ -656,6 +659,7 @@ async fn render_flat_clip_for_candidate(
                     candidate.end_sec,
                     cropped_width,
                     style,
+                    is_split,
                 );
                 if !drawtext.is_empty() {
                     drawtext_filters = Some(drawtext);
@@ -1257,6 +1261,7 @@ fn build_drawtext_filters(
     end_sec: f64,
     cropped_width: i64,
     caption_style: &str,
+    is_podcast_split: bool,
 ) -> String {
     let candidate_words: Vec<&TranscriptWord> = words
         .iter()
@@ -1344,9 +1349,9 @@ fn build_drawtext_filters(
             clean_text.clone()
         };
 
-        let y_default = "h*0.72";
-        let y_high = "h*0.7";
-        let y_classic = "h*0.65";
+        let y_default = if is_podcast_split { "(h-text_h)/2" } else { "h*0.72" };
+        let y_high = if is_podcast_split { "(h-text_h)/2" } else { "h*0.7" };
+        let y_classic = if is_podcast_split { "(h-text_h)/2" } else { "h*0.65" };
 
         let drawtext = match caption_style {
             "submagic-viral" => {
@@ -1451,7 +1456,9 @@ mod tests {
             },
         ];
 
-        let result = build_drawtext_filters(&words, 0.0, 5.0, 1080, "classic-outline");
+        let result = build_drawtext_filters(&words, 0.0, 5.0, 1080, "classic-outline", false);
+        let split_result = build_drawtext_filters(&words, 0.0, 5.0, 1080, "classic-outline", true);
+        assert!(split_result.contains("y=(h-text_h)/2"));
         assert!(!result.is_empty());
         assert!(result.contains("drawtext="));
         assert!(result.contains("text='HELLO WORLD'"));

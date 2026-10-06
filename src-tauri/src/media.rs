@@ -132,11 +132,22 @@ pub fn extract_audio(source_path: &str, project_dir: &Path) -> Result<PathBuf> {
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, serde::Deserialize)]
+pub struct PodcastFaceTracking {
+    pub person_a_x: f64,
+    pub person_a_y: f64,
+    pub person_b_x: f64,
+    pub person_b_y: f64,
+    pub two_persons_detected: bool,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct FaceTrackerResult {
     pub avg_center_x: f64,
     pub face_detected: bool,
     pub width: Option<f64>,
     pub height: Option<f64>,
+    pub podcast: Option<PodcastFaceTracking>,
 }
 
 pub fn detect_faces_full(source_path: &str, start_sec: f64, duration_sec: f64) -> FaceTrackerResult {
@@ -184,6 +195,13 @@ pub fn detect_faces_full(source_path: &str, start_sec: f64, duration_sec: f64) -
         face_detected: false,
         width: None,
         height: None,
+        podcast: Some(PodcastFaceTracking {
+            person_a_x: 0.28,
+            person_a_y: 0.38,
+            person_b_x: 0.72,
+            person_b_y: 0.38,
+            two_persons_detected: false,
+        }),
     }
 }
 
@@ -297,6 +315,91 @@ pub fn render_flat_clip(
                         filter = format!("{},{}", filter, v_jump);
                     }
                     cmd.args(["-vf", &filter]);
+                }
+                "podcast_split" => {
+                    // Two-Person Face-Tracked Podcast Split-Screen
+                    let tracker_info = detect_faces_full(source_path, start_sec, duration_sec);
+                    let iw_f = probe.as_ref().and_then(|p| p.width).unwrap_or(1920) as f64;
+                    let ih_f = probe.as_ref().and_then(|p| p.height).unwrap_or(1080) as f64;
+
+                    // 9:8 aspect ratio box for 1080x960
+                    let mut cw = ((iw_f * 0.52).min(ih_f * 9.0 / 8.0) / 2.0).floor() * 2.0;
+                    let mut ch = ((cw * 8.0 / 9.0) / 2.0).floor() * 2.0;
+                    if ch > ih_f {
+                        ch = (ih_f / 2.0).floor() * 2.0;
+                        cw = ((ch * 9.0 / 8.0) / 2.0).floor() * 2.0;
+                    }
+                    let cw_i = cw as i64;
+                    let ch_i = ch as i64;
+                    let iw_i = iw_f as i64;
+                    let ih_i = ih_f as i64;
+
+                    let pod = tracker_info.podcast.as_ref();
+                    let a_x = pod.map(|p| p.person_a_x).unwrap_or(0.28);
+                    let a_y = pod.map(|p| p.person_a_y).unwrap_or(0.38);
+                    let b_x = pod.map(|p| p.person_b_x).unwrap_or(0.72);
+                    let b_y = pod.map(|p| p.person_b_y).unwrap_or(0.38);
+
+                    let calc_crop = |cx: f64, cy: f64| -> (i64, i64) {
+                        let rx = ((cx * iw_f) - (cw / 2.0)).round() as i64;
+                        let mut x = rx.clamp(0, (iw_i - cw_i).max(0));
+                        x -= x % 2;
+                        let ry = ((cy * ih_f) - (ch * 0.38)).round() as i64;
+                        let mut y = ry.clamp(0, (ih_i - ch_i).max(0));
+                        y -= y % 2;
+                        (x, y)
+                    };
+
+                    let (x_a, y_a) = calc_crop(a_x, a_y);
+                    let (x_b, y_b) = calc_crop(b_x, b_y);
+
+                    let mut filter_graph = format!(
+                        "[0:v]crop={}:{}:{}:{},scale=1080:960[top];                         [0:v]crop={}:{}:{}:{},scale=1080:960[bot];                         [top][bot]vstack[stacked];                         [stacked]drawbox=x=0:y=956:w=1080:h=8:color=0x0a0d14@0.95:t=fill,                                  drawbox=x=0:y=958:w=1080:h=3:color=0x38bdf8@0.9:t=fill[divided]",
+                        cw_i, ch_i, x_a, y_a,
+                        cw_i, ch_i, x_b, y_b,
+                    );
+
+                    let pre_sub_stream = if effective_punch {
+                        filter_graph = format!(
+                            "{};[divided]{}[punched]",
+                            filter_graph,
+                            crate::pro_editor::build_punch_zoom_filter(1080, 1920)
+                        );
+                        "[punched]"
+                    } else {
+                        "[divided]"
+                    };
+
+                    let sub_out = if let Some(ass) = ass_subtitle_path {
+                        if ass.exists() {
+                            let escaped = ass
+                                .to_string_lossy()
+                                .replace('\\', "/")
+                                .replace(':', "\\:")
+                                .replace('\'', "'\\''");
+                            filter_graph = format!("{};{}ass='{}'[v_sub]", filter_graph, pre_sub_stream, escaped);
+                            "[v_sub]"
+                        } else {
+                            pre_sub_stream
+                        }
+                    } else if let Some(drawtext) = drawtext_filters {
+                        if !drawtext.is_empty() {
+                            filter_graph = format!("{};{}{}[v_draw]", filter_graph, pre_sub_stream, drawtext);
+                            "[v_draw]"
+                        } else {
+                            pre_sub_stream
+                        }
+                    } else {
+                        pre_sub_stream
+                    };
+
+                    if let Some((ref v_jump, _)) = jump_cuts {
+                        filter_graph = format!("{};{}{}[v_out]", filter_graph, sub_out, v_jump);
+                    } else {
+                        filter_graph = format!("{};{}null[v_out]", filter_graph, sub_out);
+                    }
+
+                    cmd.args(["-filter_complex", &filter_graph, "-map", "[v_out]", "-map", "0:a?"]);
                 }
                 "smart_face_track" => {
                     // Feature 5: Native Apple Vision Face Tracking Crop
