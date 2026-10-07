@@ -447,8 +447,296 @@ pub fn normalize_nvidia_per_frame_detections(
     normalized
 }
 
-/// Conversion Layer Step 2: Associates NVIDIA detections with visual Person identities
-/// Uses spatial keyframe matching, face ID track association, and audio diarization co-occurrence voting.
+/// Calculates 2D IoU (Intersection over Union) between two normalized [x, y, w, h] boxes
+pub fn compute_bounding_box_iou(box1: &[f64; 4], box2: &[f64; 4]) -> f64 {
+    let x1_min = box1[0];
+    let y1_min = box1[1];
+    let x1_max = box1[0] + box1[2];
+    let y1_max = box1[1] + box1[3];
+
+    let x2_min = box2[0];
+    let y2_min = box2[1];
+    let x2_max = box2[0] + box2[2];
+    let y2_max = box2[1] + box2[3];
+
+    let inter_xmin = x1_min.max(x2_min);
+    let inter_ymin = y1_min.max(y2_min);
+    let inter_xmax = x1_max.min(x2_max);
+    let inter_ymax = y1_max.min(y2_max);
+
+    let inter_w = (inter_xmax - inter_xmin).max(0.0);
+    let inter_h = (inter_ymax - inter_ymin).max(0.0);
+    let inter_area = inter_w * inter_h;
+
+    let area1 = (box1[2] * box1[3]).max(0.0);
+    let area2 = (box2[2] * box2[3]).max(0.0);
+    let union_area = area1 + area2 - inter_area;
+
+    if union_area <= 1e-6 {
+        0.0
+    } else {
+        (inter_area / union_area).clamp(0.0, 1.0)
+    }
+}
+
+/// Finds the nearest keyframe for a visual PersonTrack at timestamp t
+pub fn get_person_keyframe_at<'a>(
+    person: &'a crate::media::face_tracker::VisionPersonTrack,
+    t: f64,
+) -> Option<&'a crate::media::face_tracker::VisionKeyframe> {
+    person
+        .keyframes
+        .iter()
+        .min_by(|a, b| (a.t - t).abs().total_cmp(&(b.t - t).abs()))
+}
+
+/// Computes frame-level spatial affinity between a normalized detection and a ClipOn PersonTrack
+pub fn compute_detection_person_affinity(
+    det: &NormalizedFrameDetection,
+    person: &crate::media::face_tracker::VisionPersonTrack,
+) -> f64 {
+    let kf = match get_person_keyframe_at(person, det.absolute_timestamp_sec) {
+        Some(k) if k.visible && (k.t - det.absolute_timestamp_sec).abs() <= 1.2 => k,
+        _ => return 0.0,
+    };
+
+    let w = if kf.width > 0.01 { kf.width } else { 0.18 };
+    let h = if kf.height > 0.01 { kf.height } else { 0.24 };
+    let kf_box = [
+        (kf.x - w * 0.5).clamp(0.0, 1.0),
+        (kf.y - h * 0.5).clamp(0.0, 1.0),
+        w,
+        h,
+    ];
+
+    let iou = if let Some(ref det_box) = det.speaker_bbox {
+        compute_bounding_box_iou(det_box, &kf_box)
+    } else {
+        0.0
+    };
+
+    let center_dist = if let Some((cx, cy)) = det.bbox_center {
+        ((cx - kf.x).powi(2) + (cy - kf.y).powi(2)).sqrt()
+    } else if let Some(ref det_box) = det.speaker_bbox {
+        let det_cx = det_box[0] + det_box[2] * 0.5;
+        let det_cy = det_box[1] + det_box[3] * 0.5;
+        ((det_cx - kf.x).powi(2) + (det_cy - kf.y).powi(2)).sqrt()
+    } else {
+        1.0
+    };
+
+    if center_dist > 0.40 && iou < 0.05 {
+        0.0
+    } else {
+        let iou_weight = iou * 3.0;
+        let dist_weight = (1.0 - center_dist * 2.5).max(0.0);
+        iou_weight + dist_weight
+    }
+}
+
+/// Builds explicit track-level association from NVIDIA face IDs to ClipOn PersonTrack IDs
+/// Using bounding box IoU, temporal overlap aggregation, and optimal bipartite matching.
+pub fn associate_nvidia_faces_with_clipon_tracks(
+    normalized_detections: &[NormalizedFrameDetection],
+    tracked_people: &[crate::media::face_tracker::VisionPersonTrack],
+) -> HashMap<usize, usize> {
+    let mut nvidia_to_clipon: HashMap<usize, usize> = HashMap::new();
+    if normalized_detections.is_empty() {
+        return nvidia_to_clipon;
+    }
+
+    // Collect all distinct NVIDIA face IDs
+    let mut unique_nv_ids: Vec<usize> = Vec::new();
+    for det in normalized_detections {
+        if let Some(id) = det.raw_face_id {
+            if !unique_nv_ids.contains(&id) {
+                unique_nv_ids.push(id);
+            }
+        }
+    }
+
+    if unique_nv_ids.is_empty() {
+        return nvidia_to_clipon;
+    }
+
+    // If ClipOn has no tracked people (fallback mode)
+    if tracked_people.is_empty() {
+        // Calculate average center X for each NVIDIA face ID
+        let mut face_avg_x: Vec<(usize, f64)> = unique_nv_ids
+            .iter()
+            .map(|&nv_id| {
+                let centers: Vec<f64> = normalized_detections
+                    .iter()
+                    .filter(|d| d.raw_face_id == Some(nv_id))
+                    .filter_map(|d| d.bbox_center.map(|(cx, _)| cx))
+                    .collect();
+                let avg = if centers.is_empty() {
+                    0.5
+                } else {
+                    centers.iter().sum::<f64>() / centers.len() as f64
+                };
+                (nv_id, avg)
+            })
+            .collect();
+        // Sort left-to-right: leftmost becomes Person 1, next becomes Person 2, etc.
+        face_avg_x.sort_by(|a, b| a.1.total_cmp(&b.1));
+        for (idx, (nv_id, _)) in face_avg_x.iter().enumerate() {
+            nvidia_to_clipon.insert(*nv_id, idx + 1);
+        }
+        return nvidia_to_clipon;
+    }
+
+    // Compute cumulative temporal overlap & affinity matrix: A(nv_id, clipon_person_id)
+    let mut affinity_matrix: HashMap<(usize, usize), f64> = HashMap::new();
+
+    for &nv_id in &unique_nv_ids {
+        for person in tracked_people {
+            for det in normalized_detections {
+                if det.raw_face_id == Some(nv_id) {
+                    let aff = compute_detection_person_affinity(det, person);
+                    if aff > 0.05 {
+                        *affinity_matrix.entry((nv_id, person.id)).or_insert(0.0) += aff;
+                    }
+                }
+            }
+        }
+    }
+
+    // Solve optimal bipartite assignment
+    if unique_nv_ids.len() == 2 && tracked_people.len() >= 2 {
+        let f0 = unique_nv_ids[0];
+        let f1 = unique_nv_ids[1];
+        let p0 = tracked_people[0].id;
+        let p1 = tracked_people[1].id;
+
+        let score_a = affinity_matrix.get(&(f0, p0)).copied().unwrap_or(0.0)
+            + affinity_matrix.get(&(f1, p1)).copied().unwrap_or(0.0);
+        let score_b = affinity_matrix.get(&(f0, p1)).copied().unwrap_or(0.0)
+            + affinity_matrix.get(&(f1, p0)).copied().unwrap_or(0.0);
+
+        if score_a >= score_b {
+            nvidia_to_clipon.insert(f0, p0);
+            nvidia_to_clipon.insert(f1, p1);
+        } else {
+            nvidia_to_clipon.insert(f0, p1);
+            nvidia_to_clipon.insert(f1, p0);
+        }
+    } else {
+        // General N x M bipartite matching via greedy highest-affinity selection
+        let mut candidates: Vec<(usize, usize, f64)> = Vec::new();
+        for &nv_id in &unique_nv_ids {
+            for person in tracked_people {
+                let score = affinity_matrix.get(&(nv_id, person.id)).copied().unwrap_or(0.0);
+                if score > 0.0 {
+                    candidates.push((nv_id, person.id, score));
+                }
+            }
+        }
+        candidates.sort_by(|a, b| b.2.total_cmp(&a.2));
+
+        let mut assigned_nv: std::collections::HashSet<usize> = std::collections::HashSet::new();
+        let mut assigned_clipon: std::collections::HashSet<usize> = std::collections::HashSet::new();
+
+        for (nv_id, person_id, _) in candidates {
+            if !assigned_nv.contains(&nv_id) && !assigned_clipon.contains(&person_id) {
+                nvidia_to_clipon.insert(nv_id, person_id);
+                assigned_nv.insert(nv_id);
+                assigned_clipon.insert(person_id);
+            }
+        }
+
+        // For any remaining unassigned NVIDIA face IDs, fallback to spatial proximity
+        for &nv_id in &unique_nv_ids {
+            if !nvidia_to_clipon.contains_key(&nv_id) {
+                let centers: Vec<f64> = normalized_detections
+                    .iter()
+                    .filter(|d| d.raw_face_id == Some(nv_id))
+                    .filter_map(|d| d.bbox_center.map(|(cx, _)| cx))
+                    .collect();
+                let avg_cx = if centers.is_empty() {
+                    0.5
+                } else {
+                    centers.iter().sum::<f64>() / centers.len() as f64
+                };
+
+                let best_person = tracked_people
+                    .iter()
+                    .min_by(|a, b| {
+                        let avg_a = a
+                            .keyframes
+                            .iter()
+                            .map(|k| k.x)
+                            .sum::<f64>()
+                            / a.keyframes.len().max(1) as f64;
+                        let avg_b = b
+                            .keyframes
+                            .iter()
+                            .map(|k| k.x)
+                            .sum::<f64>()
+                            / b.keyframes.len().max(1) as f64;
+                        (avg_a - avg_cx).abs().total_cmp(&(avg_b - avg_cx).abs())
+                    })
+                    .map(|p| p.id)
+                    .unwrap_or(tracked_people[0].id);
+
+                nvidia_to_clipon.insert(nv_id, best_person);
+            }
+        }
+    }
+
+    nvidia_to_clipon
+}
+
+/// Fallback matching when detection lacks raw_face_id or has unmatched track
+fn match_detection_to_clipon_person(
+    det: &NormalizedFrameDetection,
+    tracked_people: &[crate::media::face_tracker::VisionPersonTrack],
+) -> usize {
+    if !tracked_people.is_empty() {
+        let mut best_affinity = 0.0;
+        let mut best_id = None;
+
+        for person in tracked_people {
+            let aff = compute_detection_person_affinity(det, person);
+            if aff > best_affinity {
+                best_affinity = aff;
+                best_id = Some(person.id);
+            }
+        }
+
+        if let Some(id) = best_id {
+            if best_affinity > 0.15 {
+                return id;
+            }
+        }
+
+        // Horizontal center fallback
+        if let Some((cx, _)) = det.bbox_center {
+            let closest = tracked_people.iter().min_by(|a, b| {
+                let avg_a = a.keyframes.iter().map(|k| k.x).sum::<f64>()
+                    / a.keyframes.len().max(1) as f64;
+                let avg_b = b.keyframes.iter().map(|k| k.x).sum::<f64>()
+                    / b.keyframes.len().max(1) as f64;
+                (avg_a - cx).abs().total_cmp(&(avg_b - cx).abs())
+            });
+            if let Some(p) = closest {
+                return p.id;
+            }
+        }
+
+        tracked_people[0].id
+    } else {
+        // Fallback when no visual tracks exist
+        if let Some((cx, _)) = det.bbox_center {
+            if cx < 0.50 { 1 } else { 2 }
+        } else {
+            1
+        }
+    }
+}
+
+/// Conversion Layer Step 2: Associates NVIDIA detections with ClipOn visual PersonTrack identities
+/// Uses explicit track-level bounding box IoU, temporal overlap aggregation, and optimal bipartite matching.
 pub fn associate_faces_and_persons(
     normalized_detections: &[NormalizedFrameDetection],
     face_tracker_opt: Option<&FaceTrackerResult>,
@@ -459,49 +747,26 @@ pub fn associate_faces_and_persons(
 
     let tracked_people = face_tracker_opt.map(|f| f.people()).unwrap_or(&[]);
 
-    // 1. Initial person mapping per detection
+    // 1. Build explicit Track-Level Association from NVIDIA face IDs to ClipOn PersonTracks
+    let nvidia_to_clipon = associate_nvidia_faces_with_clipon_tracks(
+        normalized_detections,
+        tracked_people,
+    );
+
+    // 2. Map detections to resolved ClipOn person IDs and collect diarization co-occurrence votes
     let mut initial_associated: Vec<(usize, &NormalizedFrameDetection)> = Vec::new();
     let mut co_occurrence_votes: HashMap<(String, usize), f64> = HashMap::new();
 
     for det in normalized_detections {
-        let mut matched_person_id: Option<usize> = None;
-
-        // Try spatial matching against FaceTrackerResult keyframes
-        if !tracked_people.is_empty() {
-            if let Some((cx, _)) = det.bbox_center {
-                let mut best_dist = f64::MAX;
-                let mut best_id = None;
-                for person in tracked_people {
-                    if let Some(kf) = person
-                        .keyframes
-                        .iter()
-                        .min_by(|a, b| {
-                            (a.t - det.absolute_timestamp_sec)
-                                .abs()
-                                .total_cmp(&(b.t - det.absolute_timestamp_sec).abs())
-                        })
-                    {
-                        let dist = (kf.x - cx).abs();
-                        if dist < 0.25 && dist < best_dist {
-                            best_dist = dist;
-                            best_id = Some(person.id);
-                        }
-                    }
-                }
-                matched_person_id = best_id;
-            }
-        }
-
-        // Fallback to raw_face_id or spatial horizontal clustering
-        let resolved_person_id = matched_person_id.unwrap_or_else(|| {
-            if let Some(rf_id) = det.raw_face_id {
-                if rf_id == 0 { 1 } else { rf_id }
-            } else if let Some((cx, _)) = det.bbox_center {
-                if cx < 0.50 { 1 } else { 2 }
+        let resolved_person_id = if let Some(rf_id) = det.raw_face_id {
+            if let Some(&p_id) = nvidia_to_clipon.get(&rf_id) {
+                p_id
             } else {
-                1
+                match_detection_to_clipon_person(det, tracked_people)
             }
-        });
+        } else {
+            match_detection_to_clipon_person(det, tracked_people)
+        };
 
         if det.is_speaking {
             if let Some(ref spk) = det.diarized_speaker_id {
@@ -514,7 +779,7 @@ pub fn associate_faces_and_persons(
         initial_associated.push((resolved_person_id, det));
     }
 
-    // 2. Synthesize audio diarization -> person mapping from co-occurrence votes
+    // 3. Synthesize audio diarization -> person mapping from co-occurrence votes
     let mut speaker_person_mapping: HashMap<String, usize> = HashMap::new();
     let mut speaker_best_votes: HashMap<String, (usize, f64)> = HashMap::new();
 
@@ -528,12 +793,12 @@ pub fn associate_faces_and_persons(
         speaker_person_mapping.insert(spk, pid);
     }
 
-    // 3. Second pass: Backfill and align detections with audio diarization mapping
+    // 4. Align detections with resolved audio diarization where spatial cues were ambiguous
     let mut final_detections = Vec::new();
     for (init_pid, det) in initial_associated {
         let pid = if let Some(ref spk) = det.diarized_speaker_id {
             if let Some(&voted_pid) = speaker_person_mapping.get(spk) {
-                if det.bbox_center.is_none() {
+                if det.speaker_bbox.is_none() && det.bbox_center.is_none() {
                     voted_pid
                 } else {
                     init_pid
@@ -771,17 +1036,26 @@ pub fn aggregate_nvidia_frames_to_timeline(
     convert_nvidia_frames_to_timeline(&raw, start_sec, duration_sec, None)
 }
 
-impl ActiveSpeakerDetector for NvidiaAsdDetector {
-    fn name(&self) -> &str {
-        "nvidia_api"
-    }
+/// Backward compatibility entry point with FaceTracker fusion
+pub fn aggregate_nvidia_frames_to_timeline_with_faces(
+    frames: &[NvidiaPerFrameSpeaker],
+    start_sec: f64,
+    duration_sec: f64,
+    face_tracker_opt: Option<&FaceTrackerResult>,
+) -> ActiveSpeakerTimeline {
+    let raw: Vec<NvidiaRawFrame> = frames.iter().cloned().map(Into::into).collect();
+    convert_nvidia_frames_to_timeline(&raw, start_sec, duration_sec, face_tracker_opt)
+}
 
-    async fn detect_active_speakers(
+impl NvidiaAsdDetector {
+    /// Detects active speakers via NVIDIA ASD NIM / NVCF with full visual FaceTracker fusion
+    pub async fn detect_active_speakers_with_faces(
         &self,
         source_path: &str,
         start_sec: f64,
         duration_sec: f64,
         transcript: Option<&NormalizedTranscript>,
+        face_tracker_opt: Option<&FaceTrackerResult>,
     ) -> Result<ActiveSpeakerTimeline> {
         let function_id = self.function_id.as_deref().ok_or_else(|| {
             anyhow!(
@@ -927,8 +1201,37 @@ impl ActiveSpeakerDetector for NvidiaAsdDetector {
             .context("Reading NVIDIA ASD response body")?;
 
         let raw_frames = parse_nvidia_asd_response(&response_text)?;
-        let timeline = convert_nvidia_frames_to_timeline(&raw_frames, start_sec, duration_sec, None);
+        let timeline = convert_nvidia_frames_to_timeline(
+            &raw_frames,
+            start_sec,
+            duration_sec,
+            face_tracker_opt,
+        );
         Ok(timeline)
+    }
+}
+
+impl ActiveSpeakerDetector for NvidiaAsdDetector {
+    fn name(&self) -> &str {
+        "nvidia_api"
+    }
+
+    async fn detect_active_speakers(
+        &self,
+        source_path: &str,
+        start_sec: f64,
+        duration_sec: f64,
+        transcript: Option<&NormalizedTranscript>,
+    ) -> Result<ActiveSpeakerTimeline> {
+        let face_result = FaceTracker::analyze(source_path, start_sec, duration_sec);
+        self.detect_active_speakers_with_faces(
+            source_path,
+            start_sec,
+            duration_sec,
+            transcript,
+            Some(&face_result),
+        )
+        .await
     }
 }
 
@@ -1216,19 +1519,23 @@ pub fn compute_temporal_speaker_person_mapping(
     (best_mapping, confidence)
 }
 
-impl ActiveSpeakerDetector for LocalFusionDetector {
-    fn name(&self) -> &str {
-        "local_vision_fusion"
-    }
-
-    async fn detect_active_speakers(
+impl LocalFusionDetector {
+    pub async fn detect_active_speakers_with_faces(
         &self,
         source_path: &str,
         start_sec: f64,
         duration_sec: f64,
         transcript: Option<&NormalizedTranscript>,
+        face_tracker_opt: Option<&FaceTrackerResult>,
     ) -> Result<ActiveSpeakerTimeline> {
-        let vision_result = FaceTracker::analyze(source_path, start_sec, duration_sec);
+        let local_vision;
+        let vision_result = match face_tracker_opt {
+            Some(v) => v,
+            None => {
+                local_vision = FaceTracker::analyze(source_path, start_sec, duration_sec);
+                &local_vision
+            }
+        };
         let people = vision_result.people();
 
         let (speaker_mapping, confidence) = if let Some(t) = transcript {
@@ -1309,6 +1616,29 @@ impl ActiveSpeakerDetector for LocalFusionDetector {
     }
 }
 
+impl ActiveSpeakerDetector for LocalFusionDetector {
+    fn name(&self) -> &str {
+        "local_vision_fusion"
+    }
+
+    async fn detect_active_speakers(
+        &self,
+        source_path: &str,
+        start_sec: f64,
+        duration_sec: f64,
+        transcript: Option<&NormalizedTranscript>,
+    ) -> Result<ActiveSpeakerTimeline> {
+        self.detect_active_speakers_with_faces(
+            source_path,
+            start_sec,
+            duration_sec,
+            transcript,
+            None,
+        )
+        .await
+    }
+}
+
 // =========================================================================
 // 4. PERSISTENT CACHE & UNIFIED PIPELINE DISPATCHER
 // =========================================================================
@@ -1334,10 +1664,19 @@ pub async fn get_or_compute_active_speaker_timeline(
         return cached;
     }
 
-    // 2. Attempt primary NVIDIA API Active Speaker Detection
+    // 2. Obtain FaceTracker visual tracking for ClipOn PersonTrack association
+    let face_result = FaceTracker::analyze(source_path, start_sec, duration_sec);
+
+    // 3. Attempt primary NVIDIA API Active Speaker Detection with FaceTracker fusion
     let timeline_res = if let Ok(nvidia_detector) = NvidiaAsdDetector::try_new() {
         match nvidia_detector
-            .detect_active_speakers(source_path, start_sec, duration_sec, transcript)
+            .detect_active_speakers_with_faces(
+                source_path,
+                start_sec,
+                duration_sec,
+                transcript,
+                Some(&face_result),
+            )
             .await
         {
             Ok(timeline) => Some(timeline),
@@ -1353,19 +1692,25 @@ pub async fn get_or_compute_active_speaker_timeline(
         None
     };
 
-    // 3. Fallback to Local Multimodal Vision-Audio Fusion
+    // 4. Fallback to Local Multimodal Vision-Audio Fusion
     let final_timeline = match timeline_res {
         Some(t) => t,
         None => {
             let local_detector = LocalFusionDetector::new();
             local_detector
-                .detect_active_speakers(source_path, start_sec, duration_sec, transcript)
+                .detect_active_speakers_with_faces(
+                    source_path,
+                    start_sec,
+                    duration_sec,
+                    transcript,
+                    Some(&face_result),
+                )
                 .await
                 .unwrap_or_default()
         }
     };
 
-    // 4. Cache validated active-speaker timeline
+    // 5. Cache validated active-speaker timeline
     let _ = cache.put(&cache_key, "active_speaker", &final_timeline);
 
     final_timeline
@@ -1391,8 +1736,15 @@ pub fn generate_speaker_aware_keyframes(
 
     let people = face_result.people();
 
-    let get_person_center = |pid: usize| -> f64 {
+    let get_person_center_at = |pid: usize, t_abs: f64| -> f64 {
         if let Some(person) = people.iter().find(|p| p.id == pid) {
+            if let Some(kf) = person
+                .keyframes
+                .iter()
+                .min_by(|a, b| (a.t - t_abs).abs().total_cmp(&(b.t - t_abs).abs()))
+            {
+                return kf.x.clamp(0.20, 0.80);
+            }
             if let Some(last_kf) = person.keyframes.last() {
                 return last_kf.x.clamp(0.20, 0.80);
             }
@@ -1476,12 +1828,13 @@ pub fn generate_speaker_aware_keyframes(
     let transition_duration = 0.50f64;
 
     for (i, seg) in held_segments.iter().enumerate() {
+        let seg_mid_t = clip_start + (seg.start + seg.end) * 0.5;
         let target_x = if seg.person_id == 0 {
-            let x1 = get_person_center(1);
-            let x2 = get_person_center(2);
+            let x1 = get_person_center_at(1, seg_mid_t);
+            let x2 = get_person_center_at(2, seg_mid_t);
             ((x1 + x2) / 2.0).clamp(0.25, 0.75)
         } else {
-            get_person_center(seg.person_id)
+            get_person_center_at(seg.person_id, seg_mid_t)
         };
 
         if i == 0 {
@@ -2098,5 +2451,201 @@ mod tests {
         assert_eq!(mapping.get("S1"), Some(&1));
         assert_eq!(mapping.get("S2"), Some(&2));
         assert!(confidence >= 0.85);
+    }
+
+    #[test]
+    fn test_compute_bounding_box_iou_precision() {
+        let b1 = [0.10, 0.10, 0.20, 0.20]; // area = 0.04
+        let b2 = [0.10, 0.10, 0.20, 0.20]; // identical
+        assert!((compute_bounding_box_iou(&b1, &b2) - 1.0).abs() < 1e-4);
+
+        let b3 = [0.50, 0.50, 0.20, 0.20]; // disjoint
+        assert_eq!(compute_bounding_box_iou(&b1, &b3), 0.0);
+
+        let b4 = [0.20, 0.10, 0.20, 0.20]; // 50% horizontal overlap
+        // inter_w = 0.10, inter_h = 0.20, inter = 0.02
+        // area1 = 0.04, area2 = 0.04, union = 0.08 - 0.02 = 0.06
+        // iou = 0.02 / 0.06 = 1/3
+        let iou = compute_bounding_box_iou(&b1, &b4);
+        assert!((iou - (1.0 / 3.0)).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_nvidia_face_id_to_clipon_persontrack_fusion() {
+        use crate::media::face_tracker::{VisionKeyframe, VisionPersonTrack, VisionTrackingPayload};
+
+        // ClipOn internal PersonTracks:
+        // Person 1 (left): x = 0.26, y = 0.35, width = 0.18, height = 0.22
+        // Person 2 (right): x = 0.74, y = 0.35, width = 0.18, height = 0.22
+        let face_tracker_result = FaceTrackerResult {
+            avg_center_x: 0.50,
+            face_detected: true,
+            width: Some(1920.0),
+            height: Some(1080.0),
+            podcast: Some(VisionTrackingPayload {
+                two_faces_detected: true,
+                top_center_x: None,
+                top_center_y: None,
+                bottom_center_x: None,
+                bottom_center_y: None,
+                people: vec![
+                    VisionPersonTrack {
+                        id: 1,
+                        name: "Person 1 (Left)".to_string(),
+                        keyframes: vec![
+                            VisionKeyframe {
+                                t: 0.0,
+                                x: 0.26,
+                                y: 0.35,
+                                width: 0.18,
+                                height: 0.22,
+                                confidence: 1.0,
+                                visible: true,
+                                state: None,
+                            },
+                            VisionKeyframe {
+                                t: 2.0,
+                                x: 0.26,
+                                y: 0.35,
+                                width: 0.18,
+                                height: 0.22,
+                                confidence: 1.0,
+                                visible: true,
+                                state: None,
+                            },
+                        ],
+                    },
+                    VisionPersonTrack {
+                        id: 2,
+                        name: "Person 2 (Right)".to_string(),
+                        keyframes: vec![
+                            VisionKeyframe {
+                                t: 0.0,
+                                x: 0.74,
+                                y: 0.35,
+                                width: 0.18,
+                                height: 0.22,
+                                confidence: 1.0,
+                                visible: true,
+                                state: None,
+                            },
+                            VisionKeyframe {
+                                t: 2.0,
+                                x: 0.74,
+                                y: 0.35,
+                                width: 0.18,
+                                height: 0.22,
+                                confidence: 1.0,
+                                visible: true,
+                                state: None,
+                            },
+                        ],
+                    },
+                ],
+            }),
+        };
+
+        // NVIDIA ASD NIM emits arbitrary face IDs:
+        // face_id = 888 (located on left: bbox [0.18, 0.24, 0.16, 0.22], center 0.26)
+        // face_id = 999 (located on right: bbox [0.66, 0.24, 0.16, 0.22], center 0.74)
+        let detections = vec![
+            NormalizedFrameDetection {
+                timestamp_sec: 0.5,
+                absolute_timestamp_sec: 0.5,
+                speaker_bbox: Some([0.18, 0.24, 0.16, 0.22]),
+                bbox_center: Some((0.26, 0.35)),
+                raw_face_id: Some(888),
+                diarized_speaker_id: Some("SPK_LEFT".to_string()),
+                is_speaking: true,
+                confidence: 0.95,
+            },
+            NormalizedFrameDetection {
+                timestamp_sec: 0.5,
+                absolute_timestamp_sec: 0.5,
+                speaker_bbox: Some([0.66, 0.24, 0.16, 0.22]),
+                bbox_center: Some((0.74, 0.35)),
+                raw_face_id: Some(999),
+                diarized_speaker_id: Some("SPK_RIGHT".to_string()),
+                is_speaking: false,
+                confidence: 0.93,
+            },
+            NormalizedFrameDetection {
+                timestamp_sec: 1.0,
+                absolute_timestamp_sec: 1.0,
+                speaker_bbox: Some([0.18, 0.24, 0.16, 0.22]),
+                bbox_center: Some((0.26, 0.35)),
+                raw_face_id: Some(888),
+                diarized_speaker_id: Some("SPK_LEFT".to_string()),
+                is_speaking: true,
+                confidence: 0.96,
+            },
+            NormalizedFrameDetection {
+                timestamp_sec: 1.5,
+                absolute_timestamp_sec: 1.5,
+                speaker_bbox: Some([0.66, 0.24, 0.16, 0.22]),
+                bbox_center: Some((0.74, 0.35)),
+                raw_face_id: Some(999),
+                diarized_speaker_id: Some("SPK_RIGHT".to_string()),
+                is_speaking: true,
+                confidence: 0.94,
+            },
+        ];
+
+        // 1. Run Bipartite Fusion Layer
+        let associated = associate_faces_and_persons(&detections, Some(&face_tracker_result));
+        assert_eq!(associated.detections.len(), 4);
+
+        // Verification: NVIDIA face_id 888 is explicitly mapped to ClipOn Person 1!
+        assert_eq!(associated.detections[0].person_id, 1);
+        assert_eq!(associated.detections[2].person_id, 1);
+
+        // Verification: NVIDIA face_id 999 is explicitly mapped to ClipOn Person 2!
+        assert_eq!(associated.detections[1].person_id, 2);
+        assert_eq!(associated.detections[3].person_id, 2);
+
+        // Audio diarization mapping is also aligned
+        assert_eq!(associated.speaker_person_mapping.get("SPK_LEFT"), Some(&1));
+        assert_eq!(associated.speaker_person_mapping.get("SPK_RIGHT"), Some(&2));
+
+        // 2. Build segments and verify end-to-end timeline conversion
+        let segments = smooth_and_build_active_speaker_segments(
+            &associated.detections,
+            0.0,
+            2.0,
+        );
+        assert!(!segments.is_empty());
+        assert_eq!(segments[0].person_id, 1);
+
+        // 3. Verify keyframe generation accurately targets Person 1 and Person 2
+        let timeline = ActiveSpeakerTimeline {
+            segments: vec![
+                ActiveSpeakerSegment {
+                    start: 0.0,
+                    end: 3.0,
+                    person_id: 1, // Mapped from NVIDIA 888
+                    confidence: 0.95,
+                    speaker_label: Some("SPK_LEFT".to_string()),
+                },
+                ActiveSpeakerSegment {
+                    start: 3.0,
+                    end: 6.0,
+                    person_id: 2, // Mapped from NVIDIA 999
+                    confidence: 0.94,
+                    speaker_label: Some("SPK_RIGHT".to_string()),
+                },
+            ],
+            provider: "nvidia_api".to_string(),
+            source_duration: 6.0,
+            speaker_person_mapping: associated.speaker_person_mapping,
+            confidence: 0.95,
+        };
+
+        let keyframes = generate_speaker_aware_keyframes(&timeline, &face_tracker_result, 0.0, 6.0);
+        assert!(!keyframes.is_empty());
+        // First keyframe centers on Person 1 (x ~ 0.26)
+        assert!((keyframes[0].x - 0.26).abs() < 0.05);
+        // Final keyframe centers on Person 2 (x ~ 0.74)
+        let last_kf = keyframes.last().unwrap();
+        assert!((last_kf.x - 0.74).abs() < 0.05);
     }
 }

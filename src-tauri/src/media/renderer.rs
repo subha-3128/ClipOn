@@ -172,7 +172,7 @@ pub fn execute_render_plan(plan: &RenderPlan) -> Result<PathBuf> {
                         &plan.source,
                         0.0,
                         probe.duration_sec.unwrap_or(duration_sec),
-                        "active_speaker_v2",
+                        "active_speaker_v3",
                         "asd_nim_fusion",
                         "primary_nvidia",
                     );
