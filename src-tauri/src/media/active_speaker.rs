@@ -945,6 +945,277 @@ impl LocalFusionDetector {
     }
 }
 
+/// Measures visual mouth/facial motion energy for a person during a speech interval using frame differences.
+/// Samples a short window of low-res grayscale frames to compute inter-frame variance in the mouth bounding box.
+pub fn measure_mouth_activity_motion(
+    source_path: &str,
+    sample_start: f64,
+    sample_duration: f64,
+    person_keyframe: Option<&crate::media::face_tracker::VisionKeyframe>,
+) -> f64 {
+    let kf = match person_keyframe {
+        Some(k) if k.visible && k.width > 0.02 && k.height > 0.02 => k,
+        _ => return 0.0,
+    };
+
+    let ffmpeg_bin = resolve_binary("ffmpeg");
+    let mut cmd = Command::new(&ffmpeg_bin);
+    cmd.arg("-nostdin");
+    cmd.args(["-y", "-ss", &format!("{sample_start:.3}"), "-i", source_path]);
+    cmd.args([
+        "-t",
+        &format!("{sample_duration:.3}"),
+        "-vf",
+        "fps=10,scale=320:180",
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "gray",
+        "pipe:1",
+    ]);
+
+    let output = match cmd.output() {
+        Ok(o) if o.status.success() && !o.stdout.is_empty() => o.stdout,
+        _ => return 0.0,
+    };
+
+    let frame_size = 320 * 180;
+    let num_frames = output.len() / frame_size;
+    if num_frames < 2 {
+        return 0.0;
+    }
+
+    // In Apple Vision face tracker: kf.x and kf.y are center coordinates normalized in [0.0, 1.0]
+    let face_w = kf.width.clamp(0.04, 0.70);
+    let face_h = kf.height.clamp(0.04, 0.70);
+    let face_left = (kf.x - face_w * 0.5).clamp(0.0, 1.0);
+    let face_top = (kf.y - face_h * 0.5).clamp(0.0, 1.0);
+
+    // Mouth region is in the lower 40% of the face, horizontally centered within the face
+    let mouth_x1 = ((face_left + face_w * 0.20) * 320.0).clamp(0.0, 319.0) as usize;
+    let mouth_x2 = ((face_left + face_w * 0.80) * 320.0).clamp(0.0, 319.0) as usize;
+    let mouth_y1 = ((face_top + face_h * 0.55) * 180.0).clamp(0.0, 179.0) as usize;
+    let mouth_y2 = ((face_top + face_h * 0.95) * 180.0).clamp(0.0, 179.0) as usize;
+
+    if mouth_x2 <= mouth_x1 || mouth_y2 <= mouth_y1 {
+        return 0.0;
+    }
+
+    let mut total_diff = 0.0f64;
+    let mut pixel_count = 0usize;
+
+    for f in 1..num_frames {
+        let prev_frame = &output[(f - 1) * frame_size..f * frame_size];
+        let curr_frame = &output[f * frame_size..(f + 1) * frame_size];
+
+        for y in mouth_y1..mouth_y2 {
+            let row_offset = y * 320;
+            for x in mouth_x1..mouth_x2 {
+                let idx = row_offset + x;
+                let diff = (curr_frame[idx] as f64 - prev_frame[idx] as f64).abs();
+                total_diff += diff;
+                pixel_count += 1;
+            }
+        }
+    }
+
+    if pixel_count == 0 {
+        0.0
+    } else {
+        total_diff / pixel_count as f64
+    }
+}
+
+/// Computes speaker ↔ person association using true temporal evidence:
+/// 1. Audio speaker timeline (exact speech intervals for each speaker)
+/// 2. Visible face tracks (who is on screen during each speech interval)
+/// 3. Mouth/lip activity motion (who is moving their mouth when the audio is playing)
+/// 4. Temporal consistency (bipartite optimal matching)
+pub fn compute_temporal_speaker_person_mapping(
+    source_path: &str,
+    start_sec: f64,
+    duration_sec: f64,
+    transcript: &NormalizedTranscript,
+    people: &[crate::media::face_tracker::VisionPersonTrack],
+) -> (HashMap<String, usize>, f64) {
+    if people.is_empty() {
+        return (HashMap::new(), 0.50);
+    }
+
+    if people.len() == 1 {
+        let mut mapping = HashMap::new();
+        for seg in &transcript.segments {
+            if let Some(ref spk) = seg.speaker {
+                mapping.insert(spk.clone(), people[0].id);
+            }
+        }
+        return (mapping, 0.92);
+    }
+
+    // Collect all relevant speech intervals per speaker
+    let mut speaker_intervals: HashMap<String, Vec<(f64, f64)>> = HashMap::new();
+    for seg in &transcript.segments {
+        if seg.end >= start_sec && seg.start <= (start_sec + duration_sec) {
+            if let Some(ref spk) = seg.speaker {
+                let s = seg.start.max(start_sec);
+                let e = seg.end.min(start_sec + duration_sec);
+                if e > s {
+                    speaker_intervals.entry(spk.clone()).or_default().push((s, e));
+                }
+            }
+        }
+    }
+
+    if speaker_intervals.is_empty() {
+        let mut mapping = HashMap::new();
+        for (i, p) in people.iter().enumerate() {
+            mapping.insert(format!("S{}", i + 1), p.id);
+        }
+        return (mapping, 0.60);
+    }
+
+    fn get_person_kf_at<'a>(
+        p: &'a crate::media::face_tracker::VisionPersonTrack,
+        t: f64,
+    ) -> Option<&'a crate::media::face_tracker::VisionKeyframe> {
+        p.keyframes.iter().min_by(|a, b| (a.t - t).abs().total_cmp(&(b.t - t).abs()))
+    }
+
+    // Accumulate temporal evidence matrix: E[speaker, person_id]
+    let mut evidence_matrix: HashMap<(String, usize), f64> = HashMap::new();
+
+    for (spk, intervals) in &speaker_intervals {
+        for &(i_start, i_end) in intervals {
+            let interval_dur = i_end - i_start;
+            let sample_step = 0.30f64;
+            let mut sample_t = i_start + 0.10;
+
+            // 1. Temporal Visibility Evidence
+            while sample_t <= i_end {
+                let mut visible_persons: Vec<usize> = Vec::new();
+                for p in people {
+                    if let Some(kf) = get_person_kf_at(p, sample_t) {
+                        if kf.visible && (kf.t - sample_t).abs() < 0.60 {
+                            visible_persons.push(p.id);
+                        }
+                    }
+                }
+
+                if visible_persons.len() == 1 {
+                    // Exclusive visibility: Person visible is very likely the active speaker
+                    let sole_id = visible_persons[0];
+                    *evidence_matrix.entry((spk.clone(), sole_id)).or_insert(0.0) += 2.5;
+
+                    for p in people {
+                        if p.id != sole_id {
+                            *evidence_matrix.entry((spk.clone(), p.id)).or_insert(0.0) -= 1.5;
+                        }
+                    }
+                } else if visible_persons.len() > 1 {
+                    for &vid in &visible_persons {
+                        *evidence_matrix.entry((spk.clone(), vid)).or_insert(0.0) += 0.4;
+                    }
+                }
+
+                sample_t += sample_step;
+            }
+
+            // 2. Mouth / Lip Motion Activity Evidence
+            // When multiple people are visible during sustained speech (>= 0.6s)
+            if interval_dur >= 0.60
+                && (source_path.ends_with(".mp4")
+                    || source_path.ends_with(".mov")
+                    || source_path.ends_with(".mkv"))
+            {
+                let sample_window_start = i_start + (interval_dur * 0.2);
+                let sample_window_dur = (interval_dur * 0.6).clamp(0.4, 0.8);
+
+                let mut person_motions: Vec<(usize, f64)> = Vec::new();
+                for p in people {
+                    if let Some(kf) = get_person_kf_at(p, sample_window_start) {
+                        let motion = measure_mouth_activity_motion(
+                            source_path,
+                            sample_window_start,
+                            sample_window_dur,
+                            Some(kf),
+                        );
+                        person_motions.push((p.id, motion));
+                    }
+                }
+
+                if person_motions.len() >= 2 {
+                    person_motions.sort_by(|a, b| b.1.total_cmp(&a.1));
+                    let (best_id, best_motion) = person_motions[0];
+                    let (_second_id, second_motion) = person_motions[1];
+
+                    if best_motion > 4.0 && (best_motion - second_motion) > 2.0 {
+                        *evidence_matrix.entry((spk.clone(), best_id)).or_insert(0.0) +=
+                            (best_motion - second_motion).min(10.0) * 1.5;
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Optimal Global Bipartite Matching
+    let speaker_list: Vec<String> = speaker_intervals.keys().cloned().collect();
+    let person_list: Vec<usize> = people.iter().map(|p| p.id).collect();
+
+    let (best_mapping, confidence) = if speaker_list.len() == 2 && person_list.len() >= 2 {
+        let s0 = &speaker_list[0];
+        let s1 = &speaker_list[1];
+        let p0 = person_list[0];
+        let p1 = person_list[1];
+
+        let score_perm_a = evidence_matrix.get(&(s0.clone(), p0)).copied().unwrap_or(0.0)
+            + evidence_matrix.get(&(s1.clone(), p1)).copied().unwrap_or(0.0);
+        let score_perm_b = evidence_matrix.get(&(s0.clone(), p1)).copied().unwrap_or(0.0)
+            + evidence_matrix.get(&(s1.clone(), p0)).copied().unwrap_or(0.0);
+
+        let mut mapping = HashMap::new();
+        let (_margin, conf) = if score_perm_a >= score_perm_b {
+            mapping.insert(s0.clone(), p0);
+            mapping.insert(s1.clone(), p1);
+            (score_perm_a - score_perm_b, 0.85 + (score_perm_a - score_perm_b).clamp(0.0, 10.0) * 0.012)
+        } else {
+            mapping.insert(s0.clone(), p1);
+            mapping.insert(s1.clone(), p0);
+            (score_perm_b - score_perm_a, 0.85 + (score_perm_b - score_perm_a).clamp(0.0, 10.0) * 0.012)
+        };
+
+        (mapping, conf.clamp(0.70, 0.98))
+    } else {
+        let mut mapping = HashMap::new();
+        let mut available_people = person_list.clone();
+
+        for spk in &speaker_list {
+            if available_people.is_empty() {
+                mapping.insert(spk.clone(), person_list[0]);
+                continue;
+            }
+
+            let best_person = available_people
+                .iter()
+                .cloned()
+                .max_by(|&a, &b| {
+                    let score_a = evidence_matrix.get(&(spk.clone(), a)).copied().unwrap_or(0.0);
+                    let score_b = evidence_matrix.get(&(spk.clone(), b)).copied().unwrap_or(0.0);
+                    score_a.total_cmp(&score_b)
+                })
+                .unwrap_or(available_people[0]);
+
+            mapping.insert(spk.clone(), best_person);
+            if available_people.len() > 1 {
+                available_people.retain(|&pid| pid != best_person);
+            }
+        }
+
+        (mapping, 0.85)
+    };
+
+    (best_mapping, confidence)
+}
+
 impl ActiveSpeakerDetector for LocalFusionDetector {
     fn name(&self) -> &str {
         "local_vision_fusion"
@@ -960,44 +1231,21 @@ impl ActiveSpeakerDetector for LocalFusionDetector {
         let vision_result = FaceTracker::analyze(source_path, start_sec, duration_sec);
         let people = vision_result.people();
 
-        let mut speaker_mapping: HashMap<String, usize> = HashMap::new();
+        let (speaker_mapping, confidence) = if let Some(t) = transcript {
+            compute_temporal_speaker_person_mapping(
+                source_path,
+                start_sec,
+                duration_sec,
+                t,
+                people,
+            )
+        } else {
+            (HashMap::new(), 0.60)
+        };
+
         let mut segments: Vec<ActiveSpeakerSegment> = Vec::new();
 
         if let Some(t) = transcript {
-            let relevant_words: Vec<_> = t
-                .words
-                .iter()
-                .filter(|w| w.end >= start_sec && w.start <= (start_sec + duration_sec))
-                .collect();
-
-            if !people.is_empty() {
-                let mut speaker_counts: HashMap<String, f64> = HashMap::new();
-                for w in &relevant_words {
-                    if let Some(speaker) = &w.speaker {
-                        *speaker_counts.entry(speaker.clone()).or_insert(0.0) +=
-                            (w.end - w.start).max(0.1);
-                    }
-                }
-
-                let mut sorted_speakers: Vec<_> = speaker_counts.into_iter().collect();
-                sorted_speakers.sort_by(|a, b| b.1.total_cmp(&a.1));
-
-                for (idx, (spk, _)) in sorted_speakers.iter().enumerate() {
-                    let assigned_person_id = if idx < people.len() {
-                        people[idx].id
-                    } else {
-                        idx + 1
-                    };
-                    speaker_mapping.insert(spk.clone(), assigned_person_id);
-                }
-            } else {
-                for w in &relevant_words {
-                    if let Some(speaker) = &w.speaker {
-                        speaker_mapping.insert(speaker.clone(), 1);
-                    }
-                }
-            }
-
             for seg in &t.segments {
                 if seg.end < start_sec || seg.start > (start_sec + duration_sec) {
                     continue;
@@ -1008,18 +1256,19 @@ impl ActiveSpeakerDetector for LocalFusionDetector {
                     continue;
                 }
 
-                let (p_id, conf) = if let Some(speaker) = &seg.speaker {
-                    let pid = speaker_mapping.get(speaker).copied().unwrap_or(1);
-                    (pid, 0.88)
+                let p_id = if let Some(ref speaker) = seg.speaker {
+                    speaker_mapping.get(speaker).copied().unwrap_or_else(|| {
+                        people.first().map(|p| p.id).unwrap_or(1)
+                    })
                 } else {
-                    (1, 0.65)
+                    people.first().map(|p| p.id).unwrap_or(1)
                 };
 
                 segments.push(ActiveSpeakerSegment {
                     start: s_start,
                     end: s_end,
                     person_id: p_id,
-                    confidence: conf,
+                    confidence,
                     speaker_label: seg.speaker.clone(),
                 });
             }
@@ -1033,14 +1282,29 @@ impl ActiveSpeakerDetector for LocalFusionDetector {
             });
         }
 
+        // Apply temporal smoothing & gap bridging
         segments.sort_by(|a, b| a.start.total_cmp(&b.start));
 
+        let mut smoothed_segments: Vec<ActiveSpeakerSegment> = Vec::new();
+        for seg in segments {
+            if let Some(last) = smoothed_segments.last_mut() {
+                if last.person_id == seg.person_id && (seg.start - last.end) <= 0.40 {
+                    last.end = seg.end;
+                    if last.speaker_label.is_none() && seg.speaker_label.is_some() {
+                        last.speaker_label = seg.speaker_label.clone();
+                    }
+                    continue;
+                }
+            }
+            smoothed_segments.push(seg);
+        }
+
         Ok(ActiveSpeakerTimeline {
-            segments,
+            segments: smoothed_segments,
             provider: "local_vision_fusion".to_string(),
             source_duration: duration_sec,
             speaker_person_mapping: speaker_mapping,
-            confidence: if vision_result.face_detected { 0.85 } else { 0.60 },
+            confidence,
         })
     }
 }
@@ -1696,5 +1960,143 @@ mod tests {
         let validation = validate_clip_visuals(&timeline, &face_result, 0.0, 15.0);
         assert!(validation.face_detected);
         assert!(validation.visual_score > 0.0);
+    }
+
+    #[test]
+    fn test_temporal_evidence_mapping_immune_to_speaker_duration() {
+        use crate::media::face_tracker::{VisionKeyframe, VisionPersonTrack};
+        use crate::models::{TranscriptSegment, TranscriptWord};
+
+        // Scenario from user:
+        // Person 1 speaks for 10 seconds (S1) at [0.0..10.0]
+        // Person 2 speaks for 40 seconds (S2) at [10.0..50.0]
+        // In the old broken heuristic, S2 was sorted first and wrongly assigned to Person 1!
+        // In the new temporal evidence detector, temporal visibility establishes:
+        // - During [0..10], Person 1 is on screen, Person 2 is absent -> S1 is Person 1.
+        // - During [10..50], Person 2 is on screen, Person 1 is absent -> S2 is Person 2.
+        let people = vec![
+            VisionPersonTrack {
+                id: 1,
+                name: "Person 1".to_string(),
+                keyframes: vec![
+                    VisionKeyframe {
+                        t: 2.0,
+                        x: 0.30,
+                        y: 0.35,
+                        width: 0.15,
+                        height: 0.20,
+                        confidence: 1.0,
+                        visible: true,
+                        state: None,
+                    },
+                    VisionKeyframe {
+                        t: 6.0,
+                        x: 0.30,
+                        y: 0.35,
+                        width: 0.15,
+                        height: 0.20,
+                        confidence: 1.0,
+                        visible: true,
+                        state: None,
+                    },
+                    // Person 1 exits after 10.0
+                    VisionKeyframe {
+                        t: 25.0,
+                        x: 0.30,
+                        y: 0.35,
+                        width: 0.15,
+                        height: 0.20,
+                        confidence: 0.0,
+                        visible: false,
+                        state: Some("exited".to_string()),
+                    },
+                ],
+            },
+            VisionPersonTrack {
+                id: 2,
+                name: "Person 2".to_string(),
+                keyframes: vec![
+                    // Person 2 absent before 10.0
+                    VisionKeyframe {
+                        t: 5.0,
+                        x: 0.70,
+                        y: 0.35,
+                        width: 0.15,
+                        height: 0.20,
+                        confidence: 0.0,
+                        visible: false,
+                        state: Some("tentative".to_string()),
+                    },
+                    VisionKeyframe {
+                        t: 15.0,
+                        x: 0.70,
+                        y: 0.35,
+                        width: 0.15,
+                        height: 0.20,
+                        confidence: 1.0,
+                        visible: true,
+                        state: None,
+                    },
+                    VisionKeyframe {
+                        t: 35.0,
+                        x: 0.70,
+                        y: 0.35,
+                        width: 0.15,
+                        height: 0.20,
+                        confidence: 1.0,
+                        visible: true,
+                        state: None,
+                    },
+                ],
+            },
+        ];
+
+        let transcript = NormalizedTranscript {
+            language: "en".to_string(),
+            duration: 50.0,
+            speakers: vec!["S1".to_string(), "S2".to_string()],
+            words: vec![
+                TranscriptWord {
+                    text: "S1".to_string(),
+                    start: 0.0,
+                    end: 10.0,
+                    speaker: Some("S1".to_string()),
+                },
+                TranscriptWord {
+                    text: "S2".to_string(),
+                    start: 10.0,
+                    end: 50.0,
+                    speaker: Some("S2".to_string()),
+                },
+            ],
+            segments: vec![
+                TranscriptSegment {
+                    start: 0.0,
+                    end: 10.0,
+                    text: "S1 short turn.".to_string(),
+                    speaker: Some("S1".to_string()),
+                },
+                TranscriptSegment {
+                    start: 10.0,
+                    end: 50.0,
+                    text: "S2 very long turn speaking for 40 seconds.".to_string(),
+                    speaker: Some("S2".to_string()),
+                },
+            ],
+        };
+
+        let (mapping, confidence) = compute_temporal_speaker_person_mapping(
+            "dummy_video.mp4",
+            0.0,
+            50.0,
+            &transcript,
+            &people,
+        );
+
+        // Verification: Despite S2 talking for 4x longer than S1 (40s vs 10s),
+        // S1 is correctly mapped to Person 1 and S2 to Person 2!
+        assert_eq!(mapping.get("S1"), Some(&1));
+        assert_eq!(mapping.get("S2"), Some(&2));
+        assert!(confidence >= 0.85);
     }
 }
