@@ -1643,6 +1643,54 @@ impl ActiveSpeakerDetector for LocalFusionDetector {
 // 4. PERSISTENT CACHE & UNIFIED PIPELINE DISPATCHER
 // =========================================================================
 
+pub const ASD_ANALYSIS_VERSION: &str = "asd_fusion_v4";
+pub const ASD_FACE_TRACKER_VERSION: &str = "apple_vision_v2";
+pub const ASD_DIARIZATION_VERSION: &str = "diarize_v1";
+pub const ASD_SPEAKING_THRESHOLD: f64 = 0.55;
+pub const ASD_MIN_HOLD_SEC: f64 = 2.0;
+
+/// Resolves the active NVIDIA ASD NIM model / function ID identifier
+pub fn get_nvidia_asd_model_identifier() -> String {
+    credentials::get(credentials::NVIDIA_FUNCTION_ID)
+        .ok()
+        .flatten()
+        .or_else(|| std::env::var("NVIDIA_ASD_FUNCTION_ID").ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "default_nim_asd".to_string())
+}
+
+/// Computes the comprehensive, deterministic cache key for Active Speaker Detection.
+/// Incorporates all 7 critical configuration parameters to guarantee cache freshness:
+/// 1. Source media path & content fingerprint (size, mtime, byte digests)
+/// 2. Video duration bounds (start_sec, duration_sec)
+/// 3. Analysis algorithm version (asd_fusion_v4)
+/// 4. NVIDIA ASD NIM model / function ID
+/// 5. ASD speaking threshold (0.55) & hysteresis hold (2.0s)
+/// 6. Diarization engine version (diarize_v1)
+/// 7. Apple Vision face tracker version (apple_vision_v2)
+pub fn compute_active_speaker_cache_key(
+    source_path: &str,
+    start_sec: f64,
+    duration_sec: f64,
+) -> String {
+    let analyzer_str = format!("{}_{}", ASD_ANALYSIS_VERSION, ASD_FACE_TRACKER_VERSION);
+    let model_str = format!("nim_{}", get_nvidia_asd_model_identifier());
+    let params_str = format!(
+        "thresh_{:.2}_hold_{:.1}_diar_{}",
+        ASD_SPEAKING_THRESHOLD, ASD_MIN_HOLD_SEC, ASD_DIARIZATION_VERSION
+    );
+
+    AnalysisCache::compute_source_key_with_params(
+        source_path,
+        start_sec,
+        duration_sec,
+        &analyzer_str,
+        &model_str,
+        &params_str,
+    )
+}
+
 pub async fn get_or_compute_active_speaker_timeline(
     source_path: &str,
     start_sec: f64,
@@ -1650,14 +1698,7 @@ pub async fn get_or_compute_active_speaker_timeline(
     transcript: Option<&NormalizedTranscript>,
 ) -> ActiveSpeakerTimeline {
     let cache = AnalysisCache::global();
-    let cache_key = AnalysisCache::compute_source_key_with_params(
-        source_path,
-        start_sec,
-        duration_sec,
-        "active_speaker_v3",
-        "asd_nim_fusion",
-        "primary_nvidia",
-    );
+    let cache_key = compute_active_speaker_cache_key(source_path, start_sec, duration_sec);
 
     // 1. Check persistent AnalysisCache
     if let Some(cached) = cache.get::<ActiveSpeakerTimeline>(&cache_key, "active_speaker") {
@@ -2647,5 +2688,87 @@ mod tests {
         // Final keyframe centers on Person 2 (x ~ 0.74)
         let last_kf = keyframes.last().unwrap();
         assert!((last_kf.x - 0.74).abs() < 0.05);
+    }
+
+    #[test]
+    fn test_compute_active_speaker_cache_key_invalidation() {
+        let key1 = compute_active_speaker_cache_key("video.mp4", 0.0, 10.0);
+        let key2 = compute_active_speaker_cache_key("video.mp4", 0.0, 10.0);
+        assert_eq!(key1, key2, "Cache key must be deterministic for identical parameters");
+
+        let key_diff_dur = compute_active_speaker_cache_key("video.mp4", 0.0, 15.0);
+        assert_ne!(key1, key_diff_dur, "Cache key must change when duration changes");
+
+        let key_diff_source = compute_active_speaker_cache_key("other_video.mp4", 0.0, 10.0);
+        assert_ne!(key1, key_diff_source, "Cache key must change when source changes");
+
+        // Verify configuration components are included in the key hash
+        let analyzer_str = format!("{}_{}", ASD_ANALYSIS_VERSION, ASD_FACE_TRACKER_VERSION);
+        let model_str = format!("nim_{}", get_nvidia_asd_model_identifier());
+        let params_str = format!(
+            "thresh_{:.2}_hold_{:.1}_diar_{}",
+            ASD_SPEAKING_THRESHOLD, ASD_MIN_HOLD_SEC, ASD_DIARIZATION_VERSION
+        );
+
+        let direct_key = AnalysisCache::compute_source_key_with_params(
+            "video.mp4",
+            0.0,
+            10.0,
+            &analyzer_str,
+            &model_str,
+            &params_str,
+        );
+        assert_eq!(key1, direct_key);
+
+        // Verify that changing any of the 7 parameters invalidates the key
+        let diff_analyzer = AnalysisCache::compute_source_key_with_params(
+            "video.mp4",
+            0.0,
+            10.0,
+            "asd_fusion_v5_apple_vision_v2", // changed analysis version
+            &model_str,
+            &params_str,
+        );
+        assert_ne!(key1, diff_analyzer);
+
+        let diff_face = AnalysisCache::compute_source_key_with_params(
+            "video.mp4",
+            0.0,
+            10.0,
+            "asd_fusion_v4_apple_vision_v3", // changed face tracker version
+            &model_str,
+            &params_str,
+        );
+        assert_ne!(key1, diff_face);
+
+        let diff_model = AnalysisCache::compute_source_key_with_params(
+            "video.mp4",
+            0.0,
+            10.0,
+            &analyzer_str,
+            "nim_custom_func_123", // changed NVIDIA model/function
+            &params_str,
+        );
+        assert_ne!(key1, diff_model);
+
+        let diff_thresh = AnalysisCache::compute_source_key_with_params(
+            "video.mp4",
+            0.0,
+            10.0,
+            &analyzer_str,
+            &model_str,
+            "thresh_0.65_hold_2.0_diar_diarize_v1", // changed threshold
+        );
+        assert_ne!(key1, diff_thresh);
+
+        let diff_diar = AnalysisCache::compute_source_key_with_params(
+            "video.mp4",
+            0.0,
+            10.0,
+            &analyzer_str,
+            &model_str,
+            "thresh_0.55_hold_2.0_diar_diarize_v2", // changed diarization version
+        );
+        assert_ne!(key1, diff_diar);
     }
 }

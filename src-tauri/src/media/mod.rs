@@ -13,9 +13,10 @@ pub mod renderer;
 // Re-exports for public API backwards compatibility
 #[allow(unused_imports)]
 pub use active_speaker::{
-    generate_speaker_aware_keyframes, get_or_compute_active_speaker_timeline,
-    validate_clip_visuals, ActiveSpeakerDetector, ActiveSpeakerSegment, ActiveSpeakerTimeline,
-    LocalFusionDetector, NvidiaAsdDetector, VisualValidationResult,
+    compute_active_speaker_cache_key, generate_speaker_aware_keyframes,
+    get_or_compute_active_speaker_timeline, validate_clip_visuals, ActiveSpeakerDetector,
+    ActiveSpeakerSegment, ActiveSpeakerTimeline, LocalFusionDetector, NvidiaAsdDetector,
+    VisualValidationResult,
 };
 #[allow(unused_imports)]
 pub use audio::{detect_silences, extract_audio};

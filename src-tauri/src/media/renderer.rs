@@ -169,25 +169,19 @@ pub fn execute_render_plan(plan: &RenderPlan) -> Result<PathBuf> {
 
                     let cache = crate::analysis_cache::AnalysisCache::global();
                     let full_dur = probe.duration_sec.unwrap_or(duration_sec);
-                    let cache_key = crate::analysis_cache::AnalysisCache::compute_source_key_with_params(
+                    let cache_key = super::active_speaker::compute_active_speaker_cache_key(
                         &plan.source,
                         0.0,
                         full_dur,
-                        "active_speaker_v3",
-                        "asd_nim_fusion",
-                        "primary_nvidia",
                     );
                     let mut active_timeline_opt = cache
                         .get::<super::active_speaker::ActiveSpeakerTimeline>(&cache_key, "active_speaker");
 
                     if active_timeline_opt.is_none() {
-                        let clip_cache_key = crate::analysis_cache::AnalysisCache::compute_source_key_with_params(
+                        let clip_cache_key = super::active_speaker::compute_active_speaker_cache_key(
                             &plan.source,
                             start_sec,
                             duration_sec,
-                            "active_speaker_v3",
-                            "asd_nim_fusion",
-                            "primary_nvidia",
                         );
                         active_timeline_opt = cache.get::<super::active_speaker::ActiveSpeakerTimeline>(&clip_cache_key, "active_speaker");
                     }
