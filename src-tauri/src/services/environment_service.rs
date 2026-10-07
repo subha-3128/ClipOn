@@ -16,10 +16,13 @@ pub struct PullProgressPayload {
 }
 
 pub async fn get_environment_status(state: &AppState) -> Result<EnvironmentStatus, String> {
+    // 1. Ensure .env is loaded from data_dir and workspace roots
     let env_file = state.data_dir.join(".env");
     if env_file.exists() {
         let _ = dotenvy::from_path(&env_file);
     }
+    let _ = dotenvy::dotenv();
+
     let llm_provider = std::env::var("LLM_PROVIDER")
         .unwrap_or_else(|_| "deepseek".to_string())
         .to_lowercase();
@@ -42,10 +45,8 @@ pub async fn get_environment_status(state: &AppState) -> Result<EnvironmentStatu
     let multi_speaker_reframing_supported = face_tracking_supported;
     let hardware_encoder_supported = media::supports_videotoolbox();
 
-    let has_nvidia_key = credentials::has(credentials::NVIDIA).unwrap_or(false)
-        || std::env::var("NVIDIA_API_KEY").is_ok();
-    let has_nvidia_function_id = credentials::has(credentials::NVIDIA_FUNCTION_ID).unwrap_or(false)
-        || std::env::var("NVIDIA_ASD_FUNCTION_ID").is_ok();
+    let has_nvidia_key = credentials::has(credentials::NVIDIA).unwrap_or(false);
+    let has_nvidia_function_id = credentials::has(credentials::NVIDIA_FUNCTION_ID).unwrap_or(false);
 
     let (active_speaker_provider, active_speaker_status) = if has_nvidia_key && has_nvidia_function_id {
         (
@@ -68,13 +69,13 @@ pub async fn get_environment_status(state: &AppState) -> Result<EnvironmentStatu
         data_dir: state.data_dir.to_string_lossy().to_string(),
         has_ffmpeg: media::command_exists("ffmpeg"),
         has_ffprobe: media::command_exists("ffprobe"),
-        has_deepgram_key: credentials::has(credentials::DEEPGRAM).map_err(|e| e.to_string())?,
-        has_anthropic_key: credentials::has(credentials::ANTHROPIC).map_err(|e| e.to_string())?,
-        has_deepseek_key: credentials::has(credentials::DEEPSEEK).map_err(|e| e.to_string())?,
-        has_gemini_key: credentials::has(credentials::GEMINI).map_err(|e| e.to_string())?,
-        has_openai_key: credentials::has(credentials::OPENAI).map_err(|e| e.to_string())?,
-        has_openrouter_key: credentials::has(credentials::OPENROUTER).map_err(|e| e.to_string())?,
-        has_groq_key: credentials::has(credentials::GROQ).map_err(|e| e.to_string())?,
+        has_deepgram_key: credentials::has(credentials::DEEPGRAM).unwrap_or(false),
+        has_anthropic_key: credentials::has(credentials::ANTHROPIC).unwrap_or(false),
+        has_deepseek_key: credentials::has(credentials::DEEPSEEK).unwrap_or(false),
+        has_gemini_key: credentials::has(credentials::GEMINI).unwrap_or(false),
+        has_openai_key: credentials::has(credentials::OPENAI).unwrap_or(false),
+        has_openrouter_key: credentials::has(credentials::OPENROUTER).unwrap_or(false),
+        has_groq_key: credentials::has(credentials::GROQ).unwrap_or(false),
         has_nvidia_key,
         has_nvidia_function_id,
         active_speaker_provider,

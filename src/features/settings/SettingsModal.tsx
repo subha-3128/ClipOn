@@ -182,30 +182,46 @@ export function SettingsModal({
         </button>
       </div>
 
-      <div className="settings-tab-nav">
+      <div className="settings-tab-nav" role="tablist" aria-label="Settings categories">
         <button
+          type="button"
+          role="tab"
+          aria-selected={settingsTab === "ai"}
           className={`settings-nav-btn ${settingsTab === "ai" ? "active" : ""}`}
           onClick={() => setSettingsTab("ai")}
         >
-          <Cpu size={14} /> AI Engines
+          <Cpu size={14} />
+          <span>AI Engines</span>
         </button>
         <button
+          type="button"
+          role="tab"
+          aria-selected={settingsTab === "storage"}
           className={`settings-nav-btn ${settingsTab === "storage" ? "active" : ""}`}
           onClick={() => setSettingsTab("storage")}
         >
-          <HardDrive size={14} /> Storage &amp; Folders
+          <HardDrive size={14} />
+          <span>Storage &amp; Folders</span>
         </button>
         <button
+          type="button"
+          role="tab"
+          aria-selected={settingsTab === "export"}
           className={`settings-nav-btn ${settingsTab === "export" ? "active" : ""}`}
           onClick={() => setSettingsTab("export")}
         >
-          <Sliders size={14} /> Export &amp; Video
+          <Sliders size={14} />
+          <span>Export &amp; Video</span>
         </button>
         <button
+          type="button"
+          role="tab"
+          aria-selected={settingsTab === "system"}
           className={`settings-nav-btn ${settingsTab === "system" ? "active" : ""}`}
           onClick={() => setSettingsTab("system")}
         >
-          <Activity size={14} /> System &amp; Diagnostics
+          <Activity size={14} />
+          <span>System &amp; Diagnostics</span>
         </button>
       </div>
 
@@ -374,7 +390,7 @@ export function SettingsModal({
 
             {/* Active Speaker Detection API */}
             <div className="settings-section-divider">
-              <Zap size={14} />
+              <Zap size={15} className="section-icon-zap" />
               <span>NVIDIA Active Speaker Detection API</span>
             </div>
 
@@ -457,7 +473,7 @@ export function SettingsModal({
 
             {/* Instagram Reels API */}
             <div className="settings-section-divider">
-              <Instagram size={14} />
+              <Instagram size={15} className="section-icon-instagram" />
               <span>Instagram Reels API</span>
             </div>
 

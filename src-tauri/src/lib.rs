@@ -51,13 +51,12 @@ pub fn run() {
             std::fs::create_dir_all(data_dir.join("models"))
                 .context("creating models directory")?;
             let env_path = data_dir.join(".env");
-            if !env_path.exists() {
-                let candidates = [PathBuf::from(".env"), PathBuf::from("../.env")];
-                for cand in &candidates {
-                    if cand.exists() {
-                        let _ = std::fs::copy(cand, &env_path);
-                        break;
-                    }
+            let candidates = [PathBuf::from(".env"), PathBuf::from("../.env")];
+            for cand in &candidates {
+                if cand.exists() {
+                    let _ = dotenvy::from_path(cand);
+                    let _ = std::fs::copy(cand, &env_path);
+                    break;
                 }
             }
             if env_path.exists() {
