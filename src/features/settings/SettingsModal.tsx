@@ -45,6 +45,8 @@ export interface SettingsModalProps {
   setGroqKey: (k: string) => void;
   nvidiaKey: string;
   setNvidiaKey: (k: string) => void;
+  nvidiaFunctionId?: string;
+  setNvidiaFunctionId?: (id: string) => void;
   instagramProvider: "graph_api" | "webhook";
   setInstagramProvider: (p: "graph_api" | "webhook") => void;
   instagramAccountId: string;
@@ -106,6 +108,8 @@ export function SettingsModal({
   setGroqKey,
   nvidiaKey,
   setNvidiaKey,
+  nvidiaFunctionId = "",
+  setNvidiaFunctionId,
   instagramProvider,
   setInstagramProvider,
   instagramAccountId,
@@ -388,6 +392,23 @@ export function SettingsModal({
               />
               <span className="folder-hint">
                 Primary engine for Active Speaker Detection &amp; speaker-person fusion. Stored securely in OS Keyring.
+              </span>
+            </div>
+
+            <div className="settings-field-group">
+              <label>NVIDIA ASD Function ID (Optional Preview UUID)</label>
+              <input
+                type="text"
+                value={nvidiaFunctionId}
+                onChange={(e) => setNvidiaFunctionId?.(e.target.value)}
+                placeholder={
+                  environment?.hasNvidiaFunctionId
+                    ? "Configured in Keychain / Env"
+                    : "e.g. 12345678-abcd-ef01-2345-6789abcdef01"
+                }
+              />
+              <span className="folder-hint">
+                NVCF Function ID for NVIDIA Active Speaker Detection preview endpoint. Defaults to multimodal local fusion if omitted.
               </span>
             </div>
 

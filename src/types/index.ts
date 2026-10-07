@@ -12,6 +12,7 @@ export type EnvironmentStatus = {
   hasOpenrouterKey: boolean;
   hasGroqKey: boolean;
   hasNvidiaKey?: boolean;
+  hasNvidiaFunctionId?: boolean;
   hasInstagramToken: boolean;
   llmProvider: string;
   hasLocalWhisperModel: boolean;

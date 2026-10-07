@@ -11,6 +11,7 @@ pub fn save_credential(name: &str, value: &str) -> Result<(), String> {
         credentials::OPENROUTER,
         credentials::INSTAGRAM,
         credentials::NVIDIA,
+        credentials::NVIDIA_FUNCTION_ID,
     ];
     if !allowed.contains(&name) {
         return Err("Unsupported credential".to_string());

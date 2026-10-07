@@ -55,6 +55,8 @@ pub async fn get_environment_status(state: &AppState) -> Result<EnvironmentStatu
         has_groq_key: credentials::has(credentials::GROQ).map_err(|e| e.to_string())?,
         has_nvidia_key: credentials::has(credentials::NVIDIA).unwrap_or(false)
             || std::env::var("NVIDIA_API_KEY").is_ok(),
+        has_nvidia_function_id: credentials::has(credentials::NVIDIA_FUNCTION_ID).unwrap_or(false)
+            || std::env::var("NVIDIA_ASD_FUNCTION_ID").is_ok(),
         has_instagram_token: credentials::has(credentials::INSTAGRAM).unwrap_or(false),
         llm_provider,
         has_local_whisper_model,
@@ -361,6 +363,7 @@ mod tests {
             has_openrouter_key: false,
             has_groq_key: false,
             has_nvidia_key: false,
+            has_nvidia_function_id: false,
             has_instagram_token: false,
             llm_provider: "deepseek".to_string(),
             has_local_whisper_model: false,

@@ -157,6 +157,7 @@ function AppContent() {
   const [openrouterKey, setOpenrouterKey] = useState("");
   const [groqKey, setGroqKey] = useState("");
   const [nvidiaKey, setNvidiaKey] = useState("");
+  const [nvidiaFunctionId, setNvidiaFunctionId] = useState("");
 
   // Folder paths
   const [youtubeSaveDir, setYoutubeSaveDir] = useState(
@@ -997,6 +998,7 @@ function AppContent() {
         ["deepseek", deepseekKey],
         ["groq", groqKey],
         ["nvidia", nvidiaKey],
+        ["nvidia_function_id", nvidiaFunctionId],
         ["openrouter", openrouterKey],
         ["instagram", instagramAccessToken],
       ].filter(([_, value]) => value && value.trim().length > 0);
@@ -1015,6 +1017,7 @@ function AppContent() {
       setDeepseekKey("");
       setGroqKey("");
       setNvidiaKey("");
+      setNvidiaFunctionId("");
       setOpenrouterKey("");
       setInstagramAccessToken("");
 
@@ -1216,6 +1219,8 @@ function AppContent() {
         setGroqKey={setGroqKey}
         nvidiaKey={nvidiaKey}
         setNvidiaKey={setNvidiaKey}
+        nvidiaFunctionId={nvidiaFunctionId}
+        setNvidiaFunctionId={setNvidiaFunctionId}
         instagramProvider={instagramProvider}
         setInstagramProvider={setInstagramProvider}
         instagramAccountId={instagramAccountId}

@@ -24,6 +24,8 @@ pub struct EnvironmentStatus {
     pub has_openrouter_key: bool,
     pub has_groq_key: bool,
     pub has_nvidia_key: bool,
+    #[serde(default)]
+    pub has_nvidia_function_id: bool,
     pub has_instagram_token: bool,
     pub llm_provider: String,
     pub has_local_whisper_model: bool,

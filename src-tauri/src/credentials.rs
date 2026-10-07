@@ -11,6 +11,7 @@ pub const GROQ: &str = "groq";
 pub const OPENROUTER: &str = "openrouter";
 pub const INSTAGRAM: &str = "instagram";
 pub const NVIDIA: &str = "nvidia";
+pub const NVIDIA_FUNCTION_ID: &str = "nvidia_function_id";
 
 pub fn get(name: &str) -> Result<Option<String>> {
     let entry = keyring::Entry::new(SERVICE_NAME, name)

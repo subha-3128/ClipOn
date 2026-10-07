@@ -1,12 +1,14 @@
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use crate::analysis_cache::AnalysisCache;
 use crate::credentials;
 use crate::http_client;
 use crate::media::face_tracker::{FaceTracker, FaceTrackerResult};
+use crate::media::ffmpeg::resolve_binary;
 use crate::media::filters::TrackingKeyframe;
 use crate::models::NormalizedTranscript;
 
@@ -67,54 +69,55 @@ pub trait ActiveSpeakerDetector: Send + Sync {
 }
 
 // =========================================================================
-// 2. NVIDIA ACTIVE SPEAKER DETECTION API CLIENT
+// 2. NVIDIA ACTIVE SPEAKER DETECTION (NIM / NVCF SPECIFICATION)
 // =========================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NvidiaDiarizationSegment {
+    pub speaker_id: String,
+    pub start: f64,
+    pub end: f64,
+}
+
+/// Official per-frame speaker structure emitted by NVIDIA Active Speaker Detection NIM
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NvidiaPerFrameSpeaker {
+    #[serde(default)]
+    pub timestamp: f64,
+    #[serde(default)]
+    pub speaker_bbox: Option<[f64; 4]>, // [x, y, width, height] normalized
+    #[serde(default)]
+    pub diarized_speaker_id: Option<String>,
+    #[serde(default)]
+    pub face_id: Option<usize>,
+    #[serde(default)]
+    pub is_speaking: bool,
+    #[serde(default)]
+    pub confidence: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct NvidiaAsdResponse {
+    #[serde(default)]
+    pub frames: Vec<NvidiaPerFrameSpeaker>,
+    #[serde(default)]
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct NvcfAssetResponse {
+    #[serde(rename = "assetId")]
+    asset_id: String,
+    #[serde(rename = "uploadUrl")]
+    upload_url: String,
+}
 
 #[derive(Debug, Clone)]
 pub struct NvidiaAsdDetector {
     endpoint: String,
     api_key: String,
-}
-
-#[derive(Debug, Serialize)]
-struct NvidiaAsdRequest<'a> {
-    source_filename: &'a str,
-    start_sec: f64,
-    duration_sec: f64,
-    diarization_segments: Vec<NvidiaDiarizationSegment<'a>>,
-}
-
-#[derive(Debug, Serialize)]
-struct NvidiaDiarizationSegment<'a> {
-    speaker: &'a str,
-    start: f64,
-    end: f64,
-}
-
-#[derive(Debug, Deserialize)]
-struct NvidiaAsdResponse {
-    #[serde(default)]
-    active_speakers: Vec<NvidiaActiveSpeakerItem>,
-    #[serde(default)]
-    speaker_mapping: Option<HashMap<String, usize>>,
-    #[serde(default)]
-    confidence: Option<f64>,
-}
-
-#[derive(Debug, Deserialize)]
-struct NvidiaActiveSpeakerItem {
-    start: f64,
-    end: f64,
-    #[serde(default)]
-    speaker_id: Option<String>,
-    #[serde(default)]
-    face_id: Option<usize>,
-    #[serde(default)]
-    person_id: Option<usize>,
-    #[serde(default)]
-    confidence: Option<f64>,
-    #[serde(default)]
-    is_speaking: Option<bool>,
+    function_id: Option<String>,
+    grpc_target: String,
 }
 
 impl NvidiaAsdDetector {
@@ -128,21 +131,177 @@ impl NvidiaAsdDetector {
             return Err(anyhow!("NVIDIA API key is empty"));
         }
 
-        let endpoint = std::env::var("NVIDIA_ASD_ENDPOINT").unwrap_or_else(|_| {
-            "https://ai.api.nvidia.com/v1/cv/nvidia/active-speaker-detection".to_string()
-        });
+        let function_id = credentials::get(credentials::NVIDIA_FUNCTION_ID)?
+            .or_else(|| std::env::var("NVIDIA_ASD_FUNCTION_ID").ok())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+
+        let endpoint = std::env::var("NVIDIA_ASD_ENDPOINT")
+            .unwrap_or_else(|_| "https://api.nvcf.nvidia.com/v2/nvcf".to_string());
+
+        let grpc_target = std::env::var("NVIDIA_ASD_GRPC_TARGET")
+            .unwrap_or_else(|_| "grpc.nvcf.nvidia.com:443".to_string());
 
         Ok(Self {
             endpoint,
             api_key: clean_key,
+            function_id,
+            grpc_target,
         })
     }
 
-    pub fn with_endpoint_and_key(endpoint: &str, api_key: &str) -> Self {
+    pub fn with_config(
+        endpoint: &str,
+        api_key: &str,
+        function_id: Option<String>,
+        grpc_target: &str,
+    ) -> Self {
         Self {
             endpoint: endpoint.trim().to_string(),
             api_key: api_key.trim().to_string(),
+            function_id,
+            grpc_target: grpc_target.trim().to_string(),
         }
+    }
+
+    pub fn endpoint(&self) -> &str {
+        &self.endpoint
+    }
+
+    pub fn function_id(&self) -> Option<&str> {
+        self.function_id.as_deref()
+    }
+
+    pub fn grpc_target(&self) -> &str {
+        &self.grpc_target
+    }
+}
+
+/// Extracts an optimized, lightweight H.264 MP4 video slice with AAC audio for NVIDIA ASD inference.
+/// This prevents uploading heavy 4K/raw media while ensuring the model receives required visual/audio streams.
+pub fn extract_asd_video_slice(
+    source_path: &str,
+    start_sec: f64,
+    duration_sec: f64,
+    output_path: &Path,
+) -> Result<()> {
+    let ffmpeg_bin = resolve_binary("ffmpeg");
+    let mut cmd = Command::new(&ffmpeg_bin);
+    cmd.arg("-nostdin");
+    cmd.args(["-y", "-ss", &format!("{start_sec:.3}"), "-i", source_path]);
+    cmd.args([
+        "-t",
+        &format!("{duration_sec:.3}"),
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "ultrafast",
+        "-crf",
+        "28",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "64k",
+        "-pix_fmt",
+        "yuv420p",
+    ]);
+    cmd.arg(output_path);
+
+    let output = cmd.output().context("Executing FFmpeg for ASD video slice")?;
+    if !output.status.success() {
+        return Err(anyhow!(
+            "FFmpeg failed to extract ASD slice: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    Ok(())
+}
+
+/// Aggregates NVIDIA per-frame active speaker records into structured continuous segments
+pub fn aggregate_nvidia_frames_to_timeline(
+    frames: &[NvidiaPerFrameSpeaker],
+    start_sec: f64,
+    duration_sec: f64,
+) -> ActiveSpeakerTimeline {
+    if frames.is_empty() {
+        return ActiveSpeakerTimeline {
+            segments: Vec::new(),
+            provider: "nvidia_api".to_string(),
+            source_duration: duration_sec,
+            speaker_person_mapping: HashMap::new(),
+            confidence: 0.5,
+        };
+    }
+
+    // 1. Correlate diarized audio speaker IDs with visual face IDs
+    let mut co_occurrence: HashMap<(String, usize), usize> = HashMap::new();
+    for f in frames {
+        if f.is_speaking {
+            if let (Some(ref spk), Some(face_id)) = (&f.diarized_speaker_id, f.face_id) {
+                *co_occurrence.entry((spk.clone(), face_id)).or_insert(0) += 1;
+            }
+        }
+    }
+
+    let mut speaker_mapping: HashMap<String, usize> = HashMap::new();
+    let mut mapped_speakers: HashMap<String, (usize, usize)> = HashMap::new();
+    for ((spk, face_id), count) in co_occurrence {
+        let entry = mapped_speakers.entry(spk).or_insert((face_id, count));
+        if count > entry.1 {
+            *entry = (face_id, count);
+        }
+    }
+    for (spk, (face_id, _)) in mapped_speakers {
+        speaker_mapping.insert(spk, face_id);
+    }
+
+    // 2. Cluster active frames into contiguous segments
+    let mut active_frames: Vec<&NvidiaPerFrameSpeaker> =
+        frames.iter().filter(|f| f.is_speaking).collect();
+    active_frames.sort_by(|a, b| a.timestamp.total_cmp(&b.timestamp));
+
+    let mut segments: Vec<ActiveSpeakerSegment> = Vec::new();
+    let max_frame_gap = 0.35f64;
+
+    for frame in active_frames {
+        let face_id = frame.face_id.unwrap_or(1);
+        let conf = frame.confidence.clamp(0.0, 1.0);
+        let frame_time = frame.timestamp + start_sec;
+
+        if let Some(last) = segments.last_mut() {
+            if last.person_id == face_id && (frame_time - last.end) <= max_frame_gap {
+                last.end = frame_time + 0.05;
+                last.confidence = (last.confidence + conf) * 0.5;
+                if last.speaker_label.is_none() && frame.diarized_speaker_id.is_some() {
+                    last.speaker_label = frame.diarized_speaker_id.clone();
+                }
+                continue;
+            }
+        }
+
+        segments.push(ActiveSpeakerSegment {
+            start: frame_time,
+            end: frame_time + 0.05,
+            person_id: face_id,
+            confidence: conf,
+            speaker_label: frame.diarized_speaker_id.clone(),
+        });
+    }
+
+    let avg_confidence = if segments.is_empty() {
+        0.80
+    } else {
+        segments.iter().map(|s| s.confidence).sum::<f64>() / segments.len() as f64
+    };
+
+    ActiveSpeakerTimeline {
+        segments,
+        provider: "nvidia_api".to_string(),
+        source_duration: duration_sec,
+        speaker_person_mapping: speaker_mapping,
+        confidence: avg_confidence.clamp(0.0, 1.0),
     }
 }
 
@@ -158,23 +317,21 @@ impl ActiveSpeakerDetector for NvidiaAsdDetector {
         duration_sec: f64,
         transcript: Option<&NormalizedTranscript>,
     ) -> Result<ActiveSpeakerTimeline> {
-        if self.api_key.is_empty() {
-            return Err(anyhow!("NVIDIA API credential is missing"));
-        }
+        let function_id = self.function_id.as_deref().ok_or_else(|| {
+            anyhow!(
+                "NVIDIA Active Speaker Detection requires an NVCF Function ID. \
+                 Configure 'nvidia_function_id' in Settings or set NVIDIA_ASD_FUNCTION_ID."
+            )
+        })?;
 
-        let file_name = Path::new(source_path)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("source_video");
-
-        // Format diarization segments from transcript
-        let mut diarization_segments = Vec::new();
+        // 1. Prepare diarization JSON payload
+        let mut diarization: Vec<NvidiaDiarizationSegment> = Vec::new();
         if let Some(t) = transcript {
             for seg in &t.segments {
                 if seg.end >= start_sec && seg.start <= (start_sec + duration_sec) {
-                    if let Some(speaker) = &seg.speaker {
-                        diarization_segments.push(NvidiaDiarizationSegment {
-                            speaker,
+                    if let Some(ref spk) = seg.speaker {
+                        diarization.push(NvidiaDiarizationSegment {
+                            speaker_id: spk.clone(),
                             start: (seg.start - start_sec).max(0.0),
                             end: (seg.end - start_sec).min(duration_sec),
                         });
@@ -183,76 +340,128 @@ impl ActiveSpeakerDetector for NvidiaAsdDetector {
             }
         }
 
-        let request_payload = NvidiaAsdRequest {
-            source_filename: file_name,
-            start_sec,
-            duration_sec,
-            diarization_segments,
-        };
+        // 2. Extract lightweight H.264 MP4 video slice
+        let temp_dir = std::env::temp_dir();
+        let slice_filename = format!("clipon_asd_slice_{}.mp4", uuid::Uuid::new_v4());
+        let slice_path = temp_dir.join(&slice_filename);
 
-        let client = http_client::build_api_client(15);
-        let auth_header = format!("Bearer {}", self.api_key);
+        extract_asd_video_slice(source_path, start_sec, duration_sec, &slice_path)?;
 
-        let endpoint_url = self.endpoint.clone();
-        let payload_json = serde_json::to_value(&request_payload)?;
+        // Ensure temp slice is deleted when function exits
+        struct SliceCleaner(PathBuf);
+        impl Drop for SliceCleaner {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(&self.0);
+            }
+        }
+        let _cleaner = SliceCleaner(slice_path.clone());
 
-        // Send with retry (up to 2 attempts on 429 or 5xx, fail immediately on 401/403)
-        let response = http_client::send_with_retry(
-            &client,
-            || {
-                client
-                    .post(&endpoint_url)
-                    .header("Authorization", &auth_header)
-                    .header("Content-Type", "application/json")
-                    .json(&payload_json)
-            },
-            2,
-            500,
-        )
-        .await
-        .context("NVIDIA Active Speaker Detection API request failed")?;
+        let video_bytes = tokio::fs::read(&slice_path)
+            .await
+            .context("Reading extracted ASD video slice")?;
 
-        let resp_json: NvidiaAsdResponse = response
+        let client = http_client::build_api_client(30);
+
+        // 3. Upload video asset to NVIDIA Cloud Functions Asset API
+        let asset_create_url = format!("{}/assets", self.endpoint);
+        let asset_init_resp = client
+            .post(&asset_create_url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .json(&serde_json::json!({
+                "contentType": "video/mp4",
+                "description": "ClipOn ASD video slice"
+            }))
+            .send()
+            .await
+            .context("Initiating NVCF asset upload")?;
+
+        if !asset_init_resp.status().is_success() {
+            let status = asset_init_resp.status();
+            let body = asset_init_resp.text().await.unwrap_or_default();
+            return Err(anyhow!("NVCF Asset initialization failed ({status}): {body}"));
+        }
+
+        let asset_meta: NvcfAssetResponse = asset_init_resp
             .json()
             .await
-            .context("Parsing NVIDIA Active Speaker response JSON")?;
+            .context("Parsing NVCF asset metadata")?;
 
-        let mut segments = Vec::new();
-        let mut speaker_mapping = resp_json.speaker_mapping.unwrap_or_default();
+        // Upload video binary to presigned storage URL
+        let upload_resp = client
+            .put(&asset_meta.upload_url)
+            .header("Content-Type", "video/mp4")
+            .header("x-amz-meta-nvcf-asset-id", &asset_meta.asset_id)
+            .body(video_bytes)
+            .send()
+            .await
+            .context("Uploading video slice binary to NVCF asset store")?;
 
-        for item in resp_json.active_speakers {
-            if item.is_speaking == Some(false) {
-                continue;
-            }
-            let p_id = item.person_id.or(item.face_id).unwrap_or(1);
-            let conf = item.confidence.unwrap_or(0.85).clamp(0.0, 1.0);
-            let s_start = (item.start).max(0.0);
-            let s_end = (item.end).max(s_start);
+        if !upload_resp.status().is_success() {
+            return Err(anyhow!(
+                "Failed uploading video slice to NVCF storage: {}",
+                upload_resp.status()
+            ));
+        }
 
-            if s_end > s_start {
-                if let Some(ref spk) = item.speaker_id {
-                    speaker_mapping.insert(spk.clone(), p_id);
+        // 4. Invoke NVCF Active Speaker Detection Function
+        let pexec_url = format!("{}/pexec/functions/{}", self.endpoint, function_id);
+        let invoke_resp = client
+            .post(&pexec_url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("NVCF-INPUT-ASSET-REFERENCES", &asset_meta.asset_id)
+            .header("Content-Type", "application/json")
+            .json(&serde_json::json!({
+                "start_sec": 0.0,
+                "duration_sec": duration_sec,
+                "diarization": diarization
+            }))
+            .send()
+            .await
+            .context("Invoking NVCF Active Speaker Detection function")?;
+
+        let mut final_response = invoke_resp;
+
+        // If status 202 (Accepted / Pending), poll status endpoint
+        if final_response.status().as_u16() == 202 {
+            let status_url = final_response
+                .headers()
+                .get("location")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string());
+
+            if let Some(poll_url) = status_url {
+                let mut attempts = 0;
+                while attempts < 30 {
+                    tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+                    let poll_resp = client
+                        .get(&poll_url)
+                        .header("Authorization", format!("Bearer {}", self.api_key))
+                        .send()
+                        .await?;
+
+                    if poll_resp.status().as_u16() != 202 {
+                        final_response = poll_resp;
+                        break;
+                    }
+                    attempts += 1;
                 }
-                segments.push(ActiveSpeakerSegment {
-                    start: s_start + start_sec,
-                    end: s_end + start_sec,
-                    person_id: p_id,
-                    confidence: conf,
-                    speaker_label: item.speaker_id,
-                });
             }
         }
 
-        // Sort chronologically
-        segments.sort_by(|a, b| a.start.total_cmp(&b.start));
+        if !final_response.status().is_success() {
+            let status = final_response.status();
+            let err_body = final_response.text().await.unwrap_or_default();
+            return Err(anyhow!("NVCF execution failed ({status}): {err_body}"));
+        }
 
-        Ok(ActiveSpeakerTimeline {
-            segments,
-            provider: "nvidia_api".to_string(),
-            source_duration: duration_sec,
-            speaker_person_mapping: speaker_mapping,
-            confidence: resp_json.confidence.unwrap_or(0.92).clamp(0.0, 1.0),
-        })
+        let asd_data: NvidiaAsdResponse = final_response
+            .json()
+            .await
+            .context("Parsing NVIDIA ASD response JSON")?;
+
+        let timeline = aggregate_nvidia_frames_to_timeline(&asd_data.frames, start_sec, duration_sec);
+        Ok(timeline)
     }
 }
 
@@ -288,14 +497,12 @@ impl ActiveSpeakerDetector for LocalFusionDetector {
         let mut segments: Vec<ActiveSpeakerSegment> = Vec::new();
 
         if let Some(t) = transcript {
-            // Filter words inside this timeline window
             let relevant_words: Vec<_> = t
                 .words
                 .iter()
                 .filter(|w| w.end >= start_sec && w.start <= (start_sec + duration_sec))
                 .collect();
 
-            // 1. Correlate audio speakers with visual person tracks
             if !people.is_empty() {
                 let mut speaker_counts: HashMap<String, f64> = HashMap::new();
                 for w in &relevant_words {
@@ -305,7 +512,6 @@ impl ActiveSpeakerDetector for LocalFusionDetector {
                     }
                 }
 
-                // If multiple people are detected, assign distinct person IDs
                 let mut sorted_speakers: Vec<_> = speaker_counts.into_iter().collect();
                 sorted_speakers.sort_by(|a, b| b.1.total_cmp(&a.1));
 
@@ -318,7 +524,6 @@ impl ActiveSpeakerDetector for LocalFusionDetector {
                     speaker_mapping.insert(spk.clone(), assigned_person_id);
                 }
             } else {
-                // Single default person
                 for w in &relevant_words {
                     if let Some(speaker) = &w.speaker {
                         speaker_mapping.insert(speaker.clone(), 1);
@@ -326,7 +531,6 @@ impl ActiveSpeakerDetector for LocalFusionDetector {
                 }
             }
 
-            // 2. Generate active speaker segments from speech intervals
             for seg in &t.segments {
                 if seg.end < start_sec || seg.start > (start_sec + duration_sec) {
                     continue;
@@ -353,7 +557,6 @@ impl ActiveSpeakerDetector for LocalFusionDetector {
                 });
             }
         } else {
-            // No transcript available: generate single default segment covering duration
             segments.push(ActiveSpeakerSegment {
                 start: start_sec,
                 end: start_sec + duration_sec,
@@ -363,7 +566,6 @@ impl ActiveSpeakerDetector for LocalFusionDetector {
             });
         }
 
-        // Sort segments chronologically
         segments.sort_by(|a, b| a.start.total_cmp(&b.start));
 
         Ok(ActiveSpeakerTimeline {
@@ -391,7 +593,7 @@ pub async fn get_or_compute_active_speaker_timeline(
         source_path,
         start_sec,
         duration_sec,
-        "active_speaker_v2",
+        "active_speaker_v3",
         "asd_nim_fusion",
         "primary_nvidia",
     );
@@ -410,7 +612,7 @@ pub async fn get_or_compute_active_speaker_timeline(
             Ok(timeline) => Some(timeline),
             Err(e) => {
                 eprintln!(
-                    "[ClipOn ASD] Notice: NVIDIA Active Speaker API unavailable ({}), falling back to local vision-audio fusion.",
+                    "[ClipOn ASD] Notice: NVIDIA Active Speaker inference fallback ({}). Using local multimodal fusion.",
                     e
                 );
                 None
@@ -458,7 +660,6 @@ pub fn generate_speaker_aware_keyframes(
 
     let people = face_result.people();
 
-    // Helper to find horizontal center for a person_id
     let get_person_center = |pid: usize| -> f64 {
         if let Some(person) = people.iter().find(|p| p.id == pid) {
             if let Some(last_kf) = person.keyframes.last() {
@@ -475,7 +676,6 @@ pub fn generate_speaker_aware_keyframes(
         default_cx
     };
 
-    // Extract segments intersecting [clip_start, clip_end]
     let relevant_segments: Vec<&ActiveSpeakerSegment> = timeline
         .segments
         .iter()
@@ -483,7 +683,6 @@ pub fn generate_speaker_aware_keyframes(
         .collect();
 
     if relevant_segments.is_empty() {
-        // Return single steady keyframe
         return vec![TrackingKeyframe {
             t: 0.0,
             x: default_cx,
@@ -491,7 +690,6 @@ pub fn generate_speaker_aware_keyframes(
         }];
     }
 
-    // Apply Hysteresis: Merge rapid speaker switches (< 2.0s minimum hold duration)
     struct HeldSegment {
         start: f64,
         end: f64,
@@ -508,19 +706,14 @@ pub fn generate_speaker_aware_keyframes(
 
         if let Some(last) = held_segments.last_mut() {
             if last.person_id == seg.person_id {
-                // Extend current speaker
                 last.end = seg_end;
             } else {
                 let current_duration = last.end - last.start;
                 let new_duration = seg_end - seg_start;
 
-                // Hysteresis check: If previous speaker held for less than 2.0s,
-                // or new speaker speaks for less than 1.5s, don't flip camera;
-                // instead, keep framing or switch to wide two-person shot
                 if current_duration < 2.0 || new_duration < 1.5 {
                     if people.len() >= 2 {
-                        // Wide shot: midpoint between person 1 and 2
-                        last.person_id = 0; // 0 designates two-person wide shot
+                        last.person_id = 0; // Wide shot designation
                     }
                     last.end = seg_end;
                 } else {
@@ -548,13 +741,11 @@ pub fn generate_speaker_aware_keyframes(
         }];
     }
 
-    // Generate smooth keyframes with 0.5s ease-in-out transitions
     let mut keyframes: Vec<TrackingKeyframe> = Vec::new();
     let transition_duration = 0.50f64;
 
     for (i, seg) in held_segments.iter().enumerate() {
         let target_x = if seg.person_id == 0 {
-            // Two-person wide shot: midpoint
             let x1 = get_person_center(1);
             let x2 = get_person_center(2);
             ((x1 + x2) / 2.0).clamp(0.25, 0.75)
@@ -571,7 +762,6 @@ pub fn generate_speaker_aware_keyframes(
         } else {
             let prev_x = keyframes.last().map(|k| k.x).unwrap_or(default_cx);
             if (prev_x - target_x).abs() > 0.04 {
-                // Interpolate ease-in-out pan over transition_duration
                 let trans_start = (seg.start - transition_duration * 0.5).max(0.0);
                 let trans_end = (seg.start + transition_duration * 0.5).min(duration);
 
@@ -601,7 +791,6 @@ pub fn generate_speaker_aware_keyframes(
         });
     }
 
-    // Ensure last keyframe reaches end of clip
     if let Some(last) = keyframes.last().cloned() {
         if last.t < duration {
             keyframes.push(TrackingKeyframe {
@@ -672,51 +861,51 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_nvidia_asd_request_serialization() {
+    fn test_nvidia_diarization_serialization() {
         let segs = vec![NvidiaDiarizationSegment {
-            speaker: "S1",
+            speaker_id: "S1".to_string(),
             start: 0.0,
             end: 5.0,
         }];
-        let req = NvidiaAsdRequest {
-            source_filename: "interview.mp4",
-            start_sec: 10.0,
-            duration_sec: 30.0,
-            diarization_segments: segs,
-        };
-        let json = serde_json::to_string(&req).expect("must serialize");
-        assert!(json.contains("interview.mp4"));
-        assert!(json.contains("\"start_sec\":10.0"));
+        let json = serde_json::to_string(&segs).expect("must serialize");
+        assert!(json.contains("speaker_id"));
+        assert!(json.contains("\"start\":0.0"));
     }
 
     #[test]
-    fn test_nvidia_asd_response_parsing() {
-        let resp_json = r#"{
-            "active_speakers": [
-                {
-                    "start": 0.0,
-                    "end": 5.0,
-                    "speaker_id": "S1",
-                    "person_id": 1,
-                    "confidence": 0.95,
-                    "is_speaking": true
-                },
-                {
-                    "start": 5.5,
-                    "end": 12.0,
-                    "speaker_id": "S2",
-                    "person_id": 2,
-                    "confidence": 0.91,
-                    "is_speaking": true
-                }
-            ],
-            "confidence": 0.93
-        }"#;
+    fn test_nvidia_per_frame_parsing_and_aggregation() {
+        let raw_frames = vec![
+            NvidiaPerFrameSpeaker {
+                timestamp: 0.04,
+                speaker_bbox: Some([0.25, 0.20, 0.18, 0.24]),
+                diarized_speaker_id: Some("S1".to_string()),
+                face_id: Some(1),
+                is_speaking: true,
+                confidence: 0.94,
+            },
+            NvidiaPerFrameSpeaker {
+                timestamp: 0.08,
+                speaker_bbox: Some([0.25, 0.20, 0.18, 0.24]),
+                diarized_speaker_id: Some("S1".to_string()),
+                face_id: Some(1),
+                is_speaking: true,
+                confidence: 0.96,
+            },
+            NvidiaPerFrameSpeaker {
+                timestamp: 0.12,
+                speaker_bbox: Some([0.75, 0.22, 0.19, 0.25]),
+                diarized_speaker_id: Some("S2".to_string()),
+                face_id: Some(2),
+                is_speaking: true,
+                confidence: 0.91,
+            },
+        ];
 
-        let parsed: NvidiaAsdResponse =
-            serde_json::from_str(resp_json).expect("must parse response");
-        assert_eq!(parsed.active_speakers.len(), 2);
-        assert_eq!(parsed.confidence, Some(0.93));
+        let timeline = aggregate_nvidia_frames_to_timeline(&raw_frames, 10.0, 30.0);
+        assert!(!timeline.segments.is_empty());
+        assert_eq!(timeline.speaker_person_mapping.get("S1"), Some(&1));
+        assert_eq!(timeline.speaker_person_mapping.get("S2"), Some(&2));
+        assert_eq!(timeline.provider, "nvidia_api");
     }
 
     #[test]
@@ -762,7 +951,6 @@ mod tests {
 
         let keyframes = generate_speaker_aware_keyframes(&timeline, &face_result, 10.0, 20.0);
         assert!(!keyframes.is_empty());
-        // Verify keyframes cover duration
         assert_eq!(keyframes[0].t, 0.0);
     }
 
