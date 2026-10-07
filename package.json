@@ -11,8 +11,8 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:dev": "tauri dev --ignore-version-mismatches",
+    "tauri:build": "tauri build --ignore-version-mismatches"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.5.0",
