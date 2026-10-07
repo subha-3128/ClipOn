@@ -108,11 +108,13 @@ pub async fn generate_candidates(
     // 2. Compute or Fetch Cached Active Speaker Timeline (analyzed once, cached for all candidate reels)
     let project_opt = db.get_project(project_id).ok();
     let asd_timeline = if let Some(ref proj) = project_opt {
+        let probe = crate::media::probe_media(&proj.source_path).ok();
+        let total_dur = probe.and_then(|p| p.duration_sec).unwrap_or(normalized.duration);
         Some(
             crate::media::get_or_compute_active_speaker_timeline(
                 &proj.source_path,
                 0.0,
-                normalized.duration,
+                total_dur,
                 Some(&normalized),
             )
             .await,

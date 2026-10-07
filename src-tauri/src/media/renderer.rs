@@ -168,17 +168,30 @@ pub fn execute_render_plan(plan: &RenderPlan) -> Result<PathBuf> {
                     let ch = (ih_f.min(iw_f * 16.0 / 9.0) / 2.0).floor() * 2.0;
 
                     let cache = crate::analysis_cache::AnalysisCache::global();
+                    let full_dur = probe.duration_sec.unwrap_or(duration_sec);
                     let cache_key = crate::analysis_cache::AnalysisCache::compute_source_key_with_params(
                         &plan.source,
                         0.0,
-                        probe.duration_sec.unwrap_or(duration_sec),
+                        full_dur,
                         "active_speaker_v3",
                         "asd_nim_fusion",
                         "primary_nvidia",
                     );
-                    let active_timeline = cache
-                        .get::<super::active_speaker::ActiveSpeakerTimeline>(&cache_key, "active_speaker")
-                        .unwrap_or_default();
+                    let mut active_timeline_opt = cache
+                        .get::<super::active_speaker::ActiveSpeakerTimeline>(&cache_key, "active_speaker");
+
+                    if active_timeline_opt.is_none() {
+                        let clip_cache_key = crate::analysis_cache::AnalysisCache::compute_source_key_with_params(
+                            &plan.source,
+                            start_sec,
+                            duration_sec,
+                            "active_speaker_v3",
+                            "asd_nim_fusion",
+                            "primary_nvidia",
+                        );
+                        active_timeline_opt = cache.get::<super::active_speaker::ActiveSpeakerTimeline>(&clip_cache_key, "active_speaker");
+                    }
+                    let active_timeline = active_timeline_opt.unwrap_or_default();
 
                     let keyframes = super::active_speaker::generate_speaker_aware_keyframes(
                         &active_timeline,
