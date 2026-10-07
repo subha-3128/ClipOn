@@ -11,8 +11,8 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev --ignore-version-mismatches",
-    "tauri:build": "tauri build --ignore-version-mismatches",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
     "auth:youtube": "node scripts/get_youtube_token.mjs"
   },
   "dependencies": {
