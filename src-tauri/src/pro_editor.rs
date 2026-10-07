@@ -1,4 +1,5 @@
 use crate::models::{CandidateDraft, NormalizedTranscript, TranscriptWord};
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
@@ -380,15 +381,131 @@ fn read_audio_rms_profile(wav_path: &Path) -> Option<(f64, Vec<(f64, f64)>)> {
     Some((global_avg, blocks))
 }
 
-/// Evaluates the linguistic viral potential and scroll-stopping power of an opening hook.
-/// Returns a score between 45.0 and 99.0, along with descriptive badges.
-pub fn evaluate_hook_linguistics(hook_text: &str) -> (f64, Vec<&'static str>) {
+// =========================================================================
+// 4. NORMALIZED MULTI-MODAL SCORING ENGINE (0.0 - 1.0 COMPONENTS -> 0 - 100 COMPOSITE)
+// =========================================================================
+
+/// Individual normalized scoring components, each guaranteed to be in [0.0, 1.0].
+///
+/// Every component is normalized prior to composite weighting:
+/// - `hook`:              0.0 - 1.0 (scroll-stopping hook strength, opening punchiness, high-stakes metrics)
+/// - `story`:             0.0 - 1.0 (narrative arc, thought resolution, LLM topic relevance)
+/// - `retention`:         0.0 - 1.0 (duration retention window, optimal 30-45s sweet spot)
+/// - `emotion_curiosity`: 0.0 - 1.0 (curiosity gap, emotional resonance, contrarian intrigue)
+/// - `pacing`:            0.0 - 1.0 (speech velocity tempo, optimal 155-205 WPM)
+/// - `visual`:            0.0 - 1.0 (active-speaker tracking confidence & camera stability)
+/// - `audio`:             0.0 - 1.0 (vocal energy surge, hook RMS vs clip peak)
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct NormalizedCandidateComponents {
+    pub hook: f64,
+    pub story: f64,
+    pub retention: f64,
+    pub emotion_curiosity: f64,
+    pub pacing: f64,
+    pub visual: f64,
+    pub audio: f64,
+}
+
+impl NormalizedCandidateComponents {
+    /// Validates that every component is strictly normalized within [0.0, 1.0] and is not NaN.
+    pub fn validate(&self) -> Result<(), String> {
+        let items = [
+            ("hook", self.hook),
+            ("story", self.story),
+            ("retention", self.retention),
+            ("emotion_curiosity", self.emotion_curiosity),
+            ("pacing", self.pacing),
+            ("visual", self.visual),
+            ("audio", self.audio),
+        ];
+        for (name, val) in items {
+            if !(0.0..=1.0).contains(&val) || val.is_nan() {
+                return Err(format!(
+                    "Scoring component '{}' must be normalized in 0.0..=1.0, got {}",
+                    name, val
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Computes the weighted composite score on a strict 0.0 - 100.0 scale.
+    ///
+    /// Weights (sum to 1.00):
+    /// - Hook:              0.18
+    /// - Story:             0.20
+    /// - Retention:         0.17
+    /// - Emotion/Curiosity: 0.15
+    /// - Pacing:            0.10
+    /// - Visual:            0.10
+    /// - Audio:             0.10
+    pub fn composite_score_100(&self) -> f64 {
+        // Enforce clamping on each component before weighting to guarantee safety
+        let weighted = 0.18 * self.hook.clamp(0.0, 1.0)
+            + 0.20 * self.story.clamp(0.0, 1.0)
+            + 0.17 * self.retention.clamp(0.0, 1.0)
+            + 0.15 * self.emotion_curiosity.clamp(0.0, 1.0)
+            + 0.10 * self.pacing.clamp(0.0, 1.0)
+            + 0.10 * self.visual.clamp(0.0, 1.0)
+            + 0.10 * self.audio.clamp(0.0, 1.0);
+
+        (weighted * 100.0).clamp(0.0, 100.0).round()
+    }
+}
+
+/// Evaluates the linguistic components of an opening hook.
+/// Returns `(hook_norm, emotion_curiosity_norm, badges)` where both scores are strictly in 0.0..=1.0.
+pub fn evaluate_hook_components(hook_text: &str) -> (f64, f64, Vec<&'static str>) {
     let lower = hook_text.trim().to_lowercase();
     let words: Vec<&str> = lower.split_whitespace().collect();
-    let mut score = 65.0f64;
     let mut badges = Vec::new();
 
-    // 1. Intriguing Question Hook (curiosity gap)
+    // 1. Hook Scroll-Stopping Strength (0.0 - 1.0)
+    let mut hook_score = 0.70f64;
+
+    // High-Stakes Metric
+    let quantitative_patterns = [
+        "99%", "90%", "80%", "50%", "million", "billion", "dollars", "0 to", "10x", "top 3",
+        "3 things", "5 ways", "number one", "first time", "every single", "rules", "formula",
+    ];
+    if quantitative_patterns.iter().any(|p| lower.contains(p))
+        || words.iter().any(|w| w.chars().any(|c| c.is_ascii_digit()))
+    {
+        hook_score += 0.18;
+        badges.push("📊 High-Stakes Metric");
+    }
+
+    // High-Value Promise / Breakthrough Formula
+    let value_keywords = [
+        "how to", "secret to", "the real reason", "this one thing", "the formula",
+        "blueprint", "unlock", "double your", "10x your", "fastest way", "hack",
+    ];
+    if value_keywords.iter().any(|k| lower.contains(k)) {
+        hook_score += 0.12;
+        badges.push("💡 High-Value Promise");
+    }
+
+    // Brevity & Punchiness (first 3 seconds rule)
+    if words.len() >= 4 && words.len() <= 16 {
+        hook_score += 0.10;
+    } else if words.len() > 26 {
+        hook_score -= 0.12;
+    }
+
+    // Penalty for Conversational Weak Intros & Greetings
+    let weak_intro_patterns = [
+        "hey guys", "welcome back", "hello everyone", "so basically", "i wanted to share",
+        "in this video", "today i'm going to", "what's up guys",
+    ];
+    if weak_intro_patterns.iter().any(|p| lower.contains(p)) {
+        hook_score -= 0.20;
+        badges.push("⚠️ Weak Conversational Intro");
+    }
+
+    // 2. Emotion / Curiosity Gap Strength (0.0 - 1.0)
+    let mut emotion_curiosity_score = 0.55f64;
+
+    // Intriguing Question Hook (curiosity gap)
     let is_question = hook_text.contains('?')
         || lower.starts_with("why ")
         || lower.starts_with("how ")
@@ -399,99 +516,204 @@ pub fn evaluate_hook_linguistics(hook_text: &str) -> (f64, Vec<&'static str>) {
         || lower.starts_with("can you believe ")
         || lower.starts_with("who is ");
     if is_question {
-        score += 20.0;
+        emotion_curiosity_score += 0.25;
         badges.push("❓ Curiosity Question");
     }
 
-    // 2. Bold / Controversial / Myth-Busting / Warning
+    // Bold / Controversial / Myth-Busting / Warning
     let contrarian_keywords = [
         "never", "stop", "mistake", "wrong", "lie", "truth", "secret", "nobody", "ruined",
         "failed", "myth", "worst", "don't", "avoid", "warning", "danger", "fake", "trap",
     ];
     if contrarian_keywords.iter().any(|k| lower.contains(k)) {
-        score += 18.0;
+        emotion_curiosity_score += 0.20;
         badges.push("⚡ Bold Contrarian Hook");
     }
 
-    // 3. Quantitative / Specific / High Stakes
-    let quantitative_patterns = [
-        "99%", "90%", "80%", "50%", "million", "billion", "dollars", "0 to", "10x", "top 3",
-        "3 things", "5 ways", "number one", "first time", "every single", "rules", "formula",
-    ];
-    if quantitative_patterns.iter().any(|p| lower.contains(p))
-        || words.iter().any(|w| w.chars().any(|c| c.is_ascii_digit()))
-    {
-        score += 14.0;
-        badges.push("📊 High-Stakes Metric");
-    }
-
-    // 4. Emotional / Storytelling Setup
+    // Emotional / Storytelling Setup
     let narrative_keywords = [
         "crazy", "insane", "shocking", "changed my life", "i lost", "couldn't believe",
         "hardest thing", "story", "terrifying", "huge", "unexpected", "secret", "revealed",
     ];
     if narrative_keywords.iter().any(|k| lower.contains(k)) {
-        score += 14.0;
+        emotion_curiosity_score += 0.15;
         badges.push("🔥 Emotional Hook");
     }
 
-    // 5. Promises of High Value / Breakthrough Formula
-    let value_keywords = [
-        "how to", "secret to", "the real reason", "this one thing", "the formula",
-        "blueprint", "unlock", "double your", "10x your", "fastest way", "hack",
-    ];
-    if value_keywords.iter().any(|k| lower.contains(k)) {
-        score += 12.0;
-        badges.push("💡 High-Value Promise");
-    }
+    (
+        hook_score.clamp(0.20, 1.00),
+        emotion_curiosity_score.clamp(0.20, 1.00),
+        badges,
+    )
+}
 
-    // 6. Penalty for Conversational Weak Intros & Greetings
-    let weak_intro_patterns = [
-        "hey guys", "welcome back", "hello everyone", "so basically", "i wanted to share",
-        "in this video", "today i'm going to", "what's up guys",
-    ];
-    if weak_intro_patterns.iter().any(|p| lower.contains(p)) {
-        score -= 15.0;
-        badges.push("⚠️ Weak Conversational Intro");
-    }
+/// Evaluates the linguistic viral potential and scroll-stopping power of an opening hook.
+/// Returns a score between 45.0 and 99.0, along with descriptive badges.
+pub fn evaluate_hook_linguistics(hook_text: &str) -> (f64, Vec<&'static str>) {
+    let (hook_norm, emotion_curiosity_norm, badges) = evaluate_hook_components(hook_text);
+    let composite = (0.55 * hook_norm + 0.45 * emotion_curiosity_norm) * 100.0;
+    (composite.clamp(45.0, 99.0), badges)
+}
 
-    // 7. Hook Brevity & Punchiness (first 3 seconds rule)
-    if words.len() >= 4 && words.len() <= 16 {
-        score += 8.0;
-    } else if words.len() > 26 {
-        score -= 10.0; // Overly long or rambling
-    }
 
-    (score.clamp(45.0, 99.0), badges)
+/// Evaluates retention and pacing components:
+/// Returns `(retention_norm, pacing_norm, duration_badge)` with scores strictly in 0.0..=1.0.
+pub fn calculate_retention_components(
+    duration_sec: f64,
+    wpm: f64,
+) -> (f64, f64, Option<&'static str>) {
+    // 1. Duration Retention Score (30-45s is the optimal short-form window. Absolute max 60s).
+    let (retention_norm, duration_badge) = if (30.0..=45.0).contains(&duration_sec) {
+        (0.98, Some("🎯 30–45s Sweet Spot"))
+    } else if (25.0..30.0).contains(&duration_sec) {
+        (0.88, None)
+    } else if (45.0..=55.0).contains(&duration_sec) {
+        (0.84, None)
+    } else if (55.0..=60.0).contains(&duration_sec) {
+        (0.70, None)
+    } else {
+        (0.55, None)
+    };
+
+    // 2. Speech Velocity / Pacing Score (155-205 WPM is ideal)
+    let pacing_norm = (0.96 - ((wpm - 175.0).abs() * 0.0035)).clamp(0.45, 0.98);
+
+    (retention_norm, pacing_norm, duration_badge)
 }
 
 /// Calculate viewer retention potential based on duration sweet spot (30-45s) and speech pacing.
 pub fn calculate_retention_potential(duration_sec: f64, wpm: f64) -> (f64, Option<&'static str>) {
-    // 1. Duration Retention Score (30-45s is the optimal short-form window. Absolute max 60s).
-    let (duration_score, duration_badge) = if (30.0..=45.0).contains(&duration_sec) {
-        (98.0, Some("🎯 30–45s Sweet Spot"))
-    } else if (25.0..30.0).contains(&duration_sec) {
-        (88.0, None)
-    } else if (45.0..=55.0).contains(&duration_sec) {
-        (84.0, None)
-    } else if (55.0..=60.0).contains(&duration_sec) {
-        (70.0, None)
-    } else {
-        (55.0, None)
-    };
-
-    // 2. Speech Velocity / Pacing Score (155-205 WPM is ideal)
-    let pacing_score = (96.0 - ((wpm - 175.0).abs() * 0.35)).clamp(50.0, 98.0);
-
-    let composite_retention = 0.55 * duration_score + 0.45 * pacing_score;
-    (composite_retention, duration_badge)
+    let (retention_norm, pacing_norm, duration_badge) =
+        calculate_retention_components(duration_sec, wpm);
+    let composite_retention = (0.55 * retention_norm + 0.45 * pacing_norm) * 100.0;
+    (composite_retention.clamp(45.0, 99.0), duration_badge)
 }
 
-/// Comprehensive multi-modal candidate scoring combining:
-/// 1. Hook Quality (30%): Linguistic scroll-stopping power + vocal energy surge
-/// 2. Viewer Retention & Pacing (30%): 30-45s sweet spot + speech tempo (WPM)
-/// 3. Narrative Completeness & LLM Relevance (20%): Narrative arc & thought resolution
-/// 4. Visual Quality & Active-Speaker Stability (20%): Active-speaker confidence + camera switch penalty
+/// Evaluates visual quality and active-speaker stability:
+/// Returns `(visual_norm, badges)` where `visual_norm` is strictly in 0.0..=1.0.
+pub fn calculate_visual_component(
+    asd_timeline: Option<&crate::media::active_speaker::ActiveSpeakerTimeline>,
+    clip_start: f64,
+    clip_end: f64,
+) -> (f64, Vec<String>) {
+    let clip_duration = (clip_end - clip_start).max(1.0);
+    if let Some(timeline) = asd_timeline {
+        let relevant_segs: Vec<_> = timeline
+            .segments
+            .iter()
+            .filter(|s| s.end > clip_start && s.start < clip_end)
+            .collect();
+
+        let mut v_norm = if relevant_segs.is_empty() {
+            0.65
+        } else {
+            let avg_conf: f64 = relevant_segs.iter().map(|s| s.confidence).sum::<f64>()
+                / relevant_segs.len() as f64;
+            0.75 + avg_conf.clamp(0.0, 1.0) * 0.20
+        };
+
+        let mut v_badges = Vec::new();
+
+        // Explicit Active Speaker Provider Provenance Badge
+        if timeline.provider == "nvidia_api" {
+            v_badges.push("⚡ Active Speaker: NVIDIA ASD".to_string());
+        } else {
+            let fallback_msg = match &timeline.fallback_reason {
+                Some(reason) => {
+                    let brief = if reason.contains("credentials") || reason.contains("API key") {
+                        "No API key"
+                    } else if reason.contains("Function ID") {
+                        "No Function ID"
+                    } else {
+                        "Inference fallback"
+                    };
+                    format!("⚠️ Active Speaker: Local Fallback ({})", brief)
+                }
+                None => "⚠️ Active Speaker: Local Fallback".to_string(),
+            };
+            v_badges.push(fallback_msg);
+        }
+
+        // Camera-Switch Penalty: penalize rapid speaker flip-flops (> 4 switches per 30s)
+        let switches = if relevant_segs.len() > 1 {
+            relevant_segs
+                .windows(2)
+                .filter(|w| w[0].person_id != w[1].person_id)
+                .count()
+        } else {
+            0
+        };
+
+        let max_acceptable_switches = ((clip_duration / 10.0).round() as usize).max(2);
+        if switches > max_acceptable_switches {
+            let penalty = ((switches - max_acceptable_switches) as f64 * 0.035).min(0.15);
+            v_norm -= penalty;
+        } else if switches >= 1 {
+            v_badges.push("👥 Dynamic Dual-Speaker".to_string());
+        } else {
+            v_badges.push("🎯 Focused Single-Speaker".to_string());
+        }
+
+        (v_norm.clamp(0.45, 0.98), v_badges)
+    } else {
+        (0.85, Vec::new())
+    }
+}
+
+/// Evaluates audio vocal delivery & energy surge:
+/// Returns `(audio_norm, hook_energy_ratio)` where `audio_norm` is strictly in 0.0..=1.0.
+pub fn calculate_audio_component(
+    audio_profile: Option<&(f64, Vec<(f64, f64)>)>,
+    clip_start: f64,
+    clip_end: f64,
+) -> (f64, f64) {
+    let mut hook_energy_ratio = 1.0f64;
+    let mut peak_energy_ratio = 1.0f64;
+
+    if let Some((global_avg, ref blocks)) = audio_profile {
+        if *global_avg > 1e-4 {
+            let hook_end = clip_start + 3.5;
+            let hook_blocks: Vec<f64> = blocks
+                .iter()
+                .filter(|(t, _)| *t >= clip_start && *t <= hook_end)
+                .map(|(_, rms)| *rms)
+                .collect();
+
+            if !hook_blocks.is_empty() {
+                let hook_avg = hook_blocks.iter().sum::<f64>() / (hook_blocks.len() as f64);
+                hook_energy_ratio = hook_avg / *global_avg;
+            }
+
+            let clip_peak = blocks
+                .iter()
+                .filter(|(t, _)| *t >= clip_start && *t <= clip_end)
+                .map(|(_, rms)| *rms)
+                .fold(0.0f64, |a, b| a.max(b));
+
+            peak_energy_ratio = clip_peak / *global_avg;
+        }
+    }
+
+    let audio_norm = if audio_profile.is_some() {
+        (0.50 + (hook_energy_ratio - 1.0) * 0.35 + (peak_energy_ratio - 1.0) * 0.15)
+            .clamp(0.45, 0.99)
+    } else {
+        0.75
+    };
+
+    (audio_norm, hook_energy_ratio)
+}
+
+/// Comprehensive multi-modal candidate scoring combining strictly normalized components:
+/// 1. Hook (18%): Linguistic scroll-stopping power, brevity & high-stakes metrics (0.0 - 1.0)
+/// 2. Story / Narrative (20%): Narrative arc & LLM topic completeness (0.0 - 1.0)
+/// 3. Viewer Retention (17%): 30-45s sweet spot duration window (0.0 - 1.0)
+/// 4. Emotion / Curiosity (15%): Curiosity gap questions & contrarian intrigue (0.0 - 1.0)
+/// 5. Pacing (10%): Speech tempo Words Per Minute velocity (0.0 - 1.0)
+/// 6. Visual Quality (10%): Active-speaker confidence & camera switch stability (0.0 - 1.0)
+/// 7. Audio Delivery (10%): Vocal energy surge & hook delivery RMS ratio (0.0 - 1.0)
+///
+/// Output: consistently 0 - 100 with every component normalized before weighting.
 pub fn calculate_composite_reel_scores(
     wav_path: Option<&Path>,
     drafts: &[CandidateDraft],
@@ -514,123 +736,49 @@ pub fn calculate_composite_reel_scores(
                 .count();
             let wpm = (word_count as f64 / clip_duration) * 60.0;
 
-            // 2. Calculate Audio Energy (Hook 3.5s surge and clip peak)
-            let mut hook_energy_ratio = 1.0f64;
-            let mut peak_energy_ratio = 1.0f64;
+            // 2. Audio Component (0.0 - 1.0)
+            let (audio_norm, hook_energy_ratio) =
+                calculate_audio_component(audio_profile.as_ref(), draft.start, draft.end);
 
-            if let Some((global_avg, ref blocks)) = audio_profile {
-                if global_avg > 1e-4 {
-                    // Hook window: first 3.5 seconds
-                    let hook_end = draft.start + 3.5;
-                    let hook_blocks: Vec<f64> = blocks
-                        .iter()
-                        .filter(|(t, _)| *t >= draft.start && *t <= hook_end)
-                        .map(|(_, rms)| *rms)
-                        .collect();
+            // 3. Hook & Emotion/Curiosity Components (0.0 - 1.0 each)
+            let (hook_norm, emotion_curiosity_norm, hook_badges) =
+                evaluate_hook_components(&draft.hook);
 
-                    if !hook_blocks.is_empty() {
-                        let hook_avg = hook_blocks.iter().sum::<f64>() / (hook_blocks.len() as f64);
-                        hook_energy_ratio = hook_avg / global_avg;
-                    }
+            // 4. Retention & Pacing Components (0.0 - 1.0 each)
+            let (retention_norm, pacing_norm, duration_badge) =
+                calculate_retention_components(clip_duration, wpm);
 
-                    // Peak block in clip
-                    let clip_peak = blocks
-                        .iter()
-                        .filter(|(t, _)| *t >= draft.start && *t <= draft.end)
-                        .map(|(_, rms)| *rms)
-                        .fold(0.0f64, |a, b| a.max(b));
+            // 5. Visual Component (0.0 - 1.0)
+            let (visual_norm, visual_badges) =
+                calculate_visual_component(asd_timeline, draft.start, draft.end);
 
-                    peak_energy_ratio = clip_peak / global_avg;
-                }
-            }
-
-            // Audio Surge Score: if audio profile is available, measure surge; otherwise neutral 75.0
-            let audio_score = if audio_profile.is_some() {
-                (50.0 + (hook_energy_ratio - 1.0) * 35.0 + (peak_energy_ratio - 1.0) * 15.0)
-                    .clamp(45.0, 99.0)
+            // 6. Story / Narrative Component (0.0 - 1.0)
+            // Defensively normalize against accidental 0-100 inputs:
+            let story_norm = if draft.score > 1.0 {
+                (draft.score / 100.0).clamp(0.0, 1.0)
             } else {
-                75.0
+                draft.score.clamp(0.0, 1.0)
             };
 
-            // 3. First-Class Hook Quality and Retention Potential Evaluation
-            let (linguistic_score, hook_badges) = evaluate_hook_linguistics(&draft.hook);
-            let (retention_potential, duration_badge) = calculate_retention_potential(clip_duration, wpm);
-
-            // Hook composite: 60% linguistic scroll-stopper power + 40% audio vocal delivery/energy
-            let hook_composite = 0.60 * linguistic_score + 0.40 * audio_score;
-
-            // 4. Visual Quality & Active Speaker Validation
-            let (visual_score, visual_badges) = if let Some(timeline) = asd_timeline {
-                let relevant_segs: Vec<_> = timeline
-                    .segments
-                    .iter()
-                    .filter(|s| s.end > draft.start && s.start < draft.end)
-                    .collect();
-
-                let mut v_score = if relevant_segs.is_empty() {
-                    65.0
-                } else {
-                    let avg_conf: f64 = relevant_segs.iter().map(|s| s.confidence).sum::<f64>()
-                        / relevant_segs.len() as f64;
-                    75.0 + avg_conf * 20.0
-                };
-
-                let mut v_badges = Vec::new();
-
-                // Explicit Active Speaker Provider Provenance Badge
-                if timeline.provider == "nvidia_api" {
-                    v_badges.push("⚡ Active Speaker: NVIDIA ASD".to_string());
-                } else {
-                    let fallback_msg = match &timeline.fallback_reason {
-                        Some(reason) => {
-                            let brief = if reason.contains("credentials") || reason.contains("API key") {
-                                "No API key"
-                            } else if reason.contains("Function ID") {
-                                "No Function ID"
-                            } else {
-                                "Inference fallback"
-                            };
-                            format!("⚠️ Active Speaker: Local Fallback ({})", brief)
-                        }
-                        None => "⚠️ Active Speaker: Local Fallback".to_string(),
-                    };
-                    v_badges.push(fallback_msg);
-                }
-
-                // Camera-Switch Penalty: penalize rapid speaker flip-flops (> 4 switches per 30s)
-                let switches = if relevant_segs.len() > 1 {
-                    relevant_segs.windows(2).filter(|w| w[0].person_id != w[1].person_id).count()
-                } else {
-                    0
-                };
-
-                let max_acceptable_switches = ((clip_duration / 10.0).round() as usize).max(2);
-                if switches > max_acceptable_switches {
-                    let penalty = ((switches - max_acceptable_switches) as f64 * 3.5).min(15.0);
-                    v_score -= penalty;
-                } else if switches >= 1 {
-                    v_badges.push("👥 Dynamic Dual-Speaker".to_string());
-                } else {
-                    v_badges.push("🎯 Focused Single-Speaker".to_string());
-                }
-
-                (v_score.clamp(45.0, 98.0), v_badges)
-            } else {
-                (85.0, Vec::new())
+            // Assemble normalized components (guaranteed in 0.0..=1.0)
+            let components = NormalizedCandidateComponents {
+                hook: hook_norm,
+                story: story_norm,
+                retention: retention_norm,
+                emotion_curiosity: emotion_curiosity_norm,
+                pacing: pacing_norm,
+                visual: visual_norm,
+                audio: audio_norm,
             };
 
-            // Final Composite Ranking Blend:
-            // 30% Hook Quality (linguistics + vocal energy)
-            // 30% Viewer Retention & Pacing (duration 30-45s sweet spot + speech tempo)
-            // 20% Narrative Completeness & LLM Content Relevance
-            // 20% Visual Quality & Active-Speaker Framing Stability
-            let llm_score_100 = (draft.score * 100.0).clamp(40.0, 100.0);
-            let composite = (0.30 * hook_composite
-                + 0.30 * retention_potential
-                + 0.20 * llm_score_100
-                + 0.20 * visual_score)
-                .round();
-            enriched.score = composite.clamp(45.0, 99.0);
+            debug_assert!(
+                components.validate().is_ok(),
+                "Candidate component normalization violation: {:?}",
+                components
+            );
+
+            // 7. Compute final composite score strictly in 0.0 - 100.0
+            enriched.score = components.composite_score_100();
 
             // Enrich rationale with hook badges and auditory/visual insights
             let mut prefix = String::new();
@@ -638,8 +786,8 @@ pub fn calculate_composite_reel_scores(
                 prefix.push_str(d_badge);
                 prefix.push_str(". ");
             }
-            if !hook_badges.is_empty() {
-                prefix.push_str(hook_badges[0]);
+            for h_badge in &hook_badges {
+                prefix.push_str(h_badge);
                 prefix.push_str(". ");
             }
             for v_badge in &visual_badges {
@@ -1358,5 +1506,80 @@ mod tests {
         let fallback_scored = calculate_composite_reel_scores(None, &drafts, &transcript, Some(&fallback_timeline));
         assert!(fallback_scored[0].rationale.contains("Active Speaker: Local Fallback"));
         assert!(fallback_scored[0].rationale.contains("No API key"));
+    }
+
+    #[test]
+    fn test_scoring_components_normalization_bounds() {
+        // 1. Hook and Emotion/Curiosity bounds
+        let (hook_norm, emotion_norm, _) = evaluate_hook_components("Why did 99% fail?");
+        assert!((0.0..=1.0).contains(&hook_norm), "hook_norm {} out of bounds", hook_norm);
+        assert!((0.0..=1.0).contains(&emotion_norm), "emotion_norm {} out of bounds", emotion_norm);
+
+        // 2. Retention and Pacing bounds across extreme durations and speech rates
+        for dur in [0.5, 10.0, 35.0, 42.0, 58.0, 90.0, 1000.0] {
+            for wpm in [0.0, 50.0, 175.0, 250.0, 600.0] {
+                let (ret_norm, pace_norm, _) = calculate_retention_components(dur, wpm);
+                assert!((0.0..=1.0).contains(&ret_norm), "ret_norm {} out of bounds for dur {}", ret_norm, dur);
+                assert!((0.0..=1.0).contains(&pace_norm), "pace_norm {} out of bounds for wpm {}", pace_norm, wpm);
+            }
+        }
+
+        // 3. Audio component bounds
+        let (audio_none, _) = calculate_audio_component(None, 0.0, 30.0);
+        assert!((0.0..=1.0).contains(&audio_none));
+
+        // 4. NormalizedCandidateComponents validation
+        let valid_comp = NormalizedCandidateComponents {
+            hook: 0.90,
+            story: 0.85,
+            retention: 0.98,
+            emotion_curiosity: 0.88,
+            pacing: 0.95,
+            visual: 0.92,
+            audio: 0.80,
+        };
+        assert!(valid_comp.validate().is_ok());
+        let score = valid_comp.composite_score_100();
+        assert!(score >= 0.0 && score <= 100.0);
+    }
+
+    #[test]
+    fn test_no_mixed_scale_contamination() {
+        // Verify that draft.score passed as 85.0 (percentage scale) or 0.85 (unit scale)
+        // produces the exact same normalized score and prevents accidental mixed-scale bugs.
+        let transcript = NormalizedTranscript {
+            language: "en".to_string(),
+            duration: 40.0,
+            speakers: vec!["Host".to_string()],
+            words: vec![TranscriptWord {
+                text: "Hello".to_string(),
+                start: 0.0,
+                end: 35.0,
+                speaker: Some("Host".to_string()),
+            }],
+            segments: vec![],
+        };
+
+        let draft_unit = vec![CandidateDraft {
+            start: 0.0,
+            end: 35.0,
+            score: 0.85,
+            hook: "Why is active speaker detection important?".to_string(),
+            rationale: "Testing rationale".to_string(),
+        }];
+
+        let draft_pct = vec![CandidateDraft {
+            start: 0.0,
+            end: 35.0,
+            score: 85.0,
+            hook: "Why is active speaker detection important?".to_string(),
+            rationale: "Testing rationale".to_string(),
+        }];
+
+        let scored_unit = calculate_composite_reel_scores(None, &draft_unit, &transcript, None);
+        let scored_pct = calculate_composite_reel_scores(None, &draft_pct, &transcript, None);
+
+        assert_eq!(scored_unit[0].score, scored_pct[0].score, "Scores must be identical regardless of whether draft.score was 0.85 or 85.0");
+        assert!(scored_unit[0].score >= 0.0 && scored_unit[0].score <= 100.0);
     }
 }
