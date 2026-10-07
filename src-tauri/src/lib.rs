@@ -11,6 +11,7 @@ pub mod models;
 pub mod pro_editor;
 pub mod services;
 pub mod transcription;
+pub mod youtube_uploader;
 
 use std::path::PathBuf;
 use anyhow::Context;
@@ -107,6 +108,9 @@ pub fn run() {
             commands::test_instagram_connection,
             commands::publish_candidate_to_instagram,
             commands::save_instagram_credentials,
+            commands::test_youtube_connection,
+            commands::publish_candidate_to_youtube,
+            commands::save_youtube_credentials,
             commands::save_credential,
             commands::delete_credential,
             commands::credential_status,

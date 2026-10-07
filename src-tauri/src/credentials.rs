@@ -14,6 +14,9 @@ pub const OPENROUTER: &str = "openrouter";
 pub const INSTAGRAM: &str = "instagram";
 pub const NVIDIA: &str = "nvidia";
 pub const NVIDIA_FUNCTION_ID: &str = "nvidia_function_id";
+pub const YOUTUBE_CLIENT_ID: &str = "youtube_client_id";
+pub const YOUTUBE_CLIENT_SECRET: &str = "youtube_client_secret";
+pub const YOUTUBE_REFRESH_TOKEN: &str = "youtube_refresh_token";
 
 /// Maps canonical credential identifier to its standard environment variable name.
 pub fn env_var_for_credential(name: &str) -> Option<&'static str> {
@@ -28,6 +31,9 @@ pub fn env_var_for_credential(name: &str) -> Option<&'static str> {
         INSTAGRAM => Some("INSTAGRAM_ACCESS_TOKEN"),
         NVIDIA => Some("NVIDIA_API_KEY"),
         NVIDIA_FUNCTION_ID => Some("NVIDIA_ASD_FUNCTION_ID"),
+        YOUTUBE_CLIENT_ID => Some("YOUTUBE_CLIENT_ID"),
+        YOUTUBE_CLIENT_SECRET => Some("YOUTUBE_CLIENT_SECRET"),
+        YOUTUBE_REFRESH_TOKEN => Some("YOUTUBE_REFRESH_TOKEN"),
         _ => None,
     }
 }
@@ -245,5 +251,8 @@ mod tests {
         assert_eq!(env_var_for_credential(GEMINI), Some("GEMINI_API_KEY"));
         assert_eq!(env_var_for_credential(NVIDIA), Some("NVIDIA_API_KEY"));
         assert_eq!(env_var_for_credential(NVIDIA_FUNCTION_ID), Some("NVIDIA_ASD_FUNCTION_ID"));
+        assert_eq!(env_var_for_credential(YOUTUBE_CLIENT_ID), Some("YOUTUBE_CLIENT_ID"));
+        assert_eq!(env_var_for_credential(YOUTUBE_CLIENT_SECRET), Some("YOUTUBE_CLIENT_SECRET"));
+        assert_eq!(env_var_for_credential(YOUTUBE_REFRESH_TOKEN), Some("YOUTUBE_REFRESH_TOKEN"));
     }
 }

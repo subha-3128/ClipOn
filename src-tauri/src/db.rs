@@ -10,6 +10,7 @@ use uuid::Uuid;
 
 use crate::models::{
     Candidate, CandidateDraft, Clip, ClipCopy, InstagramPost, Project, ProjectDetail, Transcript,
+    YouTubePost,
 };
 
 #[derive(Clone)]
@@ -133,6 +134,23 @@ impl Database {
                 3,
                 "ALTER TABLE candidates ADD COLUMN layout_override TEXT;",
             ),
+            (
+                4,
+                "CREATE TABLE IF NOT EXISTS youtube_posts (
+                    id TEXT PRIMARY KEY,
+                    candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+                    clip_id TEXT REFERENCES clips(id) ON DELETE SET NULL,
+                    status TEXT NOT NULL,
+                    title TEXT,
+                    description TEXT,
+                    video_id TEXT,
+                    video_url TEXT,
+                    error_message TEXT,
+                    created_at TEXT NOT NULL,
+                    published_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_youtube_candidate_id ON youtube_posts(candidate_id);",
+            ),
         ];
 
         for (ver, sql) in migrations {
@@ -158,6 +176,7 @@ impl Database {
         execute_migration_alter(&conn, "ALTER TABLE projects ADD COLUMN name TEXT")?;
         execute_migration_alter(&conn, "ALTER TABLE projects ADD COLUMN caption_style TEXT")?;
         execute_migration_alter(&conn, "ALTER TABLE candidates ADD COLUMN layout_override TEXT")?;
+        execute_migration_alter(&conn, "CREATE TABLE IF NOT EXISTS youtube_posts (id TEXT PRIMARY KEY, candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE, clip_id TEXT REFERENCES clips(id) ON DELETE SET NULL, status TEXT NOT NULL, title TEXT, description TEXT, video_id TEXT, video_url TEXT, error_message TEXT, created_at TEXT NOT NULL, published_at TEXT)")?;
         Ok(())
     }
 
@@ -231,6 +250,7 @@ impl Database {
         let clips = self.list_clips_for_project(project_id)?;
         let copy = self.list_copy_for_project(project_id)?;
         let instagram_posts = self.list_instagram_posts_for_project(project_id)?;
+        let youtube_posts = self.list_youtube_posts_for_project(project_id)?;
 
         Ok(ProjectDetail {
             project,
@@ -239,6 +259,7 @@ impl Database {
             clips,
             copy,
             instagram_posts,
+            youtube_posts,
         })
     }
 
@@ -683,10 +704,106 @@ impl Database {
         Ok(post)
     }
 
+    pub fn list_youtube_posts_for_project(&self, project_id: &str) -> Result<Vec<YouTubePost>> {
+        let conn = self.conn.lock().expect("database mutex poisoned");
+        let mut stmt = conn.prepare(
+            "SELECT p.id, p.candidate_id, p.clip_id, p.status, p.title, p.video_id, p.video_url, p.error_message, p.created_at, p.published_at 
+             FROM youtube_posts p 
+             INNER JOIN candidates c ON c.id = p.candidate_id 
+             WHERE c.project_id = ?1 
+             ORDER BY p.created_at DESC"
+        )?;
+        let rows = stmt.query_map(params![project_id], |row| {
+            Ok(YouTubePost {
+                id: row.get(0)?,
+                candidate_id: row.get(1)?,
+                clip_id: row.get(2)?,
+                status: row.get(3)?,
+                title: row.get(4)?,
+                video_id: row.get(5)?,
+                video_url: row.get(6)?,
+                error_message: row.get(7)?,
+                created_at: row.get(8)?,
+                published_at: row.get(9)?,
+            })
+        })?;
+        let mut posts = Vec::new();
+        for r in rows {
+            posts.push(r?);
+        }
+        Ok(posts)
+    }
+
+    pub fn upsert_youtube_post(
+        &self,
+        candidate_id: &str,
+        clip_id: Option<&str>,
+        status: &str,
+        title: Option<&str>,
+        video_id: Option<&str>,
+        video_url: Option<&str>,
+        error_message: Option<&str>,
+    ) -> Result<YouTubePost> {
+        let conn = self.conn.lock().expect("database mutex poisoned");
+        let now = Utc::now().to_rfc3339();
+        let existing: Option<String> = conn
+            .query_row(
+                "SELECT id FROM youtube_posts WHERE candidate_id = ?1",
+                params![candidate_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+
+        let published_at = if status == "published" {
+            Some(now.clone())
+        } else {
+            None
+        };
+
+        let post = if let Some(id) = existing {
+            conn.execute(
+                "UPDATE youtube_posts SET clip_id = COALESCE(?1, clip_id), status = ?2, title = COALESCE(?3, title), video_id = COALESCE(?4, video_id), video_url = COALESCE(?5, video_url), error_message = ?6, published_at = COALESCE(?7, published_at) WHERE id = ?8",
+                params![clip_id, status, title, video_id, video_url, error_message, published_at, id],
+            )?;
+            YouTubePost {
+                id,
+                candidate_id: candidate_id.to_string(),
+                clip_id: clip_id.map(ToOwned::to_owned),
+                status: status.to_string(),
+                title: title.map(ToOwned::to_owned),
+                video_id: video_id.map(ToOwned::to_owned),
+                video_url: video_url.map(ToOwned::to_owned),
+                error_message: error_message.map(ToOwned::to_owned),
+                created_at: now,
+                published_at,
+            }
+        } else {
+            let id = Uuid::new_v4().to_string();
+            conn.execute(
+                "INSERT INTO youtube_posts (id, candidate_id, clip_id, status, title, video_id, video_url, error_message, created_at, published_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                params![id, candidate_id, clip_id, status, title, video_id, video_url, error_message, now, published_at],
+            )?;
+            YouTubePost {
+                id,
+                candidate_id: candidate_id.to_string(),
+                clip_id: clip_id.map(ToOwned::to_owned),
+                status: status.to_string(),
+                title: title.map(ToOwned::to_owned),
+                video_id: video_id.map(ToOwned::to_owned),
+                video_url: video_url.map(ToOwned::to_owned),
+                error_message: error_message.map(ToOwned::to_owned),
+                created_at: now,
+                published_at,
+            }
+        };
+        Ok(post)
+    }
+
     pub fn clear_all(&self) -> Result<()> {
         let conn = self.conn.lock().expect("database mutex poisoned");
         conn.execute_batch(
             "
+            DELETE FROM youtube_posts;
             DELETE FROM instagram_posts;
             DELETE FROM schedule_entries;
             DELETE FROM clip_copy;

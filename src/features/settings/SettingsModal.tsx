@@ -8,6 +8,7 @@ import {
   Activity,
   Download,
   Instagram,
+  Youtube,
   Loader2,
   BadgeCheck,
   AlertTriangle,
@@ -58,6 +59,15 @@ export interface SettingsModalProps {
   testInstagramConnection: () => Promise<void>;
   instagramTesting: boolean;
   instagramTestResult: { success: boolean; message: string } | null;
+  youtubeClientId: string;
+  setYoutubeClientId: (id: string) => void;
+  youtubeClientSecret: string;
+  setYoutubeClientSecret: (s: string) => void;
+  youtubeRefreshToken: string;
+  setYoutubeRefreshToken: (t: string) => void;
+  testYoutubeConnection: () => Promise<void>;
+  youtubeTesting: boolean;
+  youtubeTestResult: { success: boolean; message: string } | null;
   youtubeSaveDir: string;
   setYoutubeSaveDir: (d: string) => void;
   clipsSaveDir: string;
@@ -121,6 +131,15 @@ export function SettingsModal({
   testInstagramConnection,
   instagramTesting,
   instagramTestResult,
+  youtubeClientId,
+  setYoutubeClientId,
+  youtubeClientSecret,
+  setYoutubeClientSecret,
+  youtubeRefreshToken,
+  setYoutubeRefreshToken,
+  testYoutubeConnection,
+  youtubeTesting,
+  youtubeTestResult,
   youtubeSaveDir,
   setYoutubeSaveDir,
   clipsSaveDir,
@@ -585,6 +604,102 @@ export function SettingsModal({
                   <AlertTriangle size={16} />
                 )}
                 <span>{instagramTestResult.message}</span>
+              </div>
+            )}
+
+            {/* YouTube Shorts API */}
+            <div className="settings-section-divider">
+              <Youtube size={15} className="section-icon-youtube" />
+              <span>YouTube Shorts API (OAuth2 Data API v3)</span>
+            </div>
+
+            <div className="settings-field-group">
+              <label>Google Cloud OAuth2 Client ID</label>
+              <input
+                type="text"
+                value={youtubeClientId}
+                onChange={(e) => setYoutubeClientId(e.target.value)}
+                placeholder="e.g. 1234567890-xxx.apps.googleusercontent.com"
+              />
+              <span className="folder-hint">
+                Found in Google Cloud Console &gt; APIs &amp; Services &gt; Credentials
+              </span>
+            </div>
+
+            <div className="settings-field-group">
+              <label>OAuth2 Client Secret</label>
+              <input
+                type="password"
+                value={youtubeClientSecret}
+                onChange={(e) => setYoutubeClientSecret(e.target.value)}
+                placeholder={
+                  environment?.hasYoutubeConfig
+                    ? "Stored securely in local keystore"
+                    : "GOCSPX-..."
+                }
+              />
+              <span className="folder-hint">
+                Associated with your OAuth 2.0 Client
+              </span>
+            </div>
+
+            <div className="settings-field-group">
+              <label>OAuth2 Refresh Token</label>
+              <input
+                type="password"
+                value={youtubeRefreshToken}
+                onChange={(e) => setYoutubeRefreshToken(e.target.value)}
+                placeholder={
+                  environment?.hasYoutubeConfig
+                    ? "Stored securely in local keystore"
+                    : "1//04..."
+                }
+              />
+              <span className="folder-hint">
+                Stored securely in keystore. Scope: https://www.googleapis.com/auth/youtube.upload
+              </span>
+            </div>
+
+            <div
+              style={{
+                marginTop: "4px",
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+              }}
+            >
+              <button
+                type="button"
+                className="studio-btn secondary"
+                onClick={testYoutubeConnection}
+                disabled={
+                  youtubeTesting ||
+                  (!youtubeClientId.trim() && !environment?.hasYoutubeConfig) ||
+                  (!youtubeClientSecret.trim() && !environment?.hasYoutubeConfig) ||
+                  (!youtubeRefreshToken.trim() && !environment?.hasYoutubeConfig)
+                }
+              >
+                {youtubeTesting ? (
+                  <Loader2 className="spin" size={14} />
+                ) : (
+                  <Youtube size={14} />
+                )}
+                <span>
+                  {youtubeTesting ? "Verifying..." : "Test Connection"}
+                </span>
+              </button>
+            </div>
+
+            {youtubeTestResult && (
+              <div
+                className={`connection-status-banner ${youtubeTestResult.success ? "success" : "error"}`}
+              >
+                {youtubeTestResult.success ? (
+                  <BadgeCheck size={16} />
+                ) : (
+                  <AlertTriangle size={16} />
+                )}
+                <span>{youtubeTestResult.message}</span>
               </div>
             )}
           </div>

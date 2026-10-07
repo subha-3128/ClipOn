@@ -34,6 +34,8 @@ pub struct EnvironmentStatus {
     #[serde(default)]
     pub active_speaker_status: Option<String>,
     pub has_instagram_token: bool,
+    #[serde(default)]
+    pub has_youtube_config: bool,
     pub llm_provider: String,
     pub has_local_whisper_model: bool,
     pub has_ollama: bool,
@@ -147,6 +149,21 @@ pub struct InstagramPost {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct YouTubePost {
+    pub id: String,
+    pub candidate_id: String,
+    pub clip_id: Option<String>,
+    pub status: String,
+    pub title: Option<String>,
+    pub video_id: Option<String>,
+    pub video_url: Option<String>,
+    pub error_message: Option<String>,
+    pub created_at: String,
+    pub published_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProjectDetail {
     pub project: Project,
     pub transcript: Option<Transcript>,
@@ -155,6 +172,8 @@ pub struct ProjectDetail {
     pub copy: Vec<ClipCopy>,
     #[serde(default)]
     pub instagram_posts: Vec<InstagramPost>,
+    #[serde(default)]
+    pub youtube_posts: Vec<YouTubePost>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

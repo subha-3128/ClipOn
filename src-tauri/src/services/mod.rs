@@ -5,3 +5,4 @@ pub mod instagram_service;
 pub mod project_service;
 pub mod render_service;
 pub mod transcription_service;
+pub mod youtube_service;

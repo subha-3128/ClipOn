@@ -10,6 +10,7 @@ import { ErrorProvider, useAppError } from "./features/error/ErrorProvider";
 import { YoutubeImportModal } from "./features/youtube/YoutubeImportModal";
 import { SocialKitModal } from "./features/social/SocialKitModal";
 import { InstagramPublishModal } from "./features/social/InstagramPublishModal";
+import { YouTubePublishModal } from "./features/social/YouTubePublishModal";
 import { SettingsModal } from "./features/settings/SettingsModal";
 import { CaptionStyleModal } from "./features/rendering/CaptionStyleModal";
 import { Onboarding } from "./features/onboarding/OnboardingModal";
@@ -27,6 +28,7 @@ import type {
   SocialKit,
   Candidate,
   InstagramPost,
+  YouTubePost,
   ProjectDetail,
   NormalizedTranscript,
   BusyState,
@@ -253,6 +255,42 @@ function AppContent() {
     message: string;
   } | null>(null);
 
+  // YouTube Data API v3 OAuth2 Settings
+  const [youtubeClientId, setYoutubeClientId] = useState(() => {
+    return localStorage.getItem("clipon_youtube_client_id") || "";
+  });
+  const [youtubeClientSecret, setYoutubeClientSecret] = useState("");
+  const [youtubeRefreshToken, setYoutubeRefreshToken] = useState("");
+  const [youtubeTesting, setYoutubeTesting] = useState(false);
+  const [youtubeTestResult, setYoutubeTestResult] = useState<{
+    success: boolean;
+    message: string;
+  } | null>(null);
+  const [publishingYouTubeCandidateId, setPublishingYouTubeCandidateId] = useState<
+    string | null
+  >(null);
+
+  // YouTube Shorts Quick Connect Modal State
+  const [showYouTubeModal, setShowYouTubeModal] = useState(false);
+  const [pendingCandidateIdToPostYouTube, setPendingCandidateIdToPostYouTube] = useState<
+    string | null
+  >(null);
+  const [ytModalClientId, setYtModalClientId] = useState(() => {
+    return localStorage.getItem("clipon_youtube_client_id") || "";
+  });
+  const [ytModalClientSecret, setYtModalClientSecret] = useState("");
+  const [ytModalRefreshToken, setYtModalRefreshToken] = useState("");
+  const [ytModalSaving, setYtModalSaving] = useState(false);
+  const [ytModalTesting, setYtModalTesting] = useState(false);
+  const [ytModalStatus, setYtModalStatus] = useState<{
+    success: boolean;
+    message: string;
+  } | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem("clipon_youtube_client_id", youtubeClientId);
+  }, [youtubeClientId]);
+
   useEffect(() => {
     localStorage.setItem("clipon_instagram_provider", instagramProvider);
   }, [instagramProvider]);
@@ -440,6 +478,12 @@ function AppContent() {
     );
   }, [detail?.instagramPosts]);
 
+  const youtubePostByCandidate = useMemo(() => {
+    return new Map(
+      (detail?.youtubePosts ?? []).map((post) => [post.candidateId, post])
+    );
+  }, [detail?.youtubePosts]);
+
   async function testInstagramConnection() {
     setInstagramTesting(true);
     setInstagramTestResult(null);
@@ -571,6 +615,147 @@ function AppContent() {
       setMetaModalStatus({ success: false, message: String(err) });
     } finally {
       setMetaModalTesting(false);
+    }
+  }
+
+  async function testYoutubeConnection() {
+    setYoutubeTesting(true);
+    setYoutubeTestResult(null);
+    try {
+      const msg = await invoke<string>("test_youtube_connection", {
+        clientId: youtubeClientId.trim() || null,
+        clientSecret: youtubeClientSecret.trim() || null,
+        refreshToken: youtubeRefreshToken.trim() || null,
+      });
+      setYoutubeTestResult({ success: true, message: msg });
+      showToast("YouTube connected successfully!");
+    } catch (err) {
+      setYoutubeTestResult({ success: false, message: String(err) });
+    } finally {
+      setYoutubeTesting(false);
+    }
+  }
+
+  async function handlePublishToYouTube(candidateId: string) {
+    if (!detail) return;
+    const hasConfig = Boolean(
+      environment?.hasYoutubeConfig ||
+      (youtubeClientId.trim() && youtubeClientSecret.trim() && youtubeRefreshToken.trim())
+    );
+
+    if (!hasConfig) {
+      setPendingCandidateIdToPostYouTube(candidateId);
+      setYtModalClientId(youtubeClientId || "");
+      setShowYouTubeModal(true);
+      return;
+    }
+
+    await executeYouTubePublish(candidateId);
+  }
+
+  async function executeYouTubePublish(
+    candidateId: string,
+    titleOverride?: string,
+    descriptionOverride?: string,
+    privacyStatus?: string
+  ) {
+    if (!detail) return;
+    setPublishingYouTubeCandidateId(candidateId);
+    try {
+      await invoke<YouTubePost>("publish_candidate_to_youtube", {
+        candidateId,
+        titleOverride: titleOverride || null,
+        descriptionOverride: descriptionOverride || null,
+        privacyStatus: privacyStatus || "public",
+        clientId: youtubeClientId.trim() || null,
+        clientSecret: youtubeClientSecret.trim() || null,
+        refreshToken: youtubeRefreshToken.trim() || null,
+      });
+      await refresh(detail.project.id);
+      showToast("🎉 Successfully uploaded to YouTube Shorts!");
+    } catch (err) {
+      console.error("YouTube Shorts upload error:", err);
+      showError("YouTube Shorts upload failed", { details: String(err) });
+    } finally {
+      setPublishingYouTubeCandidateId(null);
+    }
+  }
+
+  async function handleSaveYouTubeAndPost(
+    titleOverride?: string,
+    descriptionOverride?: string,
+    privacyStatus?: string
+  ) {
+    if (!ytModalClientId.trim()) {
+      showWarning("Please enter your OAuth2 Client ID");
+      return;
+    }
+    if (!ytModalClientSecret.trim()) {
+      showWarning("Please enter your OAuth2 Client Secret");
+      return;
+    }
+    if (!ytModalRefreshToken.trim()) {
+      showWarning("Please enter your OAuth2 Refresh Token");
+      return;
+    }
+    setYtModalSaving(true);
+    try {
+      setYoutubeClientId(ytModalClientId.trim());
+      setYoutubeClientSecret("");
+      setYoutubeRefreshToken("");
+      localStorage.setItem("clipon_youtube_client_id", ytModalClientId.trim());
+
+      await invoke("save_youtube_credentials", {
+        clientId: ytModalClientId.trim(),
+        clientSecret: ytModalClientSecret.trim(),
+        refreshToken: ytModalRefreshToken.trim(),
+      });
+
+      showToast("YouTube OAuth2 credentials saved securely!");
+      setShowYouTubeModal(false);
+
+      if (pendingCandidateIdToPostYouTube) {
+        const candId = pendingCandidateIdToPostYouTube;
+        setPendingCandidateIdToPostYouTube(null);
+        await executeYouTubePublish(
+          candId,
+          titleOverride,
+          descriptionOverride,
+          privacyStatus
+        );
+      }
+    } catch (err) {
+      showError("Failed to save credentials", { details: String(err) });
+    } finally {
+      setYtModalSaving(false);
+    }
+  }
+
+  async function handleTestYouTubeModalConnection() {
+    if (
+      !ytModalClientId.trim() ||
+      !ytModalClientSecret.trim() ||
+      !ytModalRefreshToken.trim()
+    ) {
+      setYtModalStatus({
+        success: false,
+        message: "Please enter Client ID, Secret, and Refresh Token to test",
+      });
+      return;
+    }
+    setYtModalTesting(true);
+    setYtModalStatus(null);
+    try {
+      const msg = await invoke<string>("test_youtube_connection", {
+        clientId: ytModalClientId.trim(),
+        clientSecret: ytModalClientSecret.trim(),
+        refreshToken: ytModalRefreshToken.trim(),
+      });
+      setYtModalStatus({ success: true, message: msg });
+    } catch (err) {
+      setYtModalStatus({ success: false, message: String(err) });
+    } finally {
+      setYtModalTesting(false);
     }
   }
 
@@ -1151,8 +1336,10 @@ function AppContent() {
                   filteredCandidates={filteredCandidates}
                   clipByCandidate={clipByCandidate}
                   instagramPostByCandidate={instagramPostByCandidate}
+                  youtubePostByCandidate={youtubePostByCandidate}
                   renderingCandidateId={renderingCandidateId}
                   publishingCandidateId={publishingCandidateId}
+                  publishingYouTubeCandidateId={publishingYouTubeCandidateId}
                   hasFfmpeg={Boolean(environment?.hasFfmpeg)}
                   formatTime={formatTime}
                   toggleCandidate={toggleCandidate}
@@ -1160,6 +1347,7 @@ function AppContent() {
                   cutCandidate={cutCandidate}
                   openFolder={openFolder}
                   handlePublishToInstagram={handlePublishToInstagram}
+                  handlePublishToYouTube={handlePublishToYouTube}
                   onJobComplete={() => {
                     showToast("Render completed!");
                     if (detail) refresh(detail.project.id);
@@ -1232,6 +1420,15 @@ function AppContent() {
         testInstagramConnection={testInstagramConnection}
         instagramTesting={instagramTesting}
         instagramTestResult={instagramTestResult}
+        youtubeClientId={youtubeClientId}
+        setYoutubeClientId={setYoutubeClientId}
+        youtubeClientSecret={youtubeClientSecret}
+        setYoutubeClientSecret={setYoutubeClientSecret}
+        youtubeRefreshToken={youtubeRefreshToken}
+        setYoutubeRefreshToken={setYoutubeRefreshToken}
+        testYoutubeConnection={testYoutubeConnection}
+        youtubeTesting={youtubeTesting}
+        youtubeTestResult={youtubeTestResult}
         youtubeSaveDir={youtubeSaveDir}
         setYoutubeSaveDir={setYoutubeSaveDir}
         clipsSaveDir={clipsSaveDir}
@@ -1322,6 +1519,31 @@ function AppContent() {
         onSaveAndPost={handleSaveMetaAndPost}
         saving={metaModalSaving}
         pendingCandidateId={pendingCandidateIdToPost}
+        onOpenExternal={openFolder}
+      />
+
+      <YouTubePublishModal
+        isOpen={showYouTubeModal}
+        onClose={() => setShowYouTubeModal(false)}
+        clientId={ytModalClientId}
+        setClientId={setYtModalClientId}
+        clientSecret={ytModalClientSecret}
+        setClientSecret={setYtModalClientSecret}
+        refreshToken={ytModalRefreshToken}
+        setRefreshToken={setYtModalRefreshToken}
+        onTestConnection={handleTestYouTubeModalConnection}
+        testing={ytModalTesting}
+        status={ytModalStatus}
+        onSaveAndPost={handleSaveYouTubeAndPost}
+        saving={ytModalSaving}
+        pendingCandidateId={pendingCandidateIdToPostYouTube}
+        defaultTitle={
+          pendingCandidateIdToPostYouTube && detail
+            ? detail.candidates.find(
+                (c) => c.id === pendingCandidateIdToPostYouTube
+              )?.hook
+            : undefined
+        }
         onOpenExternal={openFolder}
       />
     </div>

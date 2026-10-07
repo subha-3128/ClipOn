@@ -65,6 +65,10 @@ pub async fn get_environment_status(state: &AppState) -> Result<EnvironmentStatu
         )
     };
 
+    let has_youtube_config = credentials::has(credentials::YOUTUBE_CLIENT_ID).unwrap_or(false)
+        && credentials::has(credentials::YOUTUBE_CLIENT_SECRET).unwrap_or(false)
+        && credentials::has(credentials::YOUTUBE_REFRESH_TOKEN).unwrap_or(false);
+
     Ok(EnvironmentStatus {
         data_dir: state.data_dir.to_string_lossy().to_string(),
         has_ffmpeg: media::command_exists("ffmpeg"),
@@ -81,6 +85,7 @@ pub async fn get_environment_status(state: &AppState) -> Result<EnvironmentStatu
         active_speaker_provider,
         active_speaker_status,
         has_instagram_token: credentials::has(credentials::INSTAGRAM).unwrap_or(false),
+        has_youtube_config,
         llm_provider,
         has_local_whisper_model,
         has_ollama,
@@ -390,6 +395,7 @@ mod tests {
             active_speaker_provider: "Local fallback".to_string(),
             active_speaker_status: Some("Active (Local fallback)".to_string()),
             has_instagram_token: false,
+            has_youtube_config: false,
             llm_provider: "deepseek".to_string(),
             has_local_whisper_model: false,
             has_ollama: false,

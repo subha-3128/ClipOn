@@ -2,6 +2,7 @@ import {
   CheckSquare,
   Square,
   Instagram,
+  Youtube,
   Loader2,
   AlertTriangle,
   Sparkles,
@@ -12,20 +13,24 @@ import {
   Candidate,
   Clip,
   InstagramPost,
+  YouTubePost,
 } from "../../types";
 
 interface MomentCardProps {
   candidate: Candidate;
   clip?: Clip;
   igPost?: InstagramPost;
+  ytPost?: YouTubePost;
   isCuttingThis: boolean;
   isPublishingThis: boolean;
+  isPublishingToYoutube?: boolean;
   formatTime: (sec: number) => string;
   onToggleSelect: (id: string) => void;
   onOpenSocialKit: (candidate: Candidate) => void;
   onCutCandidate: (candidateId: string) => void;
   onOpenFolder: (path: string) => void;
   onPublishToInstagram: (candidateId: string) => void;
+  onPublishToYouTube: (candidateId: string) => void;
   hasFfmpeg: boolean;
   isBusy: boolean;
 }
@@ -34,14 +39,17 @@ export function MomentCard({
   candidate,
   clip,
   igPost,
+  ytPost,
   isCuttingThis,
   isPublishingThis,
+  isPublishingToYoutube = false,
   formatTime,
   onToggleSelect,
   onOpenSocialKit,
   onCutCandidate,
   onOpenFolder,
   onPublishToInstagram,
+  onPublishToYouTube,
   hasFfmpeg,
   isBusy,
 }: MomentCardProps) {
@@ -144,6 +152,48 @@ export function MomentCard({
             }
             return null;
           })()}
+          {(() => {
+            if (ytPost?.status === "published") {
+              return (
+                <a
+                  href={ytPost.videoUrl || "#"}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="youtube-status-pill published"
+                  onClick={(e) => {
+                    if (ytPost.videoUrl) {
+                      e.preventDefault();
+                      onOpenFolder(ytPost.videoUrl);
+                    }
+                  }}
+                  title="View live YouTube Short"
+                >
+                  <Youtube size={11} />
+                  <span>Shorts Live ↗</span>
+                </a>
+              );
+            }
+            if (ytPost?.status === "publishing" || isPublishingToYoutube) {
+              return (
+                <span className="youtube-status-pill publishing">
+                  <Loader2 className="spin" size={11} />
+                  <span>Uploading to Shorts...</span>
+                </span>
+              );
+            }
+            if (ytPost?.status === "failed") {
+              return (
+                <span
+                  className="youtube-status-pill failed"
+                  title={ytPost.errorMessage || "Failed"}
+                >
+                  <AlertTriangle size={11} />
+                  <span>Shorts Failed</span>
+                </span>
+              );
+            }
+            return null;
+          })()}
           <span
             className={`moment-render-status ${
               isCut ? "ready" : clip?.status === "error" ? "error" : "pending"
@@ -241,6 +291,34 @@ export function MomentCard({
                 : igPost?.status === "published"
                   ? "Re-post IG"
                   : "Post to Reels"}
+            </span>
+          </button>
+
+          <button
+            className={`action-pill-btn youtube-publish-btn ${isPublishingToYoutube ? "loading" : ""}`}
+            onClick={() => onPublishToYouTube(candidate.id)}
+            disabled={isPublishingToYoutube}
+            title={
+              isPublishingToYoutube
+                ? "Uploading clip to YouTube Shorts..."
+                : ytPost?.status === "published"
+                  ? "Re-upload this clip to YouTube Shorts"
+                  : "Automatically cut 9:16 clip, generate AI metadata & #Shorts tag, and upload directly to YouTube"
+            }
+          >
+            {isPublishingToYoutube ? (
+              <Loader2 className="spin" size={13} />
+            ) : (
+              <Youtube size={13} />
+            )}
+            <span>
+              {isPublishingToYoutube
+                ? isCut
+                  ? "Uploading..."
+                  : "Cutting & Uploading..."
+                : ytPost?.status === "published"
+                  ? "Re-post Shorts"
+                  : "Post to Shorts"}
             </span>
           </button>
         </div>

@@ -16,6 +16,7 @@ export type EnvironmentStatus = {
   activeSpeakerProvider?: string;
   activeSpeakerStatus?: string;
   hasInstagramToken: boolean;
+  hasYoutubeConfig?: boolean;
   llmProvider: string;
   hasLocalWhisperModel: boolean;
   hasOllama: boolean;
@@ -94,12 +95,26 @@ export type InstagramPost = {
   publishedAt: string | null;
 };
 
+export type YouTubePost = {
+  id: string;
+  candidateId: string;
+  clipId: string | null;
+  status: "queued" | "publishing" | "published" | "failed";
+  title: string | null;
+  videoId: string | null;
+  videoUrl: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  publishedAt: string | null;
+};
+
 export type ProjectDetail = {
   project: Project;
   transcript: Transcript | null;
   candidates: Candidate[];
   clips: Clip[];
   instagramPosts?: InstagramPost[];
+  youtubePosts?: YouTubePost[];
 };
 
 export type NormalizedTranscriptSegment = {

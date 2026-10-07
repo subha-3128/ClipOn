@@ -12,6 +12,9 @@ pub fn save_credential(name: &str, value: &str) -> Result<(), String> {
         credentials::INSTAGRAM,
         credentials::NVIDIA,
         credentials::NVIDIA_FUNCTION_ID,
+        credentials::YOUTUBE_CLIENT_ID,
+        credentials::YOUTUBE_CLIENT_SECRET,
+        credentials::YOUTUBE_REFRESH_TOKEN,
     ];
     if !allowed.contains(&name) {
         return Err("Unsupported credential".to_string());
@@ -39,6 +42,24 @@ pub fn save_instagram_credentials(account_id: &str, access_token: &str) -> Resul
     }
     if !token.is_empty() {
         credentials::save(credentials::INSTAGRAM, token).map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+pub fn save_youtube_credentials(client_id: &str, client_secret: &str, refresh_token: &str) -> Result<(), String> {
+    let cid = client_id.trim();
+    let sec = client_secret.trim();
+    let tok = refresh_token.trim();
+
+    if !cid.is_empty() {
+        credentials::save(credentials::YOUTUBE_CLIENT_ID, cid).map_err(|e| e.to_string())?;
+    }
+    if !sec.is_empty() {
+        credentials::save(credentials::YOUTUBE_CLIENT_SECRET, sec).map_err(|e| e.to_string())?;
+    }
+    if !tok.is_empty() {
+        credentials::save(credentials::YOUTUBE_REFRESH_TOKEN, tok).map_err(|e| e.to_string())?;
     }
 
     Ok(())

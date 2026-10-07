@@ -1692,6 +1692,22 @@ button:disabled {
   box-shadow: 0 3px 12px rgba(225, 48, 108, 0.38);
 }
 
+.action-pill-btn.youtube-publish-btn {
+  background: linear-gradient(
+    135deg,
+    rgba(239, 68, 68, 0.18) 0%,
+    rgba(220, 38, 38, 0.22) 100%
+  );
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #f87171;
+}
+.action-pill-btn.youtube-publish-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  border-color: #ef4444;
+  color: #ffffff;
+  box-shadow: 0 3px 12px rgba(239, 68, 68, 0.38);
+}
+
 /* Ensure clean two-tier toolbar stacking when container width is constrained */
 @media (max-width: 1200px) {
   .moment-card-actions {
@@ -1786,6 +1802,25 @@ button:disabled {
     rgba(131, 58, 180, 0.3) 100%
   );
   border-color: rgba(225, 48, 108, 0.6);
+  color: #ffffff;
+}
+
+.studio-btn.youtube-active {
+  background: linear-gradient(
+    135deg,
+    rgba(239, 68, 68, 0.2) 0%,
+    rgba(220, 38, 38, 0.25) 100%
+  );
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  color: #f87171;
+}
+.studio-btn.youtube-active:hover:not(:disabled) {
+  background: linear-gradient(
+    135deg,
+    rgba(239, 68, 68, 0.3) 0%,
+    rgba(220, 38, 38, 0.35) 100%
+  );
+  border-color: rgba(239, 68, 68, 0.6);
   color: #ffffff;
 }
 
@@ -2211,6 +2246,10 @@ button:disabled {
 
 .settings-section-divider .section-icon-instagram {
   color: #e1306c;
+}
+
+.settings-section-divider .section-icon-youtube {
+  color: #ef4444;
 }
 
 /* Folder Settings */
@@ -2938,6 +2977,38 @@ button:disabled {
   border: 1px solid rgba(239, 68, 68, 0.25);
 }
 
+.youtube-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+.youtube-status-pill.published {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  transition: opacity 0.2s ease;
+}
+.youtube-status-pill.published:hover {
+  opacity: 0.85;
+  text-decoration: underline;
+}
+.youtube-status-pill.publishing {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+.youtube-status-pill.failed {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
 .empty-state-buttons {
   display: flex;
   align-items: center;
@@ -3236,6 +3307,23 @@ button:disabled {
   line-height: 1.5;
 }
 .instagram-banner-title {
+  color: var(--text);
+  display: block;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.youtube-banner-box {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  font-size: 12px;
+  color: #fecaca;
+  line-height: 1.5;
+}
+.youtube-banner-title {
   color: var(--text);
   display: block;
   margin-bottom: 4px;

@@ -12,7 +12,8 @@
     "test": "vitest run",
     "tauri": "tauri",
     "tauri:dev": "tauri dev --ignore-version-mismatches",
-    "tauri:build": "tauri build --ignore-version-mismatches"
+    "tauri:build": "tauri build --ignore-version-mismatches",
+    "auth:youtube": "node scripts/get_youtube_token.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.5.0",

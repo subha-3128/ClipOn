@@ -1,7 +1,7 @@
 use crate::jobs::JobInfo;
 use crate::models::{
     Candidate, EnvironmentStatus, InstagramPost, MediaProbe, Project, ProjectDetail, SocialKit,
-    Transcript,
+    Transcript, YouTubePost,
 };
 use crate::services::candidate_service;
 use crate::services::credential_service;
@@ -10,6 +10,7 @@ use crate::services::instagram_service;
 use crate::services::project_service::{self, CopyrightCheckResult, DefaultFolders};
 use crate::services::render_service;
 use crate::services::transcription_service;
+use crate::services::youtube_service;
 use crate::AppState;
 
 #[tauri::command]
@@ -243,6 +244,51 @@ pub async fn save_instagram_credentials(
     access_token: String,
 ) -> Result<(), String> {
     credential_service::save_instagram_credentials(&account_id, &access_token)
+}
+
+#[tauri::command]
+pub async fn test_youtube_connection(
+    client_id: Option<String>,
+    client_secret: Option<String>,
+    refresh_token: Option<String>,
+) -> Result<String, String> {
+    youtube_service::test_youtube_connection(client_id, client_secret, refresh_token).await
+}
+
+#[tauri::command]
+pub async fn publish_candidate_to_youtube(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    candidate_id: String,
+    title_override: Option<String>,
+    description_override: Option<String>,
+    privacy_status: Option<String>,
+    client_id: Option<String>,
+    client_secret: Option<String>,
+    refresh_token: Option<String>,
+) -> Result<YouTubePost, String> {
+    youtube_service::publish_candidate_to_youtube(
+        app,
+        state.inner().clone(),
+        candidate_id,
+        title_override,
+        description_override,
+        privacy_status,
+        client_id,
+        client_secret,
+        refresh_token,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn save_youtube_credentials(
+    _state: tauri::State<'_, AppState>,
+    client_id: String,
+    client_secret: String,
+    refresh_token: String,
+) -> Result<(), String> {
+    credential_service::save_youtube_credentials(&client_id, &client_secret, &refresh_token)
 }
 
 #[tauri::command]

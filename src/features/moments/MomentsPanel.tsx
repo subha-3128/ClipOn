@@ -11,6 +11,7 @@ import {
   Candidate,
   Clip,
   InstagramPost,
+  YouTubePost,
   ProjectDetail,
   ReframeMode,
   ExportPresetPlatform,
@@ -45,8 +46,10 @@ interface MomentsPanelProps {
   filteredCandidates: Candidate[];
   clipByCandidate: Map<string, Clip>;
   instagramPostByCandidate: Map<string, InstagramPost>;
+  youtubePostByCandidate?: Map<string, YouTubePost>;
   renderingCandidateId: string | null;
   publishingCandidateId: string | null;
+  publishingYouTubeCandidateId?: string | null;
   hasFfmpeg: boolean;
   formatTime: (sec: number) => string;
   toggleCandidate: (id: string) => void;
@@ -54,6 +57,7 @@ interface MomentsPanelProps {
   cutCandidate: (id: string) => void;
   openFolder: (path: string) => void;
   handlePublishToInstagram: (id: string) => void;
+  handlePublishToYouTube?: (id: string) => void;
   onJobComplete: () => void;
   onJobCancel: () => void;
 }
@@ -83,8 +87,10 @@ export function MomentsPanel({
   filteredCandidates,
   clipByCandidate,
   instagramPostByCandidate,
+  youtubePostByCandidate,
   renderingCandidateId,
   publishingCandidateId,
+  publishingYouTubeCandidateId,
   hasFfmpeg,
   formatTime,
   toggleCandidate,
@@ -92,6 +98,7 @@ export function MomentsPanel({
   cutCandidate,
   openFolder,
   handlePublishToInstagram,
+  handlePublishToYouTube,
   onJobComplete,
   onJobCancel,
 }: MomentsPanelProps) {
@@ -289,6 +296,10 @@ export function MomentsPanel({
             const isPublishingThis =
               publishingCandidateId === candidate.id ||
               igPost?.status === "publishing";
+            const ytPost = youtubePostByCandidate?.get(candidate.id);
+            const isPublishingToYoutube =
+              publishingYouTubeCandidateId === candidate.id ||
+              ytPost?.status === "publishing";
 
             return (
               <MomentCard
@@ -296,14 +307,17 @@ export function MomentsPanel({
                 candidate={candidate}
                 clip={clip}
                 igPost={igPost}
+                ytPost={ytPost}
                 isCuttingThis={isCuttingThis}
                 isPublishingThis={isPublishingThis}
+                isPublishingToYoutube={isPublishingToYoutube}
                 formatTime={formatTime}
                 onToggleSelect={toggleCandidate}
                 onOpenSocialKit={handleOpenSocialKit}
                 onCutCandidate={cutCandidate}
                 onOpenFolder={openFolder}
                 onPublishToInstagram={handlePublishToInstagram}
+                onPublishToYouTube={handlePublishToYouTube || (() => {})}
                 hasFfmpeg={hasFfmpeg}
                 isBusy={busy !== "idle"}
               />
