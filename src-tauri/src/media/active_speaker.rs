@@ -79,29 +79,144 @@ pub struct NvidiaDiarizationSegment {
     pub end: f64,
 }
 
-/// Official per-frame speaker structure emitted by NVIDIA Active Speaker Detection NIM
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NvidiaPerFrameSpeaker {
-    #[serde(default)]
-    pub timestamp: f64,
-    #[serde(default)]
-    pub speaker_bbox: Option<[f64; 4]>, // [x, y, width, height] normalized
-    #[serde(default)]
-    pub diarized_speaker_id: Option<String>,
-    #[serde(default)]
+/// Raw per-face/speaker detection emitted by NVIDIA Active Speaker Detection NIM
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct NvidiaRawDetection {
+    #[serde(default, alias = "id", alias = "track_id")]
     pub face_id: Option<usize>,
+
+    #[serde(
+        default,
+        alias = "bbox",
+        alias = "bounding_box",
+        alias = "face_bbox",
+        alias = "box"
+    )]
+    pub speaker_bbox: Option<Vec<f64>>,
+
+    #[serde(
+        default,
+        alias = "speaker_id",
+        alias = "speaker",
+        alias = "diarization_speaker_id"
+    )]
+    pub diarized_speaker_id: Option<String>,
+
+    #[serde(
+        default,
+        alias = "speaking",
+        alias = "speech_detected",
+        alias = "active_speaker"
+    )]
+    pub is_speaking: Option<bool>,
+
+    #[serde(
+        default,
+        alias = "score",
+        alias = "speaking_confidence",
+        alias = "speech_prob",
+        alias = "prob"
+    )]
+    pub confidence: Option<f64>,
+
+    #[serde(default, alias = "face_score", alias = "detection_confidence")]
+    pub face_confidence: Option<f64>,
+}
+
+/// Raw per-frame record emitted by NVIDIA Active Speaker Detection NIM
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct NvidiaRawFrame {
+    #[serde(
+        default,
+        alias = "time",
+        alias = "timestamp_sec",
+        alias = "time_offset",
+        alias = "t"
+    )]
+    pub timestamp: f64,
+
+    /// Multiple faces/speakers per frame
+    #[serde(default, alias = "faces", alias = "detections", alias = "speakers")]
+    pub faces: Vec<NvidiaRawDetection>,
+
+    /// Direct flat detection fields if frame contains a single detection
+    #[serde(flatten)]
+    pub flat: NvidiaRawDetection,
+}
+
+/// Top-level response container from NVIDIA NIM
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct NvidiaAsdResponse {
+    #[serde(default, alias = "frame_detections", alias = "predictions", alias = "data")]
+    pub frames: Vec<NvidiaRawFrame>,
+
     #[serde(default)]
+    pub status: Option<String>,
+}
+
+/// Simplified representation for backward compatibility and test ergonomics
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct NvidiaPerFrameSpeaker {
+    pub timestamp: f64,
+    pub speaker_bbox: Option<[f64; 4]>,
+    pub diarized_speaker_id: Option<String>,
+    pub face_id: Option<usize>,
     pub is_speaking: bool,
-    #[serde(default)]
     pub confidence: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct NvidiaAsdResponse {
-    #[serde(default)]
-    pub frames: Vec<NvidiaPerFrameSpeaker>,
-    #[serde(default)]
-    pub status: Option<String>,
+impl From<NvidiaPerFrameSpeaker> for NvidiaRawFrame {
+    fn from(s: NvidiaPerFrameSpeaker) -> Self {
+        Self {
+            timestamp: s.timestamp,
+            faces: vec![],
+            flat: NvidiaRawDetection {
+                face_id: s.face_id,
+                speaker_bbox: s.speaker_bbox.map(|b| b.to_vec()),
+                diarized_speaker_id: s.diarized_speaker_id,
+                is_speaking: Some(s.is_speaking),
+                confidence: Some(s.confidence),
+                face_confidence: Some(s.confidence),
+            },
+        }
+    }
+}
+
+// -------------------------------------------------------------------------
+// CONVERSION LAYER STEP 1 & 2 DATA STRUCTURES
+// -------------------------------------------------------------------------
+
+/// Normalized per-frame speaker detection (Conversion Layer Step 1 output)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NormalizedFrameDetection {
+    pub timestamp_sec: f64,          // Relative to slice [0.0, duration_sec]
+    pub absolute_timestamp_sec: f64, // Absolute video time (start_sec + timestamp_sec)
+    pub speaker_bbox: Option<[f64; 4]>, // [x, y, w, h] normalized in [0.0, 1.0]
+    pub bbox_center: Option<(f64, f64)>, // (cx, cy)
+    pub raw_face_id: Option<usize>,
+    pub diarized_speaker_id: Option<String>,
+    pub is_speaking: bool,
+    pub confidence: f64,
+}
+
+/// Associated detection with resolved visual Person identity (Conversion Layer Step 2 output)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssociatedFrameDetection {
+    pub timestamp_sec: f64,
+    pub absolute_timestamp_sec: f64,
+    pub person_id: usize, // 1-indexed (Person 1, Person 2, ...)
+    pub speaker_bbox: Option<[f64; 4]>,
+    pub bbox_center: Option<(f64, f64)>,
+    pub diarized_speaker_id: Option<String>,
+    pub is_speaking: bool,
+    pub confidence: f64,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct AssociatedSpeakerData {
+    pub detections: Vec<AssociatedFrameDetection>,
+    pub speaker_person_mapping: HashMap<String, usize>,
+    pub confidence: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -219,90 +334,441 @@ pub fn extract_asd_video_slice(
     Ok(())
 }
 
-/// Aggregates NVIDIA per-frame active speaker records into structured continuous segments
-pub fn aggregate_nvidia_frames_to_timeline(
-    frames: &[NvidiaPerFrameSpeaker],
+// -------------------------------------------------------------------------
+// CONVERSION LAYER IMPLEMENTATION (5 STAGES)
+// -------------------------------------------------------------------------
+
+/// Normalizes bounding box coordinates from varying representations:
+/// - [x1, y1, x2, y2] corners vs [x, y, w, h] dimensions
+/// - Raw pixel space (> 1.0) vs normalized [0.0, 1.0]
+pub fn normalize_bounding_box(raw_box: &[f64]) -> (Option<[f64; 4]>, Option<(f64, f64)>) {
+    if raw_box.len() < 4 {
+        return (None, None);
+    }
+
+    let mut b0 = raw_box[0];
+    let mut b1 = raw_box[1];
+    let mut b2 = raw_box[2];
+    let mut b3 = raw_box[3];
+
+    // If raw coordinates appear in pixel units (e.g. 1920x1080 or 1280x720)
+    if b0 > 1.5 || b1 > 1.5 || b2 > 1.5 || b3 > 1.5 {
+        let norm_w = if b2 > 1280.0 { 1920.0 } else if b2 > 960.0 { 1280.0 } else { 960.0 };
+        let norm_h = if b3 > 720.0 { 1080.0 } else if b3 > 540.0 { 720.0 } else { 540.0 };
+        b0 = (b0 / norm_w).clamp(0.0, 1.0);
+        b1 = (b1 / norm_h).clamp(0.0, 1.0);
+        b2 = (b2 / norm_w).clamp(0.0, 1.0);
+        b3 = (b3 / norm_h).clamp(0.0, 1.0);
+    }
+
+    // Detect if representation is [x1, y1, x2, y2]
+    let (x, y, w, h) = if b2 > b0 && b3 > b1 && (b0 + b2 > 1.05 || b1 + b3 > 1.05) {
+        (b0, b1, b2 - b0, b3 - b1)
+    } else {
+        (b0, b1, b2, b3)
+    };
+
+    let cx = (x + w * 0.5).clamp(0.0, 1.0);
+    let cy = (y + h * 0.5).clamp(0.0, 1.0);
+    let clamped_bbox = [
+        x.clamp(0.0, 1.0),
+        y.clamp(0.0, 1.0),
+        w.clamp(0.0, 1.0),
+        h.clamp(0.0, 1.0),
+    ];
+
+    (Some(clamped_bbox), Some((cx, cy)))
+}
+
+/// Conversion Layer Step 1: Normalizes raw NVIDIA frames into uniform timeline detections
+pub fn normalize_nvidia_per_frame_detections(
+    raw_frames: &[NvidiaRawFrame],
     start_sec: f64,
     duration_sec: f64,
-) -> ActiveSpeakerTimeline {
-    if frames.is_empty() {
-        return ActiveSpeakerTimeline {
-            segments: Vec::new(),
-            provider: "nvidia_api".to_string(),
-            source_duration: duration_sec,
-            speaker_person_mapping: HashMap::new(),
-            confidence: 0.5,
+) -> Vec<NormalizedFrameDetection> {
+    let mut normalized = Vec::new();
+
+    for frame in raw_frames {
+        let t_sec = if frame.timestamp > 1000.0 && duration_sec < 120.0 {
+            frame.timestamp / 1000.0
+        } else {
+            frame.timestamp
         };
+        let rel_t = t_sec.clamp(0.0, duration_sec);
+        let abs_t = start_sec + rel_t;
+
+        let detections: Vec<&NvidiaRawDetection> = if !frame.faces.is_empty() {
+            frame.faces.iter().collect()
+        } else if frame.flat.speaker_bbox.is_some()
+            || frame.flat.face_id.is_some()
+            || frame.flat.is_speaking.is_some()
+            || frame.flat.diarized_speaker_id.is_some()
+        {
+            vec![&frame.flat]
+        } else {
+            vec![]
+        };
+
+        for det in detections {
+            let (bbox, center) = if let Some(ref raw_b) = det.speaker_bbox {
+                normalize_bounding_box(raw_b)
+            } else {
+                (None, None)
+            };
+
+            let conf = det
+                .confidence
+                .or(det.face_confidence)
+                .unwrap_or(0.85)
+                .clamp(0.0, 1.0);
+
+            let is_speaking = det.is_speaking.unwrap_or(conf >= 0.55);
+
+            let diarized_id = det
+                .diarized_speaker_id
+                .as_ref()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+
+            normalized.push(NormalizedFrameDetection {
+                timestamp_sec: rel_t,
+                absolute_timestamp_sec: abs_t,
+                speaker_bbox: bbox,
+                bbox_center: center,
+                raw_face_id: det.face_id,
+                diarized_speaker_id: diarized_id,
+                is_speaking,
+                confidence: conf,
+            });
+        }
     }
 
-    // 1. Correlate diarized audio speaker IDs with visual face IDs
-    let mut co_occurrence: HashMap<(String, usize), usize> = HashMap::new();
-    for f in frames {
-        if f.is_speaking {
-            if let (Some(ref spk), Some(face_id)) = (&f.diarized_speaker_id, f.face_id) {
-                *co_occurrence.entry((spk.clone(), face_id)).or_insert(0) += 1;
+    normalized.sort_by(|a, b| a.timestamp_sec.total_cmp(&b.timestamp_sec));
+    normalized
+}
+
+/// Conversion Layer Step 2: Associates NVIDIA detections with visual Person identities
+/// Uses spatial keyframe matching, face ID track association, and audio diarization co-occurrence voting.
+pub fn associate_faces_and_persons(
+    normalized_detections: &[NormalizedFrameDetection],
+    face_tracker_opt: Option<&FaceTrackerResult>,
+) -> AssociatedSpeakerData {
+    if normalized_detections.is_empty() {
+        return AssociatedSpeakerData::default();
+    }
+
+    let tracked_people = face_tracker_opt.map(|f| f.people()).unwrap_or(&[]);
+
+    // 1. Initial person mapping per detection
+    let mut initial_associated: Vec<(usize, &NormalizedFrameDetection)> = Vec::new();
+    let mut co_occurrence_votes: HashMap<(String, usize), f64> = HashMap::new();
+
+    for det in normalized_detections {
+        let mut matched_person_id: Option<usize> = None;
+
+        // Try spatial matching against FaceTrackerResult keyframes
+        if !tracked_people.is_empty() {
+            if let Some((cx, _)) = det.bbox_center {
+                let mut best_dist = f64::MAX;
+                let mut best_id = None;
+                for person in tracked_people {
+                    if let Some(kf) = person
+                        .keyframes
+                        .iter()
+                        .min_by(|a, b| {
+                            (a.t - det.absolute_timestamp_sec)
+                                .abs()
+                                .total_cmp(&(b.t - det.absolute_timestamp_sec).abs())
+                        })
+                    {
+                        let dist = (kf.x - cx).abs();
+                        if dist < 0.25 && dist < best_dist {
+                            best_dist = dist;
+                            best_id = Some(person.id);
+                        }
+                    }
+                }
+                matched_person_id = best_id;
             }
         }
+
+        // Fallback to raw_face_id or spatial horizontal clustering
+        let resolved_person_id = matched_person_id.unwrap_or_else(|| {
+            if let Some(rf_id) = det.raw_face_id {
+                if rf_id == 0 { 1 } else { rf_id }
+            } else if let Some((cx, _)) = det.bbox_center {
+                if cx < 0.50 { 1 } else { 2 }
+            } else {
+                1
+            }
+        });
+
+        if det.is_speaking {
+            if let Some(ref spk) = det.diarized_speaker_id {
+                *co_occurrence_votes
+                    .entry((spk.clone(), resolved_person_id))
+                    .or_insert(0.0) += det.confidence;
+            }
+        }
+
+        initial_associated.push((resolved_person_id, det));
     }
 
-    let mut speaker_mapping: HashMap<String, usize> = HashMap::new();
-    let mut mapped_speakers: HashMap<String, (usize, usize)> = HashMap::new();
-    for ((spk, face_id), count) in co_occurrence {
-        let entry = mapped_speakers.entry(spk).or_insert((face_id, count));
-        if count > entry.1 {
-            *entry = (face_id, count);
+    // 2. Synthesize audio diarization -> person mapping from co-occurrence votes
+    let mut speaker_person_mapping: HashMap<String, usize> = HashMap::new();
+    let mut speaker_best_votes: HashMap<String, (usize, f64)> = HashMap::new();
+
+    for ((spk, pid), vote_weight) in co_occurrence_votes {
+        let entry = speaker_best_votes.entry(spk).or_insert((pid, vote_weight));
+        if vote_weight > entry.1 {
+            *entry = (pid, vote_weight);
         }
     }
-    for (spk, (face_id, _)) in mapped_speakers {
-        speaker_mapping.insert(spk, face_id);
+    for (spk, (pid, _)) in speaker_best_votes {
+        speaker_person_mapping.insert(spk, pid);
     }
 
-    // 2. Cluster active frames into contiguous segments
-    let mut active_frames: Vec<&NvidiaPerFrameSpeaker> =
-        frames.iter().filter(|f| f.is_speaking).collect();
-    active_frames.sort_by(|a, b| a.timestamp.total_cmp(&b.timestamp));
+    // 3. Second pass: Backfill and align detections with audio diarization mapping
+    let mut final_detections = Vec::new();
+    for (init_pid, det) in initial_associated {
+        let pid = if let Some(ref spk) = det.diarized_speaker_id {
+            if let Some(&voted_pid) = speaker_person_mapping.get(spk) {
+                if det.bbox_center.is_none() {
+                    voted_pid
+                } else {
+                    init_pid
+                }
+            } else {
+                init_pid
+            }
+        } else {
+            init_pid
+        };
 
-    let mut segments: Vec<ActiveSpeakerSegment> = Vec::new();
-    let max_frame_gap = 0.35f64;
+        final_detections.push(AssociatedFrameDetection {
+            timestamp_sec: det.timestamp_sec,
+            absolute_timestamp_sec: det.absolute_timestamp_sec,
+            person_id: pid,
+            speaker_bbox: det.speaker_bbox,
+            bbox_center: det.bbox_center,
+            diarized_speaker_id: det.diarized_speaker_id.clone(),
+            is_speaking: det.is_speaking,
+            confidence: det.confidence,
+        });
+    }
 
-    for frame in active_frames {
-        let face_id = frame.face_id.unwrap_or(1);
-        let conf = frame.confidence.clamp(0.0, 1.0);
-        let frame_time = frame.timestamp + start_sec;
+    let avg_confidence = if final_detections.is_empty() {
+        0.80
+    } else {
+        final_detections.iter().map(|d| d.confidence).sum::<f64>()
+            / final_detections.len() as f64
+    };
 
-        if let Some(last) = segments.last_mut() {
-            if last.person_id == face_id && (frame_time - last.end) <= max_frame_gap {
-                last.end = frame_time + 0.05;
-                last.confidence = (last.confidence + conf) * 0.5;
-                if last.speaker_label.is_none() && frame.diarized_speaker_id.is_some() {
-                    last.speaker_label = frame.diarized_speaker_id.clone();
+    AssociatedSpeakerData {
+        detections: final_detections,
+        speaker_person_mapping,
+        confidence: avg_confidence.clamp(0.0, 1.0),
+    }
+}
+
+/// Conversion Layer Step 3 & 4:
+/// Applies temporal morphological closing & opening smoothing to active speaker detections,
+/// then constructs continuous ActiveSpeakerSegment timeline intervals.
+pub fn smooth_and_build_active_speaker_segments(
+    detections: &[AssociatedFrameDetection],
+    start_sec: f64,
+    _duration_sec: f64,
+) -> Vec<ActiveSpeakerSegment> {
+    if detections.is_empty() {
+        return Vec::new();
+    }
+
+    let mut speaking_dets: Vec<&AssociatedFrameDetection> =
+        detections.iter().filter(|d| d.is_speaking).collect();
+    speaking_dets.sort_by(|a, b| a.timestamp_sec.total_cmp(&b.timestamp_sec));
+
+    if speaking_dets.is_empty() {
+        return Vec::new();
+    }
+
+    // Temporal clustering with Morphological Closing (Bridge speech pauses <= 0.40s)
+    let max_inter_word_gap = 0.40f64;
+    let mut raw_segments: Vec<ActiveSpeakerSegment> = Vec::new();
+
+    for d in speaking_dets {
+        let abs_t = start_sec + d.timestamp_sec;
+        let conf = d.confidence.clamp(0.0, 1.0);
+
+        if let Some(last) = raw_segments.last_mut() {
+            if last.person_id == d.person_id && (abs_t - last.end) <= max_inter_word_gap {
+                last.end = abs_t + 0.05;
+                last.confidence = (last.confidence * 0.7) + (conf * 0.3);
+                if last.speaker_label.is_none() && d.diarized_speaker_id.is_some() {
+                    last.speaker_label = d.diarized_speaker_id.clone();
                 }
                 continue;
             }
         }
 
-        segments.push(ActiveSpeakerSegment {
-            start: frame_time,
-            end: frame_time + 0.05,
-            person_id: face_id,
+        raw_segments.push(ActiveSpeakerSegment {
+            start: abs_t,
+            end: abs_t + 0.05,
+            person_id: d.person_id,
             confidence: conf,
-            speaker_label: frame.diarized_speaker_id.clone(),
+            speaker_label: d.diarized_speaker_id.clone(),
         });
     }
 
+    // Morphological Opening: Prune spurious noise spikes (< 0.15s unless high confidence >= 0.90)
+    let min_valid_duration = 0.15f64;
+    let mut smoothed_segments: Vec<ActiveSpeakerSegment> = Vec::new();
+
+    for seg in raw_segments {
+        let seg_dur = seg.end - seg.start;
+        if seg_dur >= min_valid_duration || seg.confidence >= 0.90 || (seg_dur >= 0.07 && seg.confidence >= 0.85) {
+            smoothed_segments.push(seg);
+        }
+    }
+
+    // Overlap resolution for clean cut transitions
+    if smoothed_segments.len() > 1 {
+        for i in 0..(smoothed_segments.len() - 1) {
+            let next_start = smoothed_segments[i + 1].start;
+            if smoothed_segments[i].end > next_start {
+                let mid = (smoothed_segments[i].end + next_start) * 0.5;
+                smoothed_segments[i].end = mid;
+                smoothed_segments[i + 1].start = mid;
+            }
+        }
+    }
+
+    smoothed_segments
+}
+
+/// The unified 5-stage conversion pipeline:
+/// NVIDIA per-frame results -> normalize -> Face/Person association -> temporal smoothing -> ActiveSpeakerSegment -> ActiveSpeakerTimeline
+pub fn convert_nvidia_frames_to_timeline(
+    raw_frames: &[NvidiaRawFrame],
+    start_sec: f64,
+    duration_sec: f64,
+    face_tracker_opt: Option<&FaceTrackerResult>,
+) -> ActiveSpeakerTimeline {
+    // Stage 1: Normalize
+    let normalized = normalize_nvidia_per_frame_detections(raw_frames, start_sec, duration_sec);
+
+    // Stage 2: Face/Person Association
+    let associated = associate_faces_and_persons(&normalized, face_tracker_opt);
+
+    // Stage 3 & 4: Temporal Smoothing & ActiveSpeakerSegment Generation
+    let segments = smooth_and_build_active_speaker_segments(
+        &associated.detections,
+        start_sec,
+        duration_sec,
+    );
+
     let avg_confidence = if segments.is_empty() {
-        0.80
+        associated.confidence
     } else {
-        segments.iter().map(|s| s.confidence).sum::<f64>() / segments.len() as f64
+        (segments.iter().map(|s| s.confidence).sum::<f64>() / segments.len() as f64)
+            .clamp(0.1, 1.0)
     };
 
     ActiveSpeakerTimeline {
         segments,
         provider: "nvidia_api".to_string(),
         source_duration: duration_sec,
-        speaker_person_mapping: speaker_mapping,
-        confidence: avg_confidence.clamp(0.0, 1.0),
+        speaker_person_mapping: associated.speaker_person_mapping,
+        confidence: avg_confidence,
     }
+}
+
+/// Robust parser for NVIDIA Active Speaker Detection NIM and NVCF responses.
+/// Handles standard NIM envelopes, results wrappers, top-level arrays, and legacy previews.
+pub fn parse_nvidia_asd_response(response_body: &str) -> Result<Vec<NvidiaRawFrame>> {
+    // 1. Try standard { "frames": [...] }
+    if let Ok(resp) = serde_json::from_str::<NvidiaAsdResponse>(response_body) {
+        if !resp.frames.is_empty() {
+            return Ok(resp.frames);
+        }
+    }
+
+    // 2. Try nested { "results": { "frames": [...] } }
+    #[derive(Deserialize)]
+    struct NestedResults {
+        results: NvidiaAsdResponse,
+    }
+    if let Ok(nested) = serde_json::from_str::<NestedResults>(response_body) {
+        if !nested.results.frames.is_empty() {
+            return Ok(nested.results.frames);
+        }
+    }
+
+    // 3. Try top-level array of frames [ { ... } ]
+    if let Ok(frames) = serde_json::from_str::<Vec<NvidiaRawFrame>>(response_body) {
+        if !frames.is_empty() {
+            return Ok(frames);
+        }
+    }
+
+    // 4. Try legacy mock format: { "active_speakers": [ ... ] }
+    #[derive(Deserialize)]
+    struct LegacyItem {
+        start: f64,
+        end: f64,
+        #[serde(default)]
+        speaker_id: Option<String>,
+        #[serde(default)]
+        face_id: Option<usize>,
+        #[serde(default)]
+        confidence: Option<f64>,
+    }
+    #[derive(Deserialize)]
+    struct LegacyEnvelope {
+        active_speakers: Vec<LegacyItem>,
+    }
+    if let Ok(legacy) = serde_json::from_str::<LegacyEnvelope>(response_body) {
+        let mut synth_frames = Vec::new();
+        for item in legacy.active_speakers {
+            let mut t = item.start;
+            while t <= item.end {
+                synth_frames.push(NvidiaRawFrame {
+                    timestamp: t,
+                    faces: vec![],
+                    flat: NvidiaRawDetection {
+                        face_id: item.face_id,
+                        speaker_bbox: None,
+                        diarized_speaker_id: item.speaker_id.clone(),
+                        is_speaking: Some(true),
+                        confidence: item.confidence,
+                        face_confidence: item.confidence,
+                    },
+                });
+                t += 0.04;
+            }
+        }
+        if !synth_frames.is_empty() {
+            return Ok(synth_frames);
+        }
+    }
+
+    Err(anyhow!(
+        "Failed to parse NVIDIA Active Speaker Detection JSON response. Payload: {}",
+        if response_body.len() > 300 {
+            format!("{}...", &response_body[..300])
+        } else {
+            response_body.to_string()
+        }
+    ))
+}
+
+/// Backward compatibility entry point
+pub fn aggregate_nvidia_frames_to_timeline(
+    frames: &[NvidiaPerFrameSpeaker],
+    start_sec: f64,
+    duration_sec: f64,
+) -> ActiveSpeakerTimeline {
+    let raw: Vec<NvidiaRawFrame> = frames.iter().cloned().map(Into::into).collect();
+    convert_nvidia_frames_to_timeline(&raw, start_sec, duration_sec, None)
 }
 
 impl ActiveSpeakerDetector for NvidiaAsdDetector {
@@ -455,12 +921,13 @@ impl ActiveSpeakerDetector for NvidiaAsdDetector {
             return Err(anyhow!("NVCF execution failed ({status}): {err_body}"));
         }
 
-        let asd_data: NvidiaAsdResponse = final_response
-            .json()
+        let response_text = final_response
+            .text()
             .await
-            .context("Parsing NVIDIA ASD response JSON")?;
+            .context("Reading NVIDIA ASD response body")?;
 
-        let timeline = aggregate_nvidia_frames_to_timeline(&asd_data.frames, start_sec, duration_sec);
+        let raw_frames = parse_nvidia_asd_response(&response_text)?;
+        let timeline = convert_nvidia_frames_to_timeline(&raw_frames, start_sec, duration_sec, None);
         Ok(timeline)
     }
 }
@@ -906,6 +1373,267 @@ mod tests {
         assert_eq!(timeline.speaker_person_mapping.get("S1"), Some(&1));
         assert_eq!(timeline.speaker_person_mapping.get("S2"), Some(&2));
         assert_eq!(timeline.provider, "nvidia_api");
+    }
+
+    #[test]
+    fn test_conversion_layer_pipeline_end_to_end() {
+        let json_response = r#"{
+            "frames": [
+                {
+                    "timestamp": 0.04,
+                    "faces": [
+                        {
+                            "face_id": 1,
+                            "bbox": [0.20, 0.15, 0.15, 0.20],
+                            "is_speaking": true,
+                            "confidence": 0.95,
+                            "diarized_speaker_id": "SPEAKER_00"
+                        },
+                        {
+                            "face_id": 2,
+                            "bbox": [0.70, 0.18, 0.14, 0.22],
+                            "is_speaking": false,
+                            "confidence": 0.10,
+                            "diarized_speaker_id": null
+                        }
+                    ]
+                },
+                {
+                    "timestamp": 0.08,
+                    "faces": [
+                        {
+                            "face_id": 1,
+                            "bbox": [0.20, 0.15, 0.15, 0.20],
+                            "is_speaking": true,
+                            "confidence": 0.93,
+                            "diarized_speaker_id": "SPEAKER_00"
+                        }
+                    ]
+                },
+                {
+                    "timestamp": 0.12,
+                    "faces": [
+                        {
+                            "face_id": 1,
+                            "bbox": [0.20, 0.15, 0.15, 0.20],
+                            "is_speaking": true,
+                            "confidence": 0.96,
+                            "diarized_speaker_id": "SPEAKER_00"
+                        }
+                    ]
+                },
+                {
+                    "timestamp": 0.16,
+                    "faces": [
+                        {
+                            "face_id": 1,
+                            "bbox": [0.20, 0.15, 0.15, 0.20],
+                            "is_speaking": true,
+                            "confidence": 0.94,
+                            "diarized_speaker_id": "SPEAKER_00"
+                        }
+                    ]
+                },
+                {
+                    "timestamp": 0.20,
+                    "faces": [
+                        {
+                            "face_id": 1,
+                            "bbox": [0.20, 0.15, 0.15, 0.20],
+                            "is_speaking": true,
+                            "confidence": 0.95,
+                            "diarized_speaker_id": "SPEAKER_00"
+                        }
+                    ]
+                }
+            ]
+        }"#;
+
+        let parsed_frames = parse_nvidia_asd_response(json_response).expect("must parse NIM json");
+        assert_eq!(parsed_frames.len(), 5);
+
+        // Run full conversion pipeline
+        let timeline = convert_nvidia_frames_to_timeline(&parsed_frames, 0.0, 10.0, None);
+        assert!(!timeline.segments.is_empty());
+        assert_eq!(timeline.speaker_person_mapping.get("SPEAKER_00"), Some(&1));
+        assert_eq!(timeline.segments[0].person_id, 1);
+        assert!(timeline.segments[0].confidence > 0.90);
+    }
+
+    #[test]
+    fn test_temporal_smoothing_bridges_speech_gaps_and_prunes_spikes() {
+        let detections = vec![
+            // A quick 0.04s noise spike by Person 2
+            AssociatedFrameDetection {
+                timestamp_sec: 1.0,
+                absolute_timestamp_sec: 1.0,
+                person_id: 2,
+                speaker_bbox: None,
+                bbox_center: None,
+                diarized_speaker_id: None,
+                is_speaking: true,
+                confidence: 0.70,
+            },
+            // Person 1 speaks from 2.0 to 2.2, pauses 0.2s, speaks 2.4 to 2.8 (should bridge)
+            AssociatedFrameDetection {
+                timestamp_sec: 2.0,
+                absolute_timestamp_sec: 2.0,
+                person_id: 1,
+                speaker_bbox: None,
+                bbox_center: None,
+                diarized_speaker_id: Some("S1".to_string()),
+                is_speaking: true,
+                confidence: 0.92,
+            },
+            AssociatedFrameDetection {
+                timestamp_sec: 2.1,
+                absolute_timestamp_sec: 2.1,
+                person_id: 1,
+                speaker_bbox: None,
+                bbox_center: None,
+                diarized_speaker_id: Some("S1".to_string()),
+                is_speaking: true,
+                confidence: 0.95,
+            },
+            AssociatedFrameDetection {
+                timestamp_sec: 2.4,
+                absolute_timestamp_sec: 2.4,
+                person_id: 1,
+                speaker_bbox: None,
+                bbox_center: None,
+                diarized_speaker_id: Some("S1".to_string()),
+                is_speaking: true,
+                confidence: 0.93,
+            },
+            AssociatedFrameDetection {
+                timestamp_sec: 2.6,
+                absolute_timestamp_sec: 2.6,
+                person_id: 1,
+                speaker_bbox: None,
+                bbox_center: None,
+                diarized_speaker_id: Some("S1".to_string()),
+                is_speaking: true,
+                confidence: 0.91,
+            },
+        ];
+
+        let segments = smooth_and_build_active_speaker_segments(&detections, 0.0, 10.0);
+        // Spurious spike (0.05s duration) by Person 2 should be pruned
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].person_id, 1);
+        // The pause between 2.1 and 2.4 (0.3s) was bridged into a continuous segment
+        assert!(segments[0].end >= 2.6);
+    }
+
+    #[test]
+    fn test_bounding_box_and_coordinate_normalization() {
+        // Test standard [x, y, w, h]
+        let raw_box = [0.10, 0.15, 0.30, 0.40];
+        let (bbox, center) = normalize_bounding_box(&raw_box);
+        let b = bbox.unwrap();
+        assert_eq!(b[0], 0.10);
+        assert_eq!(b[1], 0.15);
+        assert!((b[2] - 0.30).abs() < 1e-4);
+        assert!((b[3] - 0.40).abs() < 1e-4);
+        let c = center.unwrap();
+        assert!((c.0 - 0.25).abs() < 1e-4);
+        assert!((c.1 - 0.35).abs() < 1e-4);
+
+        // Test corners [x1, y1, x2, y2]
+        let raw_corners = [0.60, 0.50, 0.90, 0.85];
+        let (c_bbox, _) = normalize_bounding_box(&raw_corners);
+        let cb = c_bbox.unwrap();
+        assert_eq!(cb[0], 0.60);
+        assert_eq!(cb[1], 0.50);
+        assert!((cb[2] - 0.30).abs() < 1e-4);
+        assert!((cb[3] - 0.35).abs() < 1e-4);
+
+        // Test pixel normalization
+        let raw_pixels = [192.0, 108.0, 576.0, 432.0];
+        let (px_bbox, _) = normalize_bounding_box(&raw_pixels);
+        assert!(px_bbox.is_some());
+        let pb = px_bbox.unwrap();
+        assert!(pb[0] <= 1.0);
+        assert!(pb[1] <= 1.0);
+    }
+
+    #[test]
+    fn test_associate_faces_and_persons_with_vision_keyframes() {
+        use crate::media::face_tracker::{VisionKeyframe, VisionPersonTrack, VisionTrackingPayload};
+
+        let face_tracker_result = FaceTrackerResult {
+            avg_center_x: 0.50,
+            face_detected: true,
+            width: Some(1920.0),
+            height: Some(1080.0),
+            podcast: Some(VisionTrackingPayload {
+                two_faces_detected: true,
+                top_center_x: None,
+                top_center_y: None,
+                bottom_center_x: None,
+                bottom_center_y: None,
+                people: vec![
+                    VisionPersonTrack {
+                        id: 1,
+                        name: "Speaker Left".to_string(),
+                        keyframes: vec![VisionKeyframe {
+                            t: 5.0,
+                            x: 0.25,
+                            y: 0.35,
+                            width: 0.15,
+                            height: 0.20,
+                            confidence: 1.0,
+                            visible: true,
+                            state: None,
+                        }],
+                    },
+                    VisionPersonTrack {
+                        id: 2,
+                        name: "Speaker Right".to_string(),
+                        keyframes: vec![VisionKeyframe {
+                            t: 5.0,
+                            x: 0.75,
+                            y: 0.35,
+                            width: 0.15,
+                            height: 0.20,
+                            confidence: 1.0,
+                            visible: true,
+                            state: None,
+                        }],
+                    },
+                ],
+            }),
+        };
+
+        let detections = vec![
+            NormalizedFrameDetection {
+                timestamp_sec: 5.0,
+                absolute_timestamp_sec: 5.0,
+                speaker_bbox: Some([0.20, 0.25, 0.15, 0.20]),
+                bbox_center: Some((0.275, 0.35)),
+                raw_face_id: None,
+                diarized_speaker_id: Some("SPK_LEFT".to_string()),
+                is_speaking: true,
+                confidence: 0.94,
+            },
+            NormalizedFrameDetection {
+                timestamp_sec: 5.0,
+                absolute_timestamp_sec: 5.0,
+                speaker_bbox: Some([0.70, 0.25, 0.15, 0.20]),
+                bbox_center: Some((0.775, 0.35)),
+                raw_face_id: None,
+                diarized_speaker_id: Some("SPK_RIGHT".to_string()),
+                is_speaking: true,
+                confidence: 0.92,
+            },
+        ];
+
+        let associated = associate_faces_and_persons(&detections, Some(&face_tracker_result));
+        assert_eq!(associated.detections.len(), 2);
+        assert_eq!(associated.detections[0].person_id, 1);
+        assert_eq!(associated.detections[1].person_id, 2);
+        assert_eq!(associated.speaker_person_mapping.get("SPK_LEFT"), Some(&1));
+        assert_eq!(associated.speaker_person_mapping.get("SPK_RIGHT"), Some(&2));
     }
 
     #[test]
