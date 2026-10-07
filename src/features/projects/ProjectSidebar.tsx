@@ -74,11 +74,11 @@ export function ProjectSidebar({
         <button
           className={`sidebar-mode-btn podcast ${appSection === "podcast" ? "active" : ""}`}
           onClick={() => onSectionChange("podcast")}
-          title="Podcast Studio: 2-Person 9:16 split-screen for table recordings"
+          title="Dynamic Podcast: 1–3 Person vertical reframe for conversational recordings"
         >
           <Mic size={14} />
-          <span>Podcast (9:16)</span>
-          <span className="mode-pill-split">2-Face</span>
+          <span>Dynamic Podcast</span>
+          <span className="mode-pill-split">1–3 Person</span>
         </button>
       </div>
 

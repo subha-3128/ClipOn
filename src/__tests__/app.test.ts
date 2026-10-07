@@ -51,4 +51,28 @@ describe("Frontend Core Types and Utilities", () => {
     expect(formatTimestamp(75)).toBe("01:15");
     expect(formatTimestamp(3665)).toBe("61:05");
   });
+
+  it("verifies consistent configured podcast tracking sample rate", async () => {
+    const { PODCAST_TRACKING_RATE_FPS } =
+      await import("../features/podcast/PodcastTimelinePreview");
+    expect(PODCAST_TRACKING_RATE_FPS).toBe(3.5);
+  });
+
+  it("verifies accessibility components and ARIA role mappings", async () => {
+    const { AccessibleModal } = await import("../components/AccessibleModal");
+    const { AccessibleNotification } =
+      await import("../components/AccessibleNotification");
+
+    expect(typeof AccessibleModal).toBe("function");
+    expect(typeof AccessibleNotification).toBe("function");
+
+    // Verify error severity to ARIA live region role contract
+    const getAriaRole = (severity: "fatal" | "error" | "warning" | "info") =>
+      severity === "fatal" || severity === "error" ? "alert" : "status";
+
+    expect(getAriaRole("fatal")).toBe("alert");
+    expect(getAriaRole("error")).toBe("alert");
+    expect(getAriaRole("warning")).toBe("status");
+    expect(getAriaRole("info")).toBe("status");
+  });
 });

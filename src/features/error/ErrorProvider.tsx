@@ -5,7 +5,7 @@ import {
   ErrorSeverity,
   ErrorAction,
 } from "../../types/error";
-import { AlertCircle, AlertTriangle, Info, X } from "lucide-react";
+import { AccessibleNotification } from "../../components/AccessibleNotification";
 
 interface ErrorContextValue {
   errors: AppError[];
@@ -89,129 +89,7 @@ export function ErrorProvider({ children }: { children: React.ReactNode }) {
       }}
     >
       {children}
-      {errors.length > 0 && (
-        <div
-          className="error-toast-container"
-          style={{
-            position: "fixed",
-            bottom: 24,
-            right: 24,
-            zIndex: 9999,
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-            maxWidth: 420,
-            width: "100%",
-            pointerEvents: "none",
-          }}
-        >
-          {errors.map((err) => (
-            <div
-              key={err.id}
-              className={`error-toast ${err.severity}`}
-              style={{
-                pointerEvents: "auto",
-                background:
-                  err.severity === "fatal" || err.severity === "error"
-                    ? "rgba(30, 10, 10, 0.95)"
-                    : "rgba(25, 25, 35, 0.95)",
-                border: `1px solid ${err.severity === "fatal" || err.severity === "error" ? "#ef4444" : err.severity === "warning" ? "#f59e0b" : "#3b82f6"}`,
-                borderRadius: 8,
-                padding: "12px 16px",
-                color: "#f8fafc",
-                boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.5)",
-                backdropFilter: "blur(12px)",
-                display: "flex",
-                flexDirection: "column",
-                gap: 6,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  justifyContent: "space-between",
-                  gap: 10,
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  {err.severity === "fatal" || err.severity === "error" ? (
-                    <AlertCircle
-                      size={18}
-                      color="#ef4444"
-                      style={{ flexShrink: 0 }}
-                    />
-                  ) : err.severity === "warning" ? (
-                    <AlertTriangle
-                      size={18}
-                      color="#f59e0b"
-                      style={{ flexShrink: 0 }}
-                    />
-                  ) : (
-                    <Info size={18} color="#3b82f6" style={{ flexShrink: 0 }} />
-                  )}
-                  <div
-                    style={{ fontWeight: 600, fontSize: 13, lineHeight: "1.3" }}
-                  >
-                    {err.message}
-                  </div>
-                </div>
-                <button
-                  onClick={() => dismissError(err.id)}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    color: "#94a3b8",
-                    cursor: "pointer",
-                    padding: 2,
-                    display: "flex",
-                    alignItems: "center",
-                  }}
-                  title="Dismiss"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-
-              {err.details && (
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "#94a3b8",
-                    paddingLeft: 26,
-                    wordBreak: "break-word",
-                  }}
-                >
-                  {err.details}
-                </div>
-              )}
-
-              {err.action && (
-                <div style={{ paddingLeft: 26, marginTop: 4 }}>
-                  <button
-                    onClick={() => {
-                      err.action?.onClick();
-                      dismissError(err.id);
-                    }}
-                    style={{
-                      background: "rgba(255, 255, 255, 0.1)",
-                      border: "1px solid rgba(255, 255, 255, 0.2)",
-                      borderRadius: 4,
-                      color: "#fff",
-                      fontSize: 11,
-                      padding: "4px 10px",
-                      cursor: "pointer",
-                      fontWeight: 500,
-                    }}
-                  >
-                    {err.action.label}
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+      <AccessibleNotification errors={errors} onDismiss={dismissError} />
     </ErrorContext.Provider>
   );
 }

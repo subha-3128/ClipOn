@@ -230,15 +230,20 @@ export function Onboarding({
   };
 
   return (
-    <div className="modal-overlay">
-      <div className="onboarding-card">
+    <div className="modal-overlay" role="presentation">
+      <div
+        className="onboarding-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="onboarding-dialog-title"
+      >
         {setupMode === "choose" && (
           <>
             <div className="onboarding-header">
               <div className="brand-mark large">
                 <Clapperboard size={36} />
               </div>
-              <h2>Welcome to ClipOn</h2>
+              <h2 id="onboarding-dialog-title">Welcome to ClipOn</h2>
               <p>
                 Long recording in. Short clips out. Choose how you want to run
                 the studio.

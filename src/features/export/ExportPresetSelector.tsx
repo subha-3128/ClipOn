@@ -44,26 +44,11 @@ export function ExportPresetSelector({
   onSelectPreset,
 }: ExportPresetSelectorProps) {
   return (
-    <div className="export-preset-selector" style={{ margin: "10px 0" }}>
-      <label
-        style={{
-          fontSize: "11px",
-          fontWeight: "600",
-          color: "#94a3b8",
-          textTransform: "uppercase",
-          display: "block",
-          marginBottom: "6px",
-        }}
-      >
+    <div className="export-preset-selector">
+      <label className="export-preset-label">
         Export Preset (1080×1920 Vertical)
       </label>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gap: "8px",
-        }}
-      >
+      <div className="export-preset-grid">
         {PRESETS.map((p) => {
           const isSelected = selectedPreset === p.platform;
           return (
@@ -71,49 +56,28 @@ export function ExportPresetSelector({
               key={p.platform}
               type="button"
               onClick={() => onSelectPreset(p.platform)}
-              style={{
-                background: isSelected
-                  ? "rgba(56, 189, 248, 0.15)"
-                  : "rgba(30, 41, 59, 0.5)",
-                border: isSelected
-                  ? "1px solid #38bdf8"
-                  : "1px solid rgba(255, 255, 255, 0.08)",
-                borderRadius: "8px",
-                padding: "8px 10px",
-                textAlign: "left",
-                cursor: "pointer",
-                display: "flex",
-                flexDirection: "column",
-                gap: "3px",
-              }}
+              className={`export-preset-btn ${isSelected ? "selected" : ""}`}
             >
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "6px" }}
-              >
+              <div className="export-preset-btn-header">
                 {p.platform === "instagram_reels" ? (
                   <Instagram
                     size={13}
-                    color={isSelected ? "#38bdf8" : "#94a3b8"}
+                    color={isSelected ? "var(--accent-cyan)" : "var(--muted)"}
                   />
                 ) : p.platform === "youtube_shorts" ? (
                   <Youtube
                     size={13}
-                    color={isSelected ? "#38bdf8" : "#94a3b8"}
+                    color={isSelected ? "var(--accent-cyan)" : "var(--muted)"}
                   />
                 ) : (
-                  <Video size={13} color={isSelected ? "#38bdf8" : "#94a3b8"} />
+                  <Video
+                    size={13}
+                    color={isSelected ? "var(--accent-cyan)" : "var(--muted)"}
+                  />
                 )}
-                <span
-                  style={{
-                    fontSize: "11px",
-                    fontWeight: "600",
-                    color: isSelected ? "#f8fafc" : "#cbd5e1",
-                  }}
-                >
-                  {p.label}
-                </span>
+                <span className="export-preset-btn-name">{p.label}</span>
               </div>
-              <span style={{ fontSize: "10px", color: "#64748b" }}>
+              <span className="export-preset-btn-meta">
                 {p.fps}fps • {p.bitrateKbps / 1000}M
               </span>
             </button>

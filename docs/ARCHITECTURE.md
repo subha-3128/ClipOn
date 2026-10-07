@@ -68,7 +68,7 @@ The frontend is strictly structured into modular feature domains under `src/feat
 ### Dynamic Podcast Reframing (16:9 → 9:16)
 
 1. **Face & Identity Tracking**:
-   - `clipon-face-tracker` runs Apple Vision face landmark requests at 5 fps over the clip interval.
+   - `clipon-face-tracker` runs Apple Vision face landmark requests at 3.5 fps (285ms sampling intervals) over the clip interval.
    - Computes normalized bounding boxes and appearance prototypes.
    - Assigns persistent Person IDs using distance and appearance matching, keeping identities stable during occlusions.
 

@@ -90,10 +90,10 @@ export function ProjectHeader({
             <button
               className={`topbar-mode-tab podcast ${appSection === "podcast" ? "active" : ""}`}
               onClick={() => onSectionChange("podcast")}
-              title="Switch to Podcast 2-Person Split Studio"
+              title="Switch to Dynamic Podcast Studio (1–3 Person Reframe)"
             >
               <Mic size={12} />
-              <span>Podcast Split</span>
+              <span>Dynamic Podcast</span>
             </button>
           </div>
 

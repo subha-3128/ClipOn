@@ -16,6 +16,7 @@ import {
   ProjectDetail,
   ReframeMode,
   ExportPresetPlatform,
+  EnvironmentStatus,
 } from "../../types";
 import { ExportPresetSelector } from "../export/ExportPresetSelector";
 import { JobProgressBar } from "../jobs/JobProgressBar";
@@ -69,6 +70,7 @@ export function MomentsPanel({
   appSection,
   reframeMode,
   setReframeMode,
+  environment,
   busy,
   canUseActiveLlm,
   onFindMoments,
@@ -241,8 +243,14 @@ export function MomentsPanel({
               title="Video Framing Aspect Ratio"
             >
               <option value="vertical_crop">Center Crop (9:16)</option>
-              <option value="podcast_split">
+              <option
+                value="podcast_split"
+                disabled={environment?.dynamicPodcastSupported === false}
+              >
                 Podcast Studio (Dynamic 1P / 2P / 3P Split 9:16)
+                {environment?.dynamicPodcastSupported === false
+                  ? " — macOS only"
+                  : ""}
               </option>
               <option value="original">Original Aspect Ratio</option>
             </select>

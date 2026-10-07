@@ -18,6 +18,8 @@ type PodcastTimelinePreviewProps = {
   autoLoad?: boolean;
 };
 
+export const PODCAST_TRACKING_RATE_FPS = 3.5;
+
 // Module-level shared cache and in-flight request tracker to prevent duplicate analyses
 const previewCache = new Map<string, DynamicPodcastReframingResult>();
 const inFlightRequests = new Map<
@@ -190,48 +192,20 @@ export function PodcastTimelinePreview({
   }
 
   return (
-    <div
-      className="podcast-preview-card"
-      style={{
-        background: "rgba(15, 23, 42, 0.75)",
-        border: "1px solid rgba(56, 189, 248, 0.2)",
-        borderRadius: "12px",
-        padding: "16px",
-        marginTop: "12px",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "12px",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <Users size={16} color="#38bdf8" />
-          <span
-            style={{ fontSize: "13px", fontWeight: "700", color: "#f8fafc" }}
-          >
-            Podcast Intelligence Preview (Dense 3.5 fps Tracking)
+    <div className="podcast-preview-container">
+      <div className="podcast-preview-header">
+        <div className="podcast-preview-title">
+          <Users size={16} color="var(--accent-cyan)" />
+          <span>
+            Podcast Intelligence Preview (Dense {PODCAST_TRACKING_RATE_FPS} fps
+            Tracking)
           </span>
         </div>
         <button
           type="button"
           onClick={() => loadAnalysis(true)}
           disabled={loading}
-          style={{
-            background: "rgba(255, 255, 255, 0.05)",
-            border: "1px solid rgba(255, 255, 255, 0.1)",
-            color: "#94a3b8",
-            borderRadius: "6px",
-            padding: "4px 8px",
-            fontSize: "11px",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: "4px",
-          }}
+          className="podcast-preview-refresh-btn"
         >
           <RefreshCw size={11} className={loading ? "spin" : ""} />
           {loading ? "Analyzing..." : "Refresh Track"}
@@ -248,15 +222,7 @@ export function PodcastTimelinePreview({
 
       {/* Detected Participants */}
       <div style={{ marginBottom: "12px" }}>
-        <div
-          style={{
-            fontSize: "11px",
-            color: "#94a3b8",
-            textTransform: "uppercase",
-            fontWeight: "600",
-            marginBottom: "6px",
-          }}
-        >
+        <div className="podcast-identities-label">
           Persistent Identities (
           {people.length > 0
             ? people.length
@@ -268,25 +234,12 @@ export function PodcastTimelinePreview({
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
           {people.length > 0 ? (
             people.map((p) => (
-              <div
-                key={p.id}
-                style={{
-                  background: "rgba(56, 189, 248, 0.1)",
-                  border: "1px solid rgba(56, 189, 248, 0.3)",
-                  borderRadius: "6px",
-                  padding: "4px 10px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  fontSize: "12px",
-                  color: "#e2e8f0",
-                }}
-              >
-                <User size={13} color="#38bdf8" />
+              <div key={p.id} className="podcast-person-badge">
+                <User size={13} color="var(--accent-cyan)" />
                 <span style={{ fontWeight: "600" }}>
                   {p.name || `Person ${p.id}`}
                 </span>
-                <span style={{ fontSize: "10px", color: "#94a3b8" }}>
+                <span style={{ fontSize: "10px", color: "var(--muted)" }}>
                   ({p.keyframes.length} pts)
                 </span>
               </div>

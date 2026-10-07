@@ -2,6 +2,7 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Youtube, X, AlertTriangle, Loader2, ShieldAlert } from "lucide-react";
 import { useAppError } from "../error/ErrorProvider";
+import { AccessibleModal } from "../../components/AccessibleModal";
 
 interface YoutubeImportModalProps {
   isOpen: boolean;
@@ -75,154 +76,149 @@ export function YoutubeImportModal({
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="youtube-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <div className="modal-header-left">
-            <div className="modal-icon-badge">
-              <Youtube size={18} />
-            </div>
-            <div>
-              <h3>Import from YouTube</h3>
-              <p>Download and convert a video directly into ClipOn</p>
-            </div>
+    <AccessibleModal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Import from YouTube"
+      titleId="youtube-modal-title"
+      dialogClassName="youtube-modal"
+    >
+      <div className="modal-header">
+        <div className="modal-header-left">
+          <div className="modal-icon-badge">
+            <Youtube size={18} />
           </div>
-          <button className="modal-close-btn" onClick={onClose}>
-            <X size={16} />
-          </button>
+          <div>
+            <h3 id="youtube-modal-title">Import from YouTube</h3>
+            <p>Download and convert a video directly into ClipOn</p>
+          </div>
         </div>
+        <button
+          className="modal-close-btn"
+          onClick={onClose}
+          aria-label="Close dialog"
+        >
+          <X size={16} />
+        </button>
+      </div>
 
-        <div className="youtube-modal-body">
-          {/* Terms Compliance Banner */}
-          <div
-            style={{
-              padding: "10px 14px",
-              background: "rgba(59, 130, 246, 0.08)",
-              border: "1px solid rgba(59, 130, 246, 0.25)",
-              borderRadius: 6,
-              marginBottom: 14,
-              fontSize: 12,
-              color: "#94a3b8",
-              display: "flex",
-              gap: 8,
-              alignItems: "flex-start",
-            }}
-          >
-            <ShieldAlert
-              size={16}
-              color="#60a5fa"
-              style={{ flexShrink: 0, marginTop: 2 }}
-            />
-            <div>
-              <strong style={{ color: "#e2e8f0" }}>
-                Notice & Terms of Service:
-              </strong>
-              <div style={{ marginTop: 2 }}>
-                Ensure you have the right to download and use this content under
-                YouTube’s Terms of Service and applicable copyright laws.
-              </div>
-            </div>
-          </div>
-
-          <input
-            type="text"
-            placeholder="https://www.youtube.com/watch?v=..."
-            value={youtubeUrl}
-            onChange={(e) => setYoutubeUrl(e.target.value)}
-            disabled={youtubeStatus !== "idle" && youtubeStatus !== "warning"}
-            className="youtube-url-input"
+      <div className="youtube-modal-body">
+        {/* Terms Compliance Banner */}
+        <div className="yt-compliance-banner">
+          <ShieldAlert
+            size={16}
+            color="var(--accent-cyan)"
+            style={{ flexShrink: 0, marginTop: 2 }}
           />
-
-          {youtubeStatus === "warning" && (
-            <div className="youtube-warning-box">
-              <div className="warning-title">
-                <AlertTriangle size={18} />
-                <span>Copyright Advisory</span>
-              </div>
-              <p>
-                This video is not explicitly marked with a Creative Commons
-                license. Detected license:{" "}
-                <strong>{youtubeWarningLicense}</strong>. Clipping and
-                republishing copyrighted content may violate platform terms.
-              </p>
+          <div>
+            <strong style={{ color: "var(--text)" }}>
+              Notice & Terms of Service:
+            </strong>
+            <div style={{ marginTop: 2 }}>
+              Ensure you have the right to download and use this content under
+              YouTube’s Terms of Service and applicable copyright laws.
             </div>
-          )}
-
-          <div
-            style={{
-              marginTop: 14,
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-            }}
-          >
-            <input
-              type="checkbox"
-              id="tos_ack"
-              checked={acknowledgedTos}
-              onChange={(e) => handleCheckboxChange(e.target.checked)}
-              style={{ cursor: "pointer" }}
-            />
-            <label
-              htmlFor="tos_ack"
-              style={{
-                fontSize: 12,
-                color: "#cbd5e1",
-                cursor: "pointer",
-                userSelect: "none",
-              }}
-            >
-              I confirm I have permission or legal right to use this content
-            </label>
           </div>
         </div>
 
-        <div className="modal-footer">
-          <button
-            className="studio-btn secondary"
-            onClick={() => {
-              onClose();
-              setYoutubeUrl("");
-              setAcknowledgedTos(false);
-              setYoutubeStatus("idle");
+        <input
+          type="text"
+          placeholder="https://www.youtube.com/watch?v=..."
+          value={youtubeUrl}
+          onChange={(e) => setYoutubeUrl(e.target.value)}
+          disabled={youtubeStatus !== "idle" && youtubeStatus !== "warning"}
+          className="youtube-url-input"
+        />
+
+        {youtubeStatus === "warning" && (
+          <div className="youtube-warning-box">
+            <div className="warning-title">
+              <AlertTriangle size={18} />
+              <span>Copyright Advisory</span>
+            </div>
+            <p>
+              This video is not explicitly marked with a Creative Commons
+              license. Detected license:{" "}
+              <strong>{youtubeWarningLicense}</strong>. Clipping and
+              republishing copyrighted content may violate platform terms.
+            </p>
+          </div>
+        )}
+
+        <div
+          style={{
+            marginTop: 14,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <input
+            type="checkbox"
+            id="tos_ack"
+            checked={acknowledgedTos}
+            onChange={(e) => handleCheckboxChange(e.target.checked)}
+            style={{ cursor: "pointer" }}
+          />
+          <label
+            htmlFor="tos_ack"
+            style={{
+              fontSize: 12,
+              color: "#cbd5e1",
+              cursor: "pointer",
+              userSelect: "none",
             }}
-            disabled={
-              youtubeStatus === "checking" || youtubeStatus === "downloading"
-            }
           >
-            Cancel
-          </button>
-          {youtubeStatus === "warning" ? (
-            <button
-              className="studio-btn danger"
-              onClick={executeDownload}
-              disabled={!acknowledgedTos}
-            >
-              Proceed Anyway
-            </button>
-          ) : (
-            <button
-              className="studio-btn primary"
-              onClick={handleImport}
-              disabled={
-                !youtubeUrl || !acknowledgedTos || youtubeStatus !== "idle"
-              }
-            >
-              {youtubeStatus === "checking" ? (
-                <>
-                  <Loader2 className="spin" size={14} /> Checking...
-                </>
-              ) : youtubeStatus === "downloading" ? (
-                <>
-                  <Loader2 className="spin" size={14} /> Downloading...
-                </>
-              ) : (
-                "Download & Import"
-              )}
-            </button>
-          )}
+            I confirm I have permission or legal right to use this content
+          </label>
         </div>
       </div>
-    </div>
+
+      <div className="modal-footer">
+        <button
+          className="studio-btn secondary"
+          onClick={() => {
+            onClose();
+            setYoutubeUrl("");
+            setAcknowledgedTos(false);
+            setYoutubeStatus("idle");
+          }}
+          disabled={
+            youtubeStatus === "checking" || youtubeStatus === "downloading"
+          }
+        >
+          Cancel
+        </button>
+        {youtubeStatus === "warning" ? (
+          <button
+            className="studio-btn danger"
+            onClick={executeDownload}
+            disabled={!acknowledgedTos}
+          >
+            Proceed Anyway
+          </button>
+        ) : (
+          <button
+            className="studio-btn primary"
+            onClick={handleImport}
+            disabled={
+              !youtubeUrl || !acknowledgedTos || youtubeStatus !== "idle"
+            }
+          >
+            {youtubeStatus === "checking" ? (
+              <>
+                <Loader2 className="spin" size={14} /> Checking...
+              </>
+            ) : youtubeStatus === "downloading" ? (
+              <>
+                <Loader2 className="spin" size={14} /> Downloading...
+              </>
+            ) : (
+              "Download & Import"
+            )}
+          </button>
+        )}
+      </div>
+    </AccessibleModal>
   );
 }

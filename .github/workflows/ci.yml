@@ -121,4 +121,3 @@ jobs:
 
       - name: Verify Cargo Compilation
         run: cargo check --manifest-path src-tauri/Cargo.toml
-

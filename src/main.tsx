@@ -1178,6 +1178,7 @@ function AppContent() {
                   appSection={appSection}
                   reframeMode={reframeMode}
                   setReframeMode={setReframeMode}
+                  environment={environment}
                   busy={busy}
                   canUseActiveLlm={canUseActiveLlm}
                   onFindMoments={moments}

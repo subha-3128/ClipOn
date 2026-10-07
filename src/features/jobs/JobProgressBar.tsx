@@ -89,72 +89,33 @@ export function JobProgressBar({
   }
 
   return (
-    <div
-      className="active-jobs-container"
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "8px",
-        margin: "12px 0",
-      }}
-    >
+    <div className="active-jobs-list">
       {activeJobList.map((job) => {
         const isFailed = job.state === "Failed";
         const isCancelled = job.state === "Cancelled";
         const isCancelling = cancellingIds.has(job.id);
 
         return (
-          <div
-            key={job.id}
-            className="job-progress-card"
-            style={{
-              background:
-                "linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.95))",
-              border: "1px solid rgba(56, 189, 248, 0.3)",
-              borderRadius: "12px",
-              padding: "12px 16px",
-              boxShadow: "0 6px 20px rgba(0, 0, 0, 0.3)",
-              backdropFilter: "blur(12px)",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "8px",
-              }}
-            >
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "10px" }}
-              >
+          <div key={job.id} className="job-item-card">
+            <div className="job-item-header">
+              <div className="job-item-title">
                 {isFailed ? (
-                  <AlertCircle size={17} color="#ef4444" />
+                  <AlertCircle size={17} color="var(--danger)" />
                 ) : isCancelled ? (
-                  <XCircle size={17} color="#f59e0b" />
+                  <XCircle size={17} color="var(--warning)" />
                 ) : (
-                  <Loader2 size={17} color="#38bdf8" className="spin" />
+                  <Loader2
+                    size={17}
+                    color="var(--accent-cyan)"
+                    className="spin"
+                  />
                 )}
                 <div>
-                  <div
-                    style={{
-                      fontSize: "13px",
-                      fontWeight: "600",
-                      color: "#f8fafc",
-                    }}
-                  >
+                  <div className="job-stage-label">
                     {job.stage || "Processing clip..."}
                   </div>
                   {job.error && (
-                    <div
-                      style={{
-                        fontSize: "11px",
-                        color: "#f87171",
-                        marginTop: "2px",
-                      }}
-                    >
-                      {job.error}
-                    </div>
+                    <div className="job-error-label">{job.error}</div>
                   )}
                 </div>
               </div>
@@ -166,7 +127,7 @@ export function JobProgressBar({
                   style={{
                     fontSize: "13px",
                     fontWeight: "700",
-                    color: "#38bdf8",
+                    color: "var(--accent-cyan)",
                   }}
                 >
                   {job.progress}%
@@ -176,46 +137,25 @@ export function JobProgressBar({
                     type="button"
                     onClick={() => handleCancel(job.id)}
                     disabled={isCancelling}
-                    style={{
-                      background: "rgba(239, 68, 68, 0.15)",
-                      border: "1px solid rgba(239, 68, 68, 0.4)",
-                      color: "#fca5a5",
-                      borderRadius: "6px",
-                      padding: "4px 10px",
-                      fontSize: "11px",
-                      fontWeight: "600",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "5px",
-                    }}
+                    className="job-item-cancel-btn"
                   >
-                    <XCircle size={12} />
-                    {isCancelling ? "Cancelling..." : "Cancel"}
+                    <XCircle size={14} />
+                    <span>{isCancelling ? "Cancelling..." : "Cancel"}</span>
                   </button>
                 )}
               </div>
             </div>
 
-            <div
-              style={{
-                width: "100%",
-                height: "6px",
-                background: "rgba(255, 255, 255, 0.1)",
-                borderRadius: "999px",
-                overflow: "hidden",
-              }}
-            >
+            <div className="job-item-bar-track">
               <div
+                className="job-item-bar-fill"
                 style={{
                   width: `${job.progress}%`,
-                  height: "100%",
                   background: isFailed
-                    ? "#ef4444"
+                    ? "var(--danger)"
                     : isCancelled
-                      ? "#f59e0b"
-                      : "linear-gradient(90deg, #38bdf8, #818cf8)",
-                  transition: "width 0.3s ease",
+                      ? "var(--warning)"
+                      : "var(--accent)",
                 }}
               />
             </div>

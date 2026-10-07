@@ -97,9 +97,9 @@ export function MomentCard({
           {reframeMode === "podcast_split" && (
             <span
               className="candidate-podcast-pill"
-              title="9:16 Two-Person Table Split Screen"
+              title="Dynamic 1–3 Person Conversation Reframe"
             >
-              <Users size={11} /> 2-Person Split
+              <Users size={11} /> Dynamic Podcast
             </span>
           )}
           <span className="moment-duration-badge">

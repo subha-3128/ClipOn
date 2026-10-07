@@ -7,6 +7,18 @@
 @import url("https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
 
 :root {
+  /* Canonical Core Design Tokens */
+  --bg: #06080d;
+  --surface: #0c101a;
+  --surface-card: #101521;
+  --border: rgba(255, 255, 255, 0.08);
+  --accent: #10b981;
+  --text: #f8fafc;
+  --muted: #94a3b8;
+  --danger: #ef4444;
+  --success: #10b981;
+  --warning: #f59e0b;
+
   /* Surfaces & Canvas */
   --bg-base: #06080d;
   --bg-sidebar: #090c13;
@@ -2856,7 +2868,7 @@ button:disabled {
 }
 
 /* ==========================================================================
-   Responsive Breakpoints: 1440px, 1024px, 768px, 375px
+   Responsive Desktop Breakpoints: 1440px, 1024px (minWidth: 1040)
    ========================================================================== */
 
 /* Large Desktop (1440px) */
@@ -2884,128 +2896,6 @@ button:disabled {
 
   .moment-candidate-card {
     padding: 12px 12px;
-  }
-}
-
-/* Tablet Portrait (768px) */
-@media (max-width: 768px) {
-  .app-shell {
-    grid-template-columns: 1fr;
-    height: auto;
-    overflow-y: auto;
-  }
-
-  .sidebar {
-    border-right: none;
-    border-bottom: 1px solid var(--border-subtle);
-    padding: 12px 14px;
-    gap: 10px;
-  }
-
-  .project-list {
-    max-height: 130px;
-  }
-
-  .workspace {
-    padding: 12px 14px;
-    height: auto;
-    overflow: visible;
-  }
-
-  .home-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
-  }
-
-  .dashboard-metrics-bar {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-  }
-
-  .dashboard-search-container {
-    width: 100%;
-  }
-
-  .workspace-topbar {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
-  }
-
-  .topbar-right {
-    width: 100%;
-    justify-content: flex-start;
-  }
-
-  .pipeline-tracker {
-    flex-wrap: wrap;
-    gap: 8px;
-    padding: 8px 10px;
-  }
-
-  .pipeline-connector {
-    display: none;
-  }
-
-  .pipeline-step {
-    flex: 1 1 45%;
-  }
-
-  .modal-overlay {
-    padding: 10px;
-  }
-
-  .settings-modal,
-  .youtube-modal,
-  .style-modal,
-  .social-kit-modal,
-  .onboarding-card {
-    width: 100%;
-    max-height: 94vh;
-  }
-
-  .onboarding-choices {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* Mobile Screens (375px) */
-@media (max-width: 375px) {
-  .workspace {
-    padding: 8px 10px;
-  }
-
-  .brand-title span:first-child {
-    font-size: 13.5px;
-  }
-
-  .project-editable-title {
-    font-size: 14.5px;
-  }
-
-  .moment-hook {
-    font-size: 13px;
-  }
-
-  .action-pill-btn {
-    font-size: 10.5px;
-    padding: 0 7px;
-    height: 27px;
-  }
-
-  .tab-pill {
-    padding: 0 5px;
-    font-size: 10px;
-  }
-
-  .status-bar {
-    padding: 0 8px;
-  }
-
-  .status-bar-right {
-    display: none;
   }
 }
 
@@ -3144,14 +3034,6 @@ button:disabled {
   border-color: rgba(250, 204, 21, 0.45);
   color: #facc15;
   box-shadow: 0 0 12px rgba(250, 204, 21, 0.18);
-}
-
-@media (max-width: 640px) {
-  .feature-toggle-btn {
-    font-size: 10px;
-    padding: 0 6px;
-    gap: 4px;
-  }
 }
 
 /* ==========================================================================
@@ -3382,4 +3264,220 @@ button:disabled {
   border: 1px solid rgba(56, 189, 248, 0.25);
   padding: 2px 6px;
   border-radius: 4px;
+}
+
+/* ==========================================================================
+   Component Token Styles (Issue #46: Eliminate Inline Styling)
+   ========================================================================== */
+
+/* 1. Export Preset Selector */
+.export-preset-selector {
+  margin: 10px 0;
+}
+.export-preset-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 6px;
+  letter-spacing: 0.05em;
+}
+.export-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.export-preset-btn {
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  transition: all 0.15s ease;
+}
+.export-preset-btn:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(30, 41, 59, 0.7);
+}
+.export-preset-btn.selected {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: var(--accent-cyan);
+}
+.export-preset-btn-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.export-preset-btn-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.export-preset-btn-meta {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* 2. Podcast Timeline Preview */
+.podcast-preview-container {
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 12px;
+}
+.podcast-preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.podcast-preview-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.podcast-preview-refresh-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--muted);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+.podcast-preview-refresh-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+.podcast-identities-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.podcast-person-badge {
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 6px;
+  padding: 4px 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #e2e8f0;
+}
+
+/* 3. Instagram Publish Modal */
+.instagram-banner-box {
+  background: rgba(225, 48, 108, 0.08);
+  border: 1px solid rgba(225, 48, 108, 0.25);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  font-size: 12px;
+  color: #fbcfe8;
+  line-height: 1.5;
+}
+.instagram-banner-title {
+  color: var(--text);
+  display: block;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+.instagram-info-banner {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-top: 16px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* 4. Job Progress Bar */
+.active-jobs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+.job-item-card {
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.job-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.job-item-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.job-item-bar-track {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.job-item-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+.job-item-cancel-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s ease;
+}
+.job-item-cancel-btn:hover {
+  color: var(--danger);
+}
+
+/* 5. YouTube Import Modal */
+.yt-compliance-banner {
+  padding: 10px 14px;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 12px;
+  color: #93c5fd;
+  line-height: 1.4;
+}
+.yt-warning-card {
+  margin-top: 14px;
+  padding: 12px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 8px;
 }
