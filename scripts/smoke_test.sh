@@ -80,17 +80,17 @@ fi
 # 4. Golden Reframe Integration Tests
 echo -e "\n${BOLD}Step 4: Running Golden Reframe Integration Tests...${NC}"
 if cargo test --manifest-path src-tauri/Cargo.toml --test reframe_golden; then
-    report_pass "Golden reframe tests passed across all 4 modes (Original, VerticalCrop, SmartFaceTrack, PodcastSplit)"
+    report_pass "Golden reframe tests passed across all 3 modes (Original, VerticalCrop, SmartFaceTrack)"
 else
     report_fail "Golden reframe tests failed"
 fi
 
-# 5. Dynamic Podcast Layout Continuity Tests
-echo -e "\n${BOLD}Step 5: Running Podcast Layout Continuity Tests...${NC}"
-if cargo test --manifest-path src-tauri/Cargo.toml --test podcast_layouts; then
-    report_pass "Dynamic Podcast layout continuity tests passed (1P, 2P, 3P)"
+# 5. Frontend Test Suite
+echo -e "\n${BOLD}Step 5: Running Frontend Test Suite...${NC}"
+if npm test; then
+    report_pass "All Frontend tests passed"
 else
-    report_fail "Podcast layout continuity tests failed"
+    report_fail "Frontend tests failed"
 fi
 
 # Summary

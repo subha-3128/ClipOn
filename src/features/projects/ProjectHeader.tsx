@@ -1,21 +1,17 @@
 import {
   ArrowLeft,
   Edit3,
-  Sparkles,
-  Mic,
   FolderOpen,
   Sliders,
   RefreshCw,
   Check,
 } from "lucide-react";
-import { AppSection, ProjectDetail, NormalizedTranscript } from "../../types";
+import { ProjectDetail, NormalizedTranscript } from "../../types";
 
 interface ProjectHeaderProps {
   detail: ProjectDetail;
   transcript: NormalizedTranscript | null;
   cutCount: number;
-  appSection: AppSection;
-  onSectionChange: (sec: AppSection) => void;
   onBack: () => void;
   onRename: (id: string) => void;
   onOpenClipsFolder: () => void;
@@ -29,8 +25,6 @@ export function ProjectHeader({
   detail,
   transcript,
   cutCount,
-  appSection,
-  onSectionChange,
   onBack,
   onRename,
   onOpenClipsFolder,
@@ -78,24 +72,6 @@ export function ProjectHeader({
         </div>
 
         <div className="topbar-right">
-          <div className="topbar-mode-toggle">
-            <button
-              className={`topbar-mode-tab ${appSection === "shorts" ? "active" : ""}`}
-              onClick={() => onSectionChange("shorts")}
-              title="Switch to Shorts & Reels Studio"
-            >
-              <Sparkles size={12} />
-              <span>Shorts & Reels</span>
-            </button>
-            <button
-              className={`topbar-mode-tab podcast ${appSection === "podcast" ? "active" : ""}`}
-              onClick={() => onSectionChange("podcast")}
-              title="Switch to Dynamic Podcast Studio (1–3 Person Reframe)"
-            >
-              <Mic size={12} />
-              <span>Dynamic Podcast</span>
-            </button>
-          </div>
 
           <button
             className="topbar-action-btn"

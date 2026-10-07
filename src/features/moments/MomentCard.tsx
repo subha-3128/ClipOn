@@ -1,7 +1,6 @@
 import {
   CheckSquare,
   Square,
-  Users,
   Instagram,
   Loader2,
   AlertTriangle,
@@ -13,10 +12,7 @@ import {
   Candidate,
   Clip,
   InstagramPost,
-  AppSection,
-  ReframeMode,
 } from "../../types";
-import { PodcastTimelinePreview } from "../podcast/PodcastTimelinePreview";
 
 interface MomentCardProps {
   candidate: Candidate;
@@ -24,19 +20,12 @@ interface MomentCardProps {
   igPost?: InstagramPost;
   isCuttingThis: boolean;
   isPublishingThis: boolean;
-  appSection: AppSection;
-  reframeMode: ReframeMode;
-  sourcePath: string;
   formatTime: (sec: number) => string;
   onToggleSelect: (id: string) => void;
   onOpenSocialKit: (candidate: Candidate) => void;
   onCutCandidate: (candidateId: string) => void;
   onOpenFolder: (path: string) => void;
   onPublishToInstagram: (candidateId: string) => void;
-  onLayoutOverride?: (
-    candidateId: string,
-    layout: "auto" | "single" | "split_two" | "split_three"
-  ) => void;
   hasFfmpeg: boolean;
   isBusy: boolean;
 }
@@ -47,16 +36,12 @@ export function MomentCard({
   igPost,
   isCuttingThis,
   isPublishingThis,
-  appSection,
-  reframeMode,
-  sourcePath,
   formatTime,
   onToggleSelect,
   onOpenSocialKit,
   onCutCandidate,
   onOpenFolder,
   onPublishToInstagram,
-  onLayoutOverride,
   hasFfmpeg,
   isBusy,
 }: MomentCardProps) {
@@ -92,14 +77,6 @@ export function MomentCard({
               title="High-Energy Audio Hook & Vocal Surge"
             >
               ⚡ High Audio Energy
-            </span>
-          )}
-          {reframeMode === "podcast_split" && (
-            <span
-              className="candidate-podcast-pill"
-              title="Dynamic 1–3 Person Conversation Reframe"
-            >
-              <Users size={11} /> Dynamic Podcast
             </span>
           )}
           <span className="moment-duration-badge">
@@ -176,19 +153,6 @@ export function MomentCard({
             <span className="path-label">Export:</span>
             <span className="path-value truncate">{clip.outputPath}</span>
           </div>
-        )}
-
-        {(appSection === "podcast" || reframeMode === "podcast_split") && (
-          <PodcastTimelinePreview
-            sourcePath={sourcePath}
-            startSec={candidate.startSec}
-            durationSec={candidate.endSec - candidate.startSec}
-            initialLayoutOverride={candidate.layoutOverride}
-            onLayoutOverride={(layout) =>
-              onLayoutOverride?.(candidate.id, layout)
-            }
-            autoLoad={candidate.selected}
-          />
         )}
       </div>
 

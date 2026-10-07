@@ -10,6 +10,7 @@ pub const DEEPSEEK: &str = "deepseek";
 pub const GROQ: &str = "groq";
 pub const OPENROUTER: &str = "openrouter";
 pub const INSTAGRAM: &str = "instagram";
+pub const NVIDIA: &str = "nvidia";
 
 pub fn get(name: &str) -> Result<Option<String>> {
     let entry = keyring::Entry::new(SERVICE_NAME, name)
@@ -43,3 +44,16 @@ pub fn delete(name: &str) -> Result<()> {
 pub fn has(name: &str) -> Result<bool> {
     Ok(get(name)?.is_some())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_nvidia_credential_interface() {
+        let res = has(NVIDIA);
+        assert!(res.is_ok(), "Keyring check should execute cleanly: {:?}", res.err());
+    }
+}
+
+

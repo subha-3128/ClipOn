@@ -1,5 +1,4 @@
 import {
-  Mic,
   Sparkles,
   Scissors,
   Zap,
@@ -8,7 +7,6 @@ import {
   Loader2,
 } from "lucide-react";
 import {
-  AppSection,
   BusyState,
   Candidate,
   Clip,
@@ -24,7 +22,6 @@ import { MomentCard } from "./MomentCard";
 
 interface MomentsPanelProps {
   detail: ProjectDetail;
-  appSection: AppSection;
   reframeMode: ReframeMode;
   setReframeMode: (m: ReframeMode) => void;
   environment?: EnvironmentStatus | null;
@@ -57,17 +54,12 @@ interface MomentsPanelProps {
   cutCandidate: (id: string) => void;
   openFolder: (path: string) => void;
   handlePublishToInstagram: (id: string) => void;
-  onLayoutOverride?: (
-    candidateId: string,
-    layout: "auto" | "single" | "split_two" | "split_three"
-  ) => void;
   onJobComplete: () => void;
   onJobCancel: () => void;
 }
 
 export function MomentsPanel({
   detail,
-  appSection,
   reframeMode,
   setReframeMode,
   environment,
@@ -100,57 +92,11 @@ export function MomentsPanel({
   cutCandidate,
   openFolder,
   handlePublishToInstagram,
-  onLayoutOverride,
   onJobComplete,
   onJobCancel,
 }: MomentsPanelProps) {
   return (
     <section className="studio-panel moments-studio">
-      {appSection === "podcast" && (
-        <div className="podcast-studio-banner">
-          <div className="podcast-banner-header">
-            <div className="podcast-badge-icon">
-              <Mic size={14} />
-            </div>
-            <div>
-              <div className="podcast-banner-title">
-                Dynamic Podcast Reframing (16:9 → 9:16)
-              </div>
-              <p className="podcast-banner-desc">
-                Adaptive multi-person timeline reframing: 1 Person (Full 9:16),
-                2 People (Top/Bottom Split), 3 People (2 Top + 1 Bottom).
-                Dynamically tracks persistent identities, preserves framing
-                during temporary absences, and keeps captions synchronized along
-                dividing seams.
-              </p>
-            </div>
-          </div>
-          <div className="podcast-tracking-status-grid">
-            <div className="tracking-status-item">
-              <span className="dot dot-blue" />
-              <span className="tracking-label">Layouts:</span>
-              <span className="tracking-val">
-                1P Full / 2P Split / 3P Dynamic
-              </span>
-            </div>
-            <div className="tracking-status-item">
-              <span className="dot dot-purple" />
-              <span className="tracking-label">Identities:</span>
-              <span className="tracking-val">Persistent Face Tracking</span>
-            </div>
-            <div className="tracking-status-item">
-              <span className="dot dot-green" />
-              <span className="tracking-label">Synchronization:</span>
-              <span className="tracking-val">1:1 Source Timestamps</span>
-            </div>
-            <div className="tracking-status-item">
-              <span className="dot dot-amber" />
-              <span className="tracking-label">Captions:</span>
-              <span className="tracking-val">Seam Line Centered</span>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="panel-header">
         <div>
@@ -244,11 +190,11 @@ export function MomentsPanel({
             >
               <option value="vertical_crop">Center Crop (9:16)</option>
               <option
-                value="podcast_split"
-                disabled={environment?.dynamicPodcastSupported === false}
+                value="smart_face_track"
+                disabled={environment?.faceTrackingSupported === false}
               >
-                Podcast Studio (Dynamic 1P / 2P / 3P Split 9:16)
-                {environment?.dynamicPodcastSupported === false
+                Smart Face Track (9:16)
+                {environment?.faceTrackingSupported === false
                   ? " — macOS only"
                   : ""}
               </option>
@@ -331,16 +277,12 @@ export function MomentsPanel({
                 igPost={igPost}
                 isCuttingThis={isCuttingThis}
                 isPublishingThis={isPublishingThis}
-                appSection={appSection}
-                reframeMode={reframeMode}
-                sourcePath={detail.project.sourcePath}
                 formatTime={formatTime}
                 onToggleSelect={toggleCandidate}
                 onOpenSocialKit={handleOpenSocialKit}
                 onCutCandidate={cutCandidate}
                 onOpenFolder={openFolder}
                 onPublishToInstagram={handlePublishToInstagram}
-                onLayoutOverride={onLayoutOverride}
                 hasFfmpeg={hasFfmpeg}
                 isBusy={busy !== "idle"}
               />

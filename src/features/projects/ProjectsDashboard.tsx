@@ -7,11 +7,10 @@ import {
   Clapperboard,
   Loader2,
 } from "lucide-react";
-import { AppSection, BusyState, EnvironmentStatus, Project } from "../../types";
+import { BusyState, EnvironmentStatus, Project } from "../../types";
 
 interface ProjectsDashboardProps {
   projects: Project[];
-  appSection: AppSection;
   busy: BusyState;
   environment: EnvironmentStatus | null;
   transcriptionEngine: "deepgram" | "local";
@@ -27,7 +26,6 @@ interface ProjectsDashboardProps {
 
 export function ProjectsDashboard({
   projects,
-  appSection,
   busy,
   environment,
   transcriptionEngine,
@@ -56,15 +54,9 @@ export function ProjectsDashboard({
     <div className="home-dashboard">
       <header className="home-header">
         <div className="home-header-info">
-          <h2>
-            {appSection === "podcast"
-              ? "Podcast Studio (Dynamic 9:16)"
-              : "All Projects"}
-          </h2>
+          <h2>All Projects</h2>
           <p>
-            {appSection === "podcast"
-              ? "Transform 16:9 podcasts into dynamic multi-person vertical clips (1, 2, or 3 people) for Instagram Reels."
-              : "Select a project below or import a new media file to get started."}
+            Select a project below or import a new media file to get started.
           </p>
         </div>
         <div className="home-header-actions">
@@ -78,9 +70,7 @@ export function ProjectsDashboard({
             ) : (
               <FileVideo size={15} />
             )}
-            {appSection === "podcast"
-              ? "Import Podcast Video"
-              : "Import Recording"}
+            Import Recording
           </button>
           <button
             className="btn-minimal-secondary"
@@ -93,9 +83,7 @@ export function ProjectsDashboard({
             }
           >
             <Youtube size={15} />
-            {appSection === "podcast"
-              ? "Podcast YouTube URL"
-              : "Import from YouTube"}
+            Import from YouTube
           </button>
         </div>
       </header>

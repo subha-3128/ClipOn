@@ -1,7 +1,5 @@
 import {
   Clapperboard,
-  Sparkles,
-  Mic,
   FileVideo,
   Youtube,
   Layers,
@@ -9,11 +7,9 @@ import {
   Settings,
   Loader2,
 } from "lucide-react";
-import { AppSection, BusyState, EnvironmentStatus, Project } from "../../types";
+import { BusyState, EnvironmentStatus, Project } from "../../types";
 
 interface ProjectSidebarProps {
-  appSection: AppSection;
-  onSectionChange: (section: AppSection) => void;
   busy: BusyState;
   environment: EnvironmentStatus | null;
   projects: Project[];
@@ -26,8 +22,6 @@ interface ProjectSidebarProps {
 }
 
 export function ProjectSidebar({
-  appSection,
-  onSectionChange,
   busy,
   environment,
   projects,
@@ -58,29 +52,6 @@ export function ProjectSidebar({
         </div>
       </div>
 
-      {/* Section Switcher: Shorts & Reels vs Podcast */}
-      <div className="sidebar-section-header">
-        <span>Studio Mode</span>
-      </div>
-      <div className="sidebar-mode-switcher">
-        <button
-          className={`sidebar-mode-btn ${appSection === "shorts" ? "active" : ""}`}
-          onClick={() => onSectionChange("shorts")}
-          title="Shorts & Reels Studio: Single-speaker 9:16 vertical crop"
-        >
-          <Sparkles size={14} />
-          <span>Shorts & Reels</span>
-        </button>
-        <button
-          className={`sidebar-mode-btn podcast ${appSection === "podcast" ? "active" : ""}`}
-          onClick={() => onSectionChange("podcast")}
-          title="Dynamic Podcast: 1–3 Person vertical reframe for conversational recordings"
-        >
-          <Mic size={14} />
-          <span>Dynamic Podcast</span>
-          <span className="mode-pill-split">1–3 Person</span>
-        </button>
-      </div>
 
       {/* Quick Actions */}
       <div className="sidebar-actions">
@@ -94,9 +65,7 @@ export function ProjectSidebar({
           ) : (
             <FileVideo size={15} />
           )}
-          {appSection === "podcast"
-            ? "Import Podcast Video"
-            : "Import Recording"}
+          Import Recording
         </button>
         <button
           className="sidebar-action-btn secondary"
@@ -107,7 +76,7 @@ export function ProjectSidebar({
           }
         >
           <Youtube size={15} />
-          {appSection === "podcast" ? "Podcast YouTube URL" : "Import YouTube"}
+          Import YouTube
         </button>
       </div>
 

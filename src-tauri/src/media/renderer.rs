@@ -8,11 +8,9 @@ use super::{
     audio::{build_studio_audio_filter, detect_silences},
     captions::build_ass_filter,
     encoder::{apply_video_encoder_args, supports_videotoolbox},
+    face_tracker::{detect_face_center_x, detect_faces_full, FaceTrackerResult},
     ffmpeg::{command_exists, resolve_binary},
     filters::{build_center_crop_filter, build_smart_face_crop_filter},
-    podcast::{
-        build_segment_filter_graph, detect_face_center_x, detect_faces_full, FaceTrackerResult,
-    },
     presets::OutputPreset,
     probe::probe_media,
     render_plan::{CaptionPlan, ReframePlan, RenderPlan},
@@ -44,7 +42,7 @@ pub fn cleanup_stale_temp_dirs() {
     if let Ok(entries) = std::fs::read_dir(temp_dir) {
         for entry in entries.flatten() {
             if let Ok(name) = entry.file_name().into_string() {
-                if name.starts_with("clipon_pod_") || name.starts_with("clipon_job_") {
+                if name.starts_with("clipon_track_") || name.starts_with("clipon_job_") || name.starts_with("clipon_pod_") {
                     let _ = std::fs::remove_dir_all(entry.path());
                 }
             }
@@ -52,21 +50,6 @@ pub fn cleanup_stale_temp_dirs() {
     }
 }
 
-pub fn merge_adjacent_segments(
-    segments: &[crate::dynamic_podcast_reframing::LayoutSegment],
-) -> Vec<crate::dynamic_podcast_reframing::LayoutSegment> {
-    let mut merged: Vec<crate::dynamic_podcast_reframing::LayoutSegment> = Vec::new();
-    for seg in segments {
-        if let Some(last) = merged.last_mut() {
-            if last.layout_type == seg.layout_type && last.person_ids == seg.person_ids {
-                last.end = seg.end;
-                continue;
-            }
-        }
-        merged.push(seg.clone());
-    }
-    merged
-}
 
 pub fn escape_ffmpeg_concat_file_entry(path: &Path) -> String {
     let raw = path.to_string_lossy();
@@ -140,16 +123,10 @@ pub fn execute_render_plan(plan: &RenderPlan) -> Result<PathBuf> {
     };
 
     let tracker_info = match plan.reframe {
-        ReframePlan::PodcastSplit { .. } | ReframePlan::SmartFaceTrack => {
+        ReframePlan::SmartFaceTrack => {
             detect_faces_full(&plan.source, start_sec, duration_sec)
         }
-        _ => FaceTrackerResult {
-            avg_center_x: 0.5,
-            face_detected: false,
-            width: None,
-            height: None,
-            podcast: None,
-        },
+        _ => FaceTrackerResult::default(),
     };
 
     let run_render = |use_videotoolbox: bool| -> Result<()> {
@@ -184,411 +161,54 @@ pub fn execute_render_plan(plan: &RenderPlan) -> Result<PathBuf> {
                     }
                     cmd.args(["-vf", &filter]);
                 }
-                ReframePlan::PodcastSplit { layout_override } => {
+                ReframePlan::SmartFaceTrack => {
                     let iw_f = probe.width.unwrap_or(1920) as f64;
                     let ih_f = probe.height.unwrap_or(1080) as f64;
+                    let cw = (iw_f.min(ih_f * 9.0 / 16.0) / 2.0).floor() * 2.0;
+                    let ch = (ih_f.min(iw_f * 16.0 / 9.0) / 2.0).floor() * 2.0;
 
-                    let pod = tracker_info.podcast.as_ref();
-                    let people = pod.and_then(|p| p.people.as_deref()).unwrap_or(&[]);
-                    let raw_segments = pod.and_then(|p| p.segments.as_deref()).unwrap_or(&[]);
-                    let merged_segments = merge_adjacent_segments(raw_segments);
-                    let segments = &merged_segments[..];
-
-                    let top_fallback_x = pod.map(|p| p.top_center_x).unwrap_or(0.26);
-                    let top_fallback_y = pod.map(|p| p.top_center_y).unwrap_or(0.38);
-                    let bot_fallback_x = pod.map(|p| p.bottom_center_x).unwrap_or(0.78);
-                    let bot_fallback_y = pod.map(|p| p.bottom_center_y).unwrap_or(0.38);
-
-                    let effective_override = layout_override
-                        .as_deref()
-                        .filter(|l| !l.is_empty() && *l != "auto");
-
-                    let all_same_layout = !segments.is_empty()
-                        && segments.iter().all(|s| {
-                            s.layout_type == segments[0].layout_type
-                                && s.person_ids == segments[0].person_ids
-                        });
-
-                    let has_multi_layout = effective_override.is_none() && segments.len() > 1 && !all_same_layout;
-
-                    if has_multi_layout {
-                        // Fast path: Single FFmpeg invocation with filter_complex concat for compatible timelines
-                        let try_fast_path = segments.len() <= 6;
-                        if try_fast_path {
-                            let mut parts = Vec::new();
-                            let mut seg_tags = Vec::new();
-
-                            for (idx, seg) in segments.iter().enumerate() {
-                                let seg_abs_start = start_sec + seg.start;
-                                let seg_abs_end = start_sec + seg.end;
-                                let seg_filter = build_segment_filter_graph(
-                                    &seg.layout_type,
-                                    &seg.person_ids,
-                                    people,
-                                    iw_f,
-                                    ih_f,
-                                    seg.start,
-                                    seg.end,
-                                    top_fallback_x,
-                                    top_fallback_y,
-                                    bot_fallback_x,
-                                    bot_fallback_y,
-                                );
-                                parts.push(format!(
-                                    "[0:v]trim=start={seg_abs_start:.3}:end={seg_abs_end:.3},setpts=PTS-STARTPTS,{seg_filter}[p_seg_{idx}]"
-                                ));
-                                seg_tags.push(format!("[p_seg_{idx}]"));
-                            }
-
-                            let n_segs = segments.len();
-                            parts.push(format!(
-                                "{}concat=n={n_segs}:v=1:a=0[p_concat_v]",
-                                seg_tags.join("")
-                            ));
-
-                            let mut final_v_tag = "[p_concat_v]".to_string();
-                            if plan.punch_zoom {
-                                parts.push(format!(
-                                    "{final_v_tag}{}[p_zoom_v]",
-                                    crate::pro_editor::build_punch_zoom_filter(1080, 1920)
-                                ));
-                                final_v_tag = "[p_zoom_v]".to_string();
-                            }
-
-                            if let Some(CaptionPlan::AssSubtitle(ass)) = &plan.captions {
-                                if let Some(ass_filter) = build_ass_filter(ass) {
-                                    parts.push(format!("{final_v_tag}{ass_filter}[p_sub_v]"));
-                                    final_v_tag = "[p_sub_v]".to_string();
-                                }
-                            } else if let Some(CaptionPlan::Drawtext(drawtext)) = &plan.captions {
-                                if !drawtext.is_empty() {
-                                    parts.push(format!("{final_v_tag}{drawtext}[p_sub_v]"));
-                                    final_v_tag = "[p_sub_v]".to_string();
-                                }
-                            }
-
-                            let mut fast_cmd = Command::new(resolve_binary("ffmpeg"));
-                            fast_cmd.arg("-nostdin");
-                            fast_cmd.args(["-y", "-i", &plan.source]);
-
-                            let mut audio_filters = Vec::new();
-                            if let Some((_, ref a_jump)) = jump_cuts {
-                                audio_filters.push(a_jump.clone());
-                            }
-                            if plan.audio.studio_audio {
-                                audio_filters.push(build_studio_audio_filter());
-                            }
-
-                            if !audio_filters.is_empty() {
-                                parts.push(format!(
-                                    "[0:a]atrim=start={start_sec:.3}:end={end_sec:.3},asetpts=PTS-STARTPTS,{}[p_aud_out]",
-                                    audio_filters.join(",")
-                                ));
-                                fast_cmd.args([
-                                    "-filter_complex",
-                                    &parts.join(";"),
-                                    "-map",
-                                    &final_v_tag,
-                                    "-map",
-                                    "[p_aud_out]",
-                                ]);
-                            } else {
-                                parts.push(format!(
-                                    "[0:a]atrim=start={start_sec:.3}:end={end_sec:.3},asetpts=PTS-STARTPTS[p_aud_out]"
-                                ));
-                                fast_cmd.args([
-                                    "-filter_complex",
-                                    &parts.join(";"),
-                                    "-map",
-                                    &final_v_tag,
-                                    "-map",
-                                    "[p_aud_out]",
-                                ]);
-                            }
-
-                            apply_video_encoder_args(
-                                &mut fast_cmd,
-                                use_videotoolbox,
-                                plan.output.video_bitrate_kbps,
-                            );
-                            fast_cmd.args([
-                                "-c:a",
-                                "aac",
-                                "-b:a",
-                                &format!("{}k", plan.output.audio_bitrate_kbps),
-                            ]);
-                            fast_cmd.arg(&plan.output_path);
-
-                            if let Ok(out) = execute_command_cancellable(fast_cmd, plan.job_id.as_deref()) {
-                                if out.status.success() {
-                                    return Ok(());
-                                }
-                            }
-                        }
-
-                        // Fallback: Segment render + concat
-                        let temp_guard = TempDirGuard::new(
-                            std::env::temp_dir()
-                                .join(format!("clipon_pod_{}", uuid::Uuid::new_v4())),
-                        );
-                        let temp_dir = temp_guard.path();
-
-                        let mut seg_files = Vec::new();
-                        for (idx, seg) in segments.iter().enumerate() {
-                            if let Some(id) = plan.job_id.as_deref() {
-                                if crate::jobs::JobManager::is_cancelled_global(id) {
-                                    return Err(anyhow!("Job cancelled by user"));
-                                }
-                            }
-                            let seg_dur = (seg.end - seg.start).max(0.1);
-                            let seg_abs_start = start_sec + seg.start;
-                            let seg_filter = format!(
-                                "{}[seg_out]",
-                                build_segment_filter_graph(
-                                    &seg.layout_type,
-                                    &seg.person_ids,
-                                    people,
-                                    iw_f,
-                                    ih_f,
-                                    seg.start,
-                                    seg.end,
-                                    top_fallback_x,
-                                    top_fallback_y,
-                                    bot_fallback_x,
-                                    bot_fallback_y,
-                                )
-                            );
-                            let seg_out_path = temp_dir.join(format!("seg_{:03}.mp4", idx));
-                            let mut seg_cmd = Command::new(resolve_binary("ffmpeg"));
-                            seg_cmd.arg("-nostdin");
-                            seg_cmd.args([
-                                "-y",
-                                "-ss",
-                                &format!("{seg_abs_start:.3}"),
-                                "-t",
-                                &format!("{seg_dur:.3}"),
-                                "-i",
-                                &plan.source,
-                                "-filter_complex",
-                                &seg_filter,
-                                "-map",
-                                "[seg_out]",
-                                "-an",
-                            ]);
-                            apply_video_encoder_args(
-                                &mut seg_cmd,
-                                use_videotoolbox,
-                                plan.output.video_bitrate_kbps,
-                            );
-                            seg_cmd.arg(&seg_out_path);
-                            if execute_command_cancellable(seg_cmd, plan.job_id.as_deref())
-                                .map(|o| o.status.success())
-                                .unwrap_or(false)
-                            {
-                                seg_files.push(seg_out_path);
-                            }
-                        }
-
-                            let list_path = temp_dir.join("list.txt");
-                            let mut list_content = String::new();
-                            for f in &seg_files {
-                                list_content.push_str(&escape_ffmpeg_concat_file_entry(f));
-                            }
-                            let _ = std::fs::write(&list_path, list_content);
-                            let concat_out = temp_dir.join("concat_v.mp4");
-                            let mut concat_cmd = Command::new(resolve_binary("ffmpeg"));
-                            concat_cmd.args([
-                                "-nostdin",
-                                "-y",
-                                "-f",
-                                "concat",
-                                "-safe",
-                                "0",
-                                "-i",
-                                &list_path.to_string_lossy(),
-                                "-c",
-                                "copy",
-                                &concat_out.to_string_lossy(),
-                            ]);
-                            if execute_command_cancellable(concat_cmd, plan.job_id.as_deref())
-                                .map(|o| o.status.success())
-                                .unwrap_or(false)
-                            {
-                                let mut final_vf = Vec::new();
-                                if plan.punch_zoom {
-                                    final_vf.push(crate::pro_editor::build_punch_zoom_filter(
-                                        1080, 1920,
-                                    ));
-                                }
-                                if let Some(CaptionPlan::AssSubtitle(ass)) = &plan.captions {
-                                    if let Some(ass_filter) = build_ass_filter(ass) {
-                                        final_vf.push(ass_filter);
-                                    }
-                                } else if let Some(CaptionPlan::Drawtext(drawtext)) = &plan.captions
-                                {
-                                    if !drawtext.is_empty() {
-                                        final_vf.push(drawtext.to_string());
-                                    }
-                                }
-
-                                let mut final_cmd = Command::new(resolve_binary("ffmpeg"));
-                                final_cmd.arg("-nostdin");
-                                final_cmd.args(["-y", "-i", &concat_out.to_string_lossy()]);
-                                final_cmd.args([
-                                    "-ss",
-                                    &start,
-                                    "-t",
-                                    &duration,
-                                    "-i",
-                                    &plan.source,
-                                ]);
-                                final_cmd.args(["-map", "0:v", "-map", "1:a?"]);
-
-                                if !final_vf.is_empty() {
-                                    final_cmd.args(["-vf", &final_vf.join(",")]);
-                                    apply_video_encoder_args(
-                                        &mut final_cmd,
-                                        use_videotoolbox,
-                                        plan.output.video_bitrate_kbps,
-                                    );
-                                } else {
-                                    final_cmd.args(["-c:v", "copy"]);
-                                }
-
-                                let mut audio_filters = Vec::new();
-                                if let Some((_, ref a_jump)) = jump_cuts {
-                                    audio_filters.push(a_jump.clone());
-                                }
-                                if plan.audio.studio_audio {
-                                    audio_filters.push(build_studio_audio_filter());
-                                }
-                                if !audio_filters.is_empty() {
-                                    final_cmd.args([
-                                        "-af",
-                                        &audio_filters.join(","),
-                                        "-c:a",
-                                        "aac",
-                                        "-b:a",
-                                        &format!("{}k", plan.output.audio_bitrate_kbps),
-                                    ]);
-                                } else {
-                                    final_cmd.args([
-                                        "-c:a",
-                                        "aac",
-                                        "-b:a",
-                                        &format!("{}k", plan.output.audio_bitrate_kbps),
-                                    ]);
-                                }
-                                final_cmd.arg(&plan.output_path);
-
-                                let res = execute_command_cancellable(final_cmd, plan.job_id.as_deref());
-                                drop(temp_guard);
-                                if let Ok(out) = res {
-                                    if out.status.success() {
-                                        return Ok(());
-                                    }
-                                }
-                            }
-                        }
-
-                    // Single-pass render
-                    let default_ids = [1, 2];
-                    let (layout_type, assigned_ids_vec) = if let Some(ov) = effective_override {
-                        let ids: Vec<usize> = match ov {
-                            "single" => vec![people.first().map(|p| p.id).unwrap_or(1)],
-                            "split_three" => {
-                                let mut res: Vec<usize> = people.iter().take(3).map(|p| p.id).collect();
-                                while res.len() < 3 {
-                                    res.push(res.len() + 1);
-                                }
-                                res
-                            }
-                            _ => {
-                                let mut res: Vec<usize> = people.iter().take(2).map(|p| p.id).collect();
-                                while res.len() < 2 {
-                                    res.push(res.len() + 1);
-                                }
-                                res
-                            }
-                        };
-                        (ov, ids)
-                    } else {
-                        let lt = segments
-                            .first()
-                            .map(|s| s.layout_type.as_str())
-                            .unwrap_or("split_two");
-                        let ids = segments
-                            .first()
-                            .map(|s| s.person_ids.clone())
-                            .unwrap_or_else(|| default_ids.to_vec());
-                        (lt, ids)
-                    };
-                    let assigned_ids = assigned_ids_vec.as_slice();
-
-                    let base_filter = build_segment_filter_graph(
-                        layout_type,
-                        assigned_ids,
-                        people,
-                        iw_f,
-                        ih_f,
+                    let cache = crate::analysis_cache::AnalysisCache::global();
+                    let cache_key = crate::analysis_cache::AnalysisCache::compute_source_key_with_params(
+                        &plan.source,
                         0.0,
-                        duration_sec,
-                        top_fallback_x,
-                        top_fallback_y,
-                        bot_fallback_x,
-                        bot_fallback_y,
+                        probe.duration_sec.unwrap_or(duration_sec),
+                        "active_speaker_v2",
+                        "asd_nim_fusion",
+                        "primary_nvidia",
                     );
-                    let mut filter_graph = format!("{}[divided]", base_filter);
+                    let active_timeline = cache
+                        .get::<super::active_speaker::ActiveSpeakerTimeline>(&cache_key, "active_speaker")
+                        .unwrap_or_default();
 
-                    let pre_sub_stream = if plan.punch_zoom {
-                        filter_graph = format!(
-                            "{};[divided]{}[punched]",
-                            filter_graph,
-                            crate::pro_editor::build_punch_zoom_filter(1080, 1920)
+                    let keyframes = super::active_speaker::generate_speaker_aware_keyframes(
+                        &active_timeline,
+                        &tracker_info,
+                        start_sec,
+                        start_sec + duration_sec,
+                    );
+
+                    let mut filter = if !keyframes.is_empty() {
+                        let (expr_x, expr_y) = super::filters::build_dynamic_crop_expr(
+                            Some(&keyframes),
+                            iw_f,
+                            ih_f,
+                            cw,
+                            ch,
+                            tracker_info.avg_center_x,
+                            0.38,
                         );
-                        "[punched]"
+                        format!(
+                            "crop=w='2*trunc(min(iw,ih*9/16)/2)':h='2*trunc(min(ih,iw*16/9)/2)':x={}:y={},scale=1080:1920",
+                            expr_x, expr_y
+                        )
                     } else {
-                        "[divided]"
-                    };
-
-                    let sub_out = if let Some(CaptionPlan::AssSubtitle(ass)) = &plan.captions {
-                        if let Some(ass_filter) = build_ass_filter(ass) {
-                            filter_graph =
-                                format!("{};{}{}[v_sub]", filter_graph, pre_sub_stream, ass_filter);
-                            "[v_sub]"
+                        let center_x = if tracker_info.face_detected {
+                            tracker_info.avg_center_x.clamp(0.20, 0.80)
                         } else {
-                            pre_sub_stream
-                        }
-                    } else if let Some(CaptionPlan::Drawtext(drawtext)) = &plan.captions {
-                        if !drawtext.is_empty() {
-                            filter_graph =
-                                format!("{};{}{}[v_draw]", filter_graph, pre_sub_stream, drawtext);
-                            "[v_draw]"
-                        } else {
-                            pre_sub_stream
-                        }
-                    } else {
-                        pre_sub_stream
+                            detect_face_center_x(&plan.source, start_sec, duration_sec)
+                        };
+                        build_smart_face_crop_filter(center_x)
                     };
-
-                    if let Some((ref v_jump, _)) = jump_cuts {
-                        filter_graph = format!("{};{}{}[v_out]", filter_graph, sub_out, v_jump);
-                    } else {
-                        filter_graph = format!("{};{}null[v_out]", filter_graph, sub_out);
-                    }
-
-                    cmd.args([
-                        "-filter_complex",
-                        &filter_graph,
-                        "-map",
-                        "[v_out]",
-                        "-map",
-                        "0:a?",
-                    ]);
-                }
-                ReframePlan::SmartFaceTrack => {
-                    let center_x = detect_face_center_x(&plan.source, start_sec, duration_sec);
-                    let mut filter = build_smart_face_crop_filter(center_x);
                     if plan.punch_zoom {
                         filter = format!(
                             "{},{}",
@@ -732,7 +352,6 @@ pub fn render_flat_clip_with_job(
     studio_audio: bool,
     job_id: Option<String>,
     export_preset: Option<&str>,
-    layout_override: Option<&str>,
 ) -> Result<PathBuf> {
     let mode = reframe_mode.unwrap_or("vertical_crop");
     let effective_punch = punch_zoom || mode == "punch_zoom";
@@ -754,7 +373,7 @@ pub fn render_flat_clip_with_job(
         start_sec,
         end_sec,
         output_path.to_path_buf(),
-        ReframePlan::from_mode_with_override(reframe_mode, layout_override),
+        ReframePlan::from_mode_str(reframe_mode),
         captions,
         super::render_plan::AudioPlan {
             studio_audio,
@@ -793,54 +412,16 @@ pub fn render_flat_clip(
         studio_audio,
         None,
         None,
-        None,
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dynamic_podcast_reframing::LayoutSegment;
-
-    #[test]
-    fn test_merge_adjacent_segments() {
-        let segs = vec![
-            LayoutSegment {
-                start: 0.0,
-                end: 3.0,
-                number_of_people: 2,
-                layout_type: "split_two".into(),
-                person_ids: vec![1, 2],
-            },
-            LayoutSegment {
-                start: 3.0,
-                end: 6.0,
-                number_of_people: 2,
-                layout_type: "split_two".into(),
-                person_ids: vec![1, 2],
-            },
-            LayoutSegment {
-                start: 6.0,
-                end: 9.0,
-                number_of_people: 1,
-                layout_type: "single".into(),
-                person_ids: vec![1],
-            },
-        ];
-
-        let merged = merge_adjacent_segments(&segs);
-        assert_eq!(merged.len(), 2);
-        assert_eq!(merged[0].start, 0.0);
-        assert_eq!(merged[0].end, 6.0);
-        assert_eq!(merged[0].layout_type, "split_two");
-        assert_eq!(merged[1].start, 6.0);
-        assert_eq!(merged[1].end, 9.0);
-        assert_eq!(merged[1].layout_type, "single");
-    }
 
     #[test]
     fn test_temp_dir_guard_lifecycle() {
-        let path = std::env::temp_dir().join(format!("clipon_pod_test_{}", uuid::Uuid::new_v4()));
+        let path = std::env::temp_dir().join(format!("clipon_track_test_{}", uuid::Uuid::new_v4()));
         {
             let guard = TempDirGuard::new(path.clone());
             assert!(guard.path().exists());
@@ -851,7 +432,7 @@ mod tests {
 
     #[test]
     fn test_cleanup_stale_temp_dirs() {
-        let p1 = std::env::temp_dir().join(format!("clipon_pod_stale_{}", uuid::Uuid::new_v4()));
+        let p1 = std::env::temp_dir().join(format!("clipon_track_stale_{}", uuid::Uuid::new_v4()));
         let p2 = std::env::temp_dir().join(format!("clipon_job_stale_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&p1).unwrap();
         std::fs::create_dir_all(&p2).unwrap();

@@ -1,5 +1,4 @@
 use crate::jobs::JobInfo;
-use crate::media::DynamicPodcastReframingResult;
 use crate::models::{
     Candidate, EnvironmentStatus, InstagramPost, MediaProbe, Project, ProjectDetail, SocialKit,
     Transcript,
@@ -116,14 +115,6 @@ pub async fn update_candidate_timing(
     candidate_service::update_candidate_timing(&state, &candidate_id, start_sec, end_sec).await
 }
 
-#[tauri::command]
-pub async fn update_candidate_layout_override(
-    state: tauri::State<'_, AppState>,
-    candidate_id: String,
-    layout_override: Option<String>,
-) -> Result<Candidate, String> {
-    candidate_service::update_candidate_layout_override(&state, &candidate_id, layout_override).await
-}
 
 #[tauri::command]
 pub async fn render_flat_clip_for_candidate(
@@ -136,7 +127,6 @@ pub async fn render_flat_clip_for_candidate(
     punch_zoom: Option<bool>,
     studio_audio: Option<bool>,
     export_preset: Option<String>,
-    layout_override: Option<String>,
 ) -> Result<String, String> {
     render_service::render_flat_clip_for_candidate(
         app,
@@ -148,7 +138,6 @@ pub async fn render_flat_clip_for_candidate(
         punch_zoom,
         studio_audio,
         export_preset,
-        layout_override,
     )
     .await
 }
@@ -290,11 +279,3 @@ pub async fn get_active_jobs(state: tauri::State<'_, AppState>) -> Result<Vec<Jo
     render_service::get_active_jobs(&state)
 }
 
-#[tauri::command]
-pub async fn get_podcast_preview(
-    source_path: String,
-    start_sec: f64,
-    duration_sec: f64,
-) -> Result<DynamicPodcastReframingResult, String> {
-    render_service::get_podcast_preview(source_path, start_sec, duration_sec).await
-}

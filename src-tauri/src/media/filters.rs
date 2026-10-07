@@ -1,14 +1,16 @@
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct PodcastKeyframe {
+pub struct TrackingKeyframe {
     pub t: f64,
     pub x: f64,
     pub y: f64,
 }
 
+pub type PodcastKeyframe = TrackingKeyframe;
+
 pub fn build_dynamic_crop_expr(
-    keyframes: Option<&[PodcastKeyframe]>,
+    keyframes: Option<&[TrackingKeyframe]>,
     iw: f64,
     ih: f64,
     cw: f64,

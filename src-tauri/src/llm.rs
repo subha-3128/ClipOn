@@ -541,12 +541,45 @@ impl LlmProvider for LocalLlmProvider {
 
 pub fn build_candidate_prompt(segments: &str) -> String {
     format!(
-        "You are an elite, world-class social media strategist with a track record of generating viral multi-million-view Shorts, TikToks, and Reels. \
-Your sole objective is to identify the ABSOLUTE BEST, most highly-engaging, and trend-setting short-form clip candidates from the provided transcript. \
-Do NOT pick random or mediocre segments. Be ruthless in your selection, but extract AS MANY highly viral moments as possible. \
-Every candidate must have an insanely strong, curiosity-inducing hook in the first 3 seconds to stop the scroll. \
-Clips should be 30-90 seconds long, completely self-contained, cut at clean boundaries, and deliver a massive payoff (a mind-blowing fact, hilarious joke, highly controversial opinion, or deep emotional insight). \
-Return up to 25 candidates as JSON matching exactly this schema: \
+        "You are an elite, world-class viral video editor specializing in high-retention TikTok, Instagram Reels, and YouTube Shorts. \
+Your sole objective is to identify the ABSOLUTE STRONGEST, most captivating short-form clip candidates from the provided transcript.
+
+NARRATIVE TAXONOMY & COHERENT STORYTELLING:
+Every winning viral clip must follow a clear narrative progression:
+  [HOOK] -> [SETUP / CLAIM] -> [DEVELOPMENT / STORY / CONFLICT] -> [PAYOFF / CONCLUSION]
+- HOOK (First 3 seconds): The opening curiosity gap, contrarian opinion, or high-stakes question that arrests attention.
+- SETUP / CLAIM: The immediate premise explaining why this matters.
+- STORY / CONFLICT: The narrative development, emotional tension, or surprising revelation.
+- PAYOFF / CONCLUSION: The punchline, breakthrough lesson, or satisfying resolution.
+Classify each section and REJECT candidates starting with FILLER, introductions, greetings, or dead air.
+
+CRITICAL HOOK & RETENTION REQUIREMENTS:
+1. HOOK-FIRST STARTING POINT:
+   - Every single reel MUST start directly at the primary HOOK moment.
+   - Set 'start' EXACTLY at the timestamp where the hook begins.
+   - NEVER start with greetings ('Hey guys', 'Welcome back', 'Hi everybody'), introductions, filler ('Yeah so', 'Right', 'You know', 'I mean'), agreement, or delayed background setup. The very first sentence uttered must instantly grab attention.
+   - Prioritize high-retention hook archetypes:
+     * High curiosity / Curiosity gap ('The real reason 99% of people fail...')
+     * Bold, shocking, or controversial claims ('Everything you've been told about X is a lie.')
+     * Intriguing questions ('Have you ever wondered why millionaires never do this?')
+     * Intense conflict, emotion, or high-stakes revelations ('I lost $50,000 before I realized...')
+     * Irresistible storytelling setups ('Three days ago, something happened that changed everything...')
+     * Promises of immense value ('If you want to 10x your output, do this one thing...')
+2. DURATION TARGETS (STRICT):
+   - PRIORITIZE clips that are 30 to 45 seconds long (the algorithmic viral sweet spot).
+   - 60.0 SECONDS IS THE ABSOLUTE MAXIMUM. NEVER generate a candidate exceeding 60.0 seconds ('end - start' <= 60.0).
+   - Minimum duration: 20 seconds (unless source content is shorter).
+3. STORY COMPLETENESS & PAYOFF:
+   - Do NOT simply pick an arbitrary slice or cut off punchlines mid-sentence.
+   - The clip must have a complete narrative arc: [Hook in first 3s] -> [Context / Progression] -> [Satisfying Payoff / Punchline / Conclusion].
+   - 'end' must cleanly finish the thought/sentence without trailing into the next topic.
+4. SCORING CRITERIA:
+   - 'score': Value from 0.0 to 1.0 evaluating:
+     * Hook Strength (40%): Immediate scroll-stopping power in the first 3 seconds.
+     * Viewer-Retention Potential & Pacing (30%): Fast momentum, high information density, no dead air.
+     * Narrative Completeness & Payoff (30%): Delivers on the hook's promise with a satisfying ending.
+
+Return up to 25 candidates as JSON matching exactly this schema:
 {{\"candidates\":[{{\"start\":0.0,\"end\":0.0,\"score\":0.0,\"hook\":\"...\",\"rationale\":\"...\"}}]}}
 
 Transcript:
@@ -815,7 +848,7 @@ pub fn parse_candidate_json(
             None => continue,
         };
 
-        let end = match parse_number(item.get("end")) {
+        let mut end = match parse_number(item.get("end")) {
             Some(e) => e,
             None => continue,
         };
@@ -824,8 +857,13 @@ pub fn parse_candidate_json(
             continue;
         }
 
+        // Strict 60.0-second maximum cap for short-form video
+        if end - start > 60.0 {
+            end = start + 60.0;
+        }
+
         let duration = end - start;
-        if duration > 300.0 {
+        if duration < 5.0 {
             continue;
         }
 
@@ -833,7 +871,10 @@ pub fn parse_candidate_json(
             if start > max_timeline_duration + 1.0 {
                 continue;
             }
-            if end > max_timeline_duration + 5.0 {
+            if end > max_timeline_duration {
+                end = max_timeline_duration;
+            }
+            if end <= start {
                 continue;
             }
         }
@@ -881,14 +922,20 @@ pub fn parse_candidate_json(
 
     let mut candidates = drafts
         .iter()
-        .filter(|candidate| (candidate.end - candidate.start) >= min_duration)
+        .filter(|candidate| {
+            let dur = candidate.end - candidate.start;
+            dur >= min_duration && dur <= 60.0
+        })
         .cloned()
         .collect::<Vec<_>>();
 
     if candidates.is_empty() {
         candidates = drafts
             .iter()
-            .filter(|candidate| (candidate.end - candidate.start) >= 5.0)
+            .filter(|candidate| {
+                let dur = candidate.end - candidate.start;
+                dur >= 5.0 && dur <= 60.0
+            })
             .cloned()
             .collect::<Vec<_>>();
     }

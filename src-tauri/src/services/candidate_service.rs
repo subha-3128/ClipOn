@@ -105,7 +105,23 @@ pub async fn generate_candidates(
     // 1. Algorithmic Sentence & Context Boundary Snapping
     let snapped_drafts = pro_editor::snap_candidates_to_boundaries(&drafts, &normalized);
 
-    // 2. Multi-Modal Audio Energy & Viral Hook Scoring
+    // 2. Compute or Fetch Cached Active Speaker Timeline (analyzed once, cached for all candidate reels)
+    let project_opt = db.get_project(project_id).ok();
+    let asd_timeline = if let Some(ref proj) = project_opt {
+        Some(
+            crate::media::get_or_compute_active_speaker_timeline(
+                &proj.source_path,
+                0.0,
+                normalized.duration,
+                Some(&normalized),
+            )
+            .await,
+        )
+    } else {
+        None
+    };
+
+    // 3. Multi-Modal Audio Energy, Visual Quality & Viral Hook Scoring
     let wav_path = state
         .data_dir
         .join("projects")
@@ -116,8 +132,15 @@ pub async fn generate_candidates(
     } else {
         None
     };
-    let scored_drafts =
-        pro_editor::calculate_audio_energy_scores(wav_opt, &snapped_drafts, &normalized);
+    let mut scored_drafts = pro_editor::calculate_composite_reel_scores(
+        wav_opt,
+        &snapped_drafts,
+        &normalized,
+        asd_timeline.as_ref(),
+    );
+
+    // Re-rank candidates by final composite score descending so Rank #1 is the highest-scoring hook & retention clip
+    scored_drafts.sort_by(|a, b| b.score.total_cmp(&a.score));
 
     let candidates = db
         .replace_candidates(project_id, &scored_drafts)
@@ -146,7 +169,8 @@ pub async fn update_candidate_timing(
 ) -> Result<Candidate, String> {
     let db = state.db.clone();
     let valid_start = start_sec.max(0.0);
-    let valid_end = end_sec.max(valid_start + 1.0);
+    // Strict 60.0s hard ceiling on candidate duration
+    let valid_end = end_sec.max(valid_start + 1.0).min(valid_start + 60.0);
     db.update_candidate_timing(candidate_id, valid_start, valid_end)
         .map_err(|e| e.to_string())?;
     let (candidate, _) = db
@@ -155,23 +179,6 @@ pub async fn update_candidate_timing(
     Ok(candidate)
 }
 
-pub async fn update_candidate_layout_override(
-    state: &AppState,
-    candidate_id: &str,
-    layout_override: Option<String>,
-) -> Result<Candidate, String> {
-    let db = state.db.clone();
-    let sanitized_override = layout_override
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty() && *s != "auto");
-    db.update_candidate_layout_override(candidate_id, sanitized_override)
-        .map_err(|e| e.to_string())?;
-    let (candidate, _) = db
-        .get_candidate_with_project(candidate_id)
-        .map_err(|e| e.to_string())?;
-    Ok(candidate)
-}
 
 pub async fn generate_social_kit_for_candidate(
     state: &AppState,

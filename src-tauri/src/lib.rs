@@ -2,7 +2,6 @@ pub mod analysis_cache;
 pub mod commands;
 pub mod credentials;
 pub mod db;
-pub mod dynamic_podcast_reframing;
 pub mod http_client;
 pub mod instagram;
 pub mod jobs;
@@ -113,11 +112,9 @@ pub fn run() {
             commands::delete_credential,
             commands::credential_status,
             commands::update_candidate_timing,
-            commands::update_candidate_layout_override,
             commands::clear_all_storage,
             commands::cancel_job,
             commands::get_active_jobs,
-            commands::get_podcast_preview,
         ])
         .run(tauri::generate_context!())
         .expect("error while running ClipOn");
@@ -146,9 +143,7 @@ mod tests {
             },
         ];
 
-        let result = build_drawtext_filters(&words, 0.0, 5.0, 1080, "classic-outline", false);
-        let split_result = build_drawtext_filters(&words, 0.0, 5.0, 1080, "classic-outline", true);
-        assert!(split_result.contains("y=(h-text_h)/2"));
+        let result = build_drawtext_filters(&words, 0.0, 5.0, 1080, "classic-outline");
         assert!(!result.is_empty());
         assert!(result.contains("drawtext="));
         assert!(result.contains("text='HELLO WORLD'"));

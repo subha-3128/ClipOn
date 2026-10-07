@@ -10,6 +10,7 @@ pub fn save_credential(name: &str, value: &str) -> Result<(), String> {
         credentials::GROQ,
         credentials::OPENROUTER,
         credentials::INSTAGRAM,
+        credentials::NVIDIA,
     ];
     if !allowed.contains(&name) {
         return Err("Unsupported credential".to_string());

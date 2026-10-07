@@ -59,7 +59,6 @@ pub async fn publish_candidate_to_instagram(
                 None,
                 None,
                 Some("instagram_reels".to_string()),
-                None,
             )
             .await
             .map_err(|e| format!("Failed to automatically render clip for Instagram: {e}"))?;

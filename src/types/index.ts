@@ -11,6 +11,7 @@ export type EnvironmentStatus = {
   hasOpenaiKey: boolean;
   hasOpenrouterKey: boolean;
   hasGroqKey: boolean;
+  hasNvidiaKey?: boolean;
   hasInstagramToken: boolean;
   llmProvider: string;
   hasLocalWhisperModel: boolean;
@@ -22,7 +23,7 @@ export type EnvironmentStatus = {
   localWhisperSupported?: boolean;
   ollamaSupported?: boolean;
   ollamaInstallSupported?: boolean;
-  dynamicPodcastSupported?: boolean;
+  faceTrackingSupported?: boolean;
   hardwareEncoderSupported?: boolean;
 };
 
@@ -121,54 +122,8 @@ export type BusyState =
   | "clipCount"
   | "cut";
 
-export type ReframeMode = "vertical_crop" | "podcast_split" | "original";
-export type AppSection = "shorts" | "podcast";
+export type ReframeMode = "vertical_crop" | "smart_face_track" | "original";
 export type SettingsTab = "ai" | "storage" | "export" | "system";
-
-// ===== Podcast Dynamic Reframing Types =====
-
-export type PersonKeyframe = {
-  t: number;
-  x: number;
-  y: number;
-  width?: number;
-  height?: number;
-  confidence?: number;
-  visible: boolean;
-  state?: string;
-};
-
-export type PersonTrack = {
-  id: number;
-  name?: string;
-  keyframes: PersonKeyframe[];
-};
-
-export type LayoutSegment = {
-  start: number;
-  end: number;
-  number_of_people: number;
-  layout_type: "single" | "split_two" | "split_three";
-  person_ids: number[];
-};
-
-export type PodcastFaceTracking = {
-  top_center_x: number;
-  top_center_y: number;
-  bottom_center_x: number;
-  bottom_center_y: number;
-  two_faces_detected: boolean;
-  people?: PersonTrack[];
-  segments?: LayoutSegment[];
-};
-
-export type DynamicPodcastReframingResult = {
-  avg_center_x: number;
-  face_detected: boolean;
-  width?: number;
-  height?: number;
-  podcast?: PodcastFaceTracking;
-};
 
 // ===== Job System Types =====
 

@@ -14,6 +14,7 @@ import {
   FolderOpen,
   Trash2,
   ShieldAlert,
+  Zap,
 } from "lucide-react";
 import { EnvironmentStatus, ReframeMode, SettingsTab } from "../../types";
 import { AccessibleModal } from "../../components/AccessibleModal";
@@ -42,6 +43,8 @@ export interface SettingsModalProps {
   setOpenaiKey: (k: string) => void;
   groqKey: string;
   setGroqKey: (k: string) => void;
+  nvidiaKey: string;
+  setNvidiaKey: (k: string) => void;
   instagramProvider: "graph_api" | "webhook";
   setInstagramProvider: (p: "graph_api" | "webhook") => void;
   instagramAccountId: string;
@@ -101,6 +104,8 @@ export function SettingsModal({
   setOpenaiKey,
   groqKey,
   setGroqKey,
+  nvidiaKey,
+  setNvidiaKey,
   instagramProvider,
   setInstagramProvider,
   instagramAccountId,
@@ -362,6 +367,29 @@ export function SettingsModal({
                 />
               </div>
             )}
+
+            {/* Active Speaker Detection API */}
+            <div className="settings-section-divider">
+              <Zap size={14} />
+              <span>NVIDIA Active Speaker Detection API</span>
+            </div>
+
+            <div className="settings-field-group">
+              <label>NVIDIA API Key</label>
+              <input
+                type="password"
+                value={nvidiaKey}
+                onChange={(e) => setNvidiaKey(e.target.value)}
+                placeholder={
+                  environment?.hasNvidiaKey
+                    ? "Loaded securely in Keychain"
+                    : "Enter NVIDIA API Key (nvapi-...)"
+                }
+              />
+              <span className="folder-hint">
+                Primary engine for Active Speaker Detection &amp; speaker-person fusion. Stored securely in OS Keyring.
+              </span>
+            </div>
 
             {/* Instagram Reels API */}
             <div className="settings-section-divider">
@@ -673,11 +701,11 @@ export function SettingsModal({
                   1. Center Crop (Standard 9:16)
                 </option>
                 <option
-                  value="podcast_split"
-                  disabled={environment?.dynamicPodcastSupported === false}
+                  value="smart_face_track"
+                  disabled={environment?.faceTrackingSupported === false}
                 >
-                  2. Podcast Studio (Dynamic 1P / 2P / 3P Split 9:16)
-                  {environment?.dynamicPodcastSupported === false
+                  2. Smart Face Tracking (AI Center 9:16)
+                  {environment?.faceTrackingSupported === false
                     ? " — macOS only"
                     : ""}
                 </option>

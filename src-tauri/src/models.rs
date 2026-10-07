@@ -23,6 +23,7 @@ pub struct EnvironmentStatus {
     pub has_openai_key: bool,
     pub has_openrouter_key: bool,
     pub has_groq_key: bool,
+    pub has_nvidia_key: bool,
     pub has_instagram_token: bool,
     pub llm_provider: String,
     pub has_local_whisper_model: bool,
@@ -39,6 +40,8 @@ pub struct EnvironmentStatus {
     pub ollama_supported: bool,
     #[serde(default = "default_false")]
     pub ollama_install_supported: bool,
+    #[serde(default = "default_false")]
+    pub face_tracking_supported: bool,
     #[serde(default = "default_false")]
     pub dynamic_podcast_supported: bool,
     #[serde(default = "default_false")]

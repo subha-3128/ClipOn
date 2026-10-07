@@ -5,7 +5,7 @@ describe("Frontend Core Types and Utilities", () => {
   it("validates project structure and duration calculations", () => {
     const project: Project = {
       id: "proj_123",
-      name: "Podcast Interview",
+      name: "Video Interview",
       sourcePath: "/media/test.mp4",
       sourceDuration: 125.5,
       status: "ready",
@@ -52,12 +52,6 @@ describe("Frontend Core Types and Utilities", () => {
     expect(formatTimestamp(3665)).toBe("61:05");
   });
 
-  it("verifies consistent configured podcast tracking sample rate", async () => {
-    const { PODCAST_TRACKING_RATE_FPS } =
-      await import("../features/podcast/PodcastTimelinePreview");
-    expect(PODCAST_TRACKING_RATE_FPS).toBe(3.5);
-  });
-
   it("verifies accessibility components and ARIA role mappings", async () => {
     const { AccessibleModal } = await import("../components/AccessibleModal");
     const { AccessibleNotification } =
@@ -74,5 +68,25 @@ describe("Frontend Core Types and Utilities", () => {
     expect(getAriaRole("error")).toBe("alert");
     expect(getAriaRole("warning")).toBe("status");
     expect(getAriaRole("info")).toBe("status");
+  });
+
+  it("verifies reel duration constraints and hook sweet spot validation", () => {
+    const isDurationWithinSweetSpot = (duration: number) =>
+      duration >= 30.0 && duration <= 45.0;
+
+    const isDurationValidReel = (duration: number) =>
+      duration > 0 && duration <= 60.0;
+
+    // 30-45 seconds sweet spot
+    expect(isDurationWithinSweetSpot(35.0)).toBe(true);
+    expect(isDurationWithinSweetSpot(44.9)).toBe(true);
+    expect(isDurationWithinSweetSpot(25.0)).toBe(false);
+    expect(isDurationWithinSweetSpot(55.0)).toBe(false);
+
+    // Hard ceiling: never exceed 60.0s
+    expect(isDurationValidReel(45.0)).toBe(true);
+    expect(isDurationValidReel(60.0)).toBe(true);
+    expect(isDurationValidReel(60.1)).toBe(false);
+    expect(isDurationValidReel(75.0)).toBe(false);
   });
 });

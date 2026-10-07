@@ -24,7 +24,6 @@ pub enum ReframePlan {
     Original,
     VerticalCrop,
     SmartFaceTrack,
-    PodcastSplit { layout_override: Option<String> },
 }
 
 impl Default for ReframePlan {
@@ -35,37 +34,19 @@ impl Default for ReframePlan {
 
 impl ReframePlan {
     pub fn from_mode_str(mode: Option<&str>) -> Self {
-        Self::from_mode_with_override(mode, None)
-    }
-
-    pub fn from_mode_with_override(mode: Option<&str>, layout_override: Option<&str>) -> Self {
         match mode.unwrap_or("vertical_crop") {
             "original" => Self::Original,
             "smart_face_track" => Self::SmartFaceTrack,
-            "podcast_split" => Self::PodcastSplit {
-                layout_override: layout_override
-                    .filter(|s| !s.is_empty() && *s != "auto")
-                    .map(ToString::to_string),
-            },
             _ => Self::VerticalCrop,
         }
     }
 
-    pub fn validate(&self, source_aspect_ratio: f64, has_face_data: bool) -> Result<(), &'static str> {
+    pub fn validate(&self, _source_aspect_ratio: f64, has_face_data: bool) -> Result<(), &'static str> {
         match self {
             Self::Original | Self::VerticalCrop => Ok(()),
             Self::SmartFaceTrack => {
                 if !has_face_data {
                     Err("SmartFaceTrack requires face tracking metadata")
-                } else {
-                    Ok(())
-                }
-            }
-            Self::PodcastSplit { .. } => {
-                if source_aspect_ratio < 1.0 {
-                    Err("PodcastSplit requires landscape or horizontal source video (aspect ratio >= 1.0)")
-                } else if !has_face_data {
-                    Err("PodcastSplit requires face tracking metadata")
                 } else {
                     Ok(())
                 }
@@ -222,10 +203,6 @@ mod tests {
     fn test_reframe_plan_from_mode_str() {
         assert_eq!(ReframePlan::from_mode_str(Some("original")), ReframePlan::Original);
         assert_eq!(ReframePlan::from_mode_str(Some("smart_face_track")), ReframePlan::SmartFaceTrack);
-        assert_eq!(
-            ReframePlan::from_mode_str(Some("podcast_split")),
-            ReframePlan::PodcastSplit { layout_override: None }
-        );
         assert_eq!(ReframePlan::from_mode_str(Some("vertical_crop")), ReframePlan::VerticalCrop);
         assert_eq!(ReframePlan::from_mode_str(Some("unknown_gibberish")), ReframePlan::VerticalCrop);
         assert_eq!(ReframePlan::from_mode_str(None), ReframePlan::VerticalCrop);
@@ -238,17 +215,6 @@ mod tests {
 
         assert!(ReframePlan::SmartFaceTrack.validate(1.77, true).is_ok());
         assert!(ReframePlan::SmartFaceTrack.validate(1.77, false).is_err());
-
-        let podcast = ReframePlan::PodcastSplit { layout_override: None };
-        assert!(podcast.validate(1.77, true).is_ok());
-        assert_eq!(
-            podcast.validate(0.56, true),
-            Err("PodcastSplit requires landscape or horizontal source video (aspect ratio >= 1.0)")
-        );
-        assert_eq!(
-            podcast.validate(1.77, false),
-            Err("PodcastSplit requires face tracking metadata")
-        );
     }
 
     #[test]
@@ -258,7 +224,7 @@ mod tests {
             5.0,
             15.0,
             PathBuf::from("/out/test.mp4"),
-            ReframePlan::PodcastSplit { layout_override: Some("split_two".to_string()) },
+            ReframePlan::SmartFaceTrack,
             None,
             AudioPlan { studio_audio: true, remove_silence: true },
             true,
@@ -270,7 +236,7 @@ mod tests {
 
         assert_eq!(deserialized.source, "source.mp4");
         assert_eq!(deserialized.timeline.len(), 1);
-        assert_eq!(deserialized.reframe, ReframePlan::PodcastSplit { layout_override: Some("split_two".to_string()) });
+        assert_eq!(deserialized.reframe, ReframePlan::SmartFaceTrack);
         assert_eq!(deserialized.audio.studio_audio, true);
         assert_eq!(deserialized.punch_zoom, true);
     }

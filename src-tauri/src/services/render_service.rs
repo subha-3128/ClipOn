@@ -15,7 +15,6 @@ pub async fn render_flat_clip_for_candidate(
     punch_zoom: Option<bool>,
     studio_audio: Option<bool>,
     export_preset: Option<String>,
-    layout_override: Option<String>,
 ) -> Result<String, String> {
     let db = state.db.clone();
     let data_dir = state.data_dir.clone();
@@ -27,7 +26,6 @@ pub async fn render_flat_clip_for_candidate(
     let job_mgr = state.jobs.clone();
     let app_clone = app.clone();
     let preset_name = export_preset.clone();
-    let explicit_layout_override = layout_override.clone();
 
     let job_id = job_mgr.create_job_with_details(
         &candidate_id,
@@ -92,12 +90,15 @@ pub async fn render_flat_clip_for_candidate(
             1080
         };
 
+        let render_start = candidate.start_sec.max(0.0);
+        let render_end = candidate.end_sec.min(render_start + 60.0);
+
         if let Ok(Some(transcript_record)) = db.latest_transcript(&project.id) {
             if let Ok(normalized) =
                 serde_json::from_str::<NormalizedTranscript>(&transcript_record.raw_json)
             {
                 let srt_content =
-                    generate_srt(&normalized.words, candidate.start_sec, candidate.end_sec);
+                    generate_srt(&normalized.words, render_start, render_end);
                 let clip_srt_path = data_dir
                     .join("projects")
                     .join(&project.id)
@@ -110,15 +111,12 @@ pub async fn render_flat_clip_for_candidate(
                     .as_deref()
                     .unwrap_or("hormozi-kinetic");
 
-                let is_split = mode.as_deref() == Some("podcast_split");
-
                 // Generate kinetic ASS subtitles
                 let ass_content = pro_editor::generate_kinetic_ass(
                     &normalized.words,
-                    candidate.start_sec,
-                    candidate.end_sec,
+                    render_start,
+                    render_end,
                     style,
-                    is_split,
                 );
                 let clip_ass_path = data_dir
                     .join("projects")
@@ -130,11 +128,10 @@ pub async fn render_flat_clip_for_candidate(
 
                 let drawtext = build_drawtext_filters(
                     &normalized.words,
-                    candidate.start_sec,
-                    candidate.end_sec,
+                    render_start,
+                    render_end,
                     cropped_width,
                     style,
-                    is_split,
                 );
                 if !drawtext.is_empty() {
                     drawtext_filters = Some(drawtext);
@@ -155,14 +152,10 @@ pub async fn render_flat_clip_for_candidate(
             Some(&app_clone),
         );
 
-        let effective_override = explicit_layout_override
-            .as_deref()
-            .or(candidate.layout_override.as_deref());
-
         match media::render_flat_clip_with_job(
             &project.source_path,
-            candidate.start_sec,
-            candidate.end_sec,
+            render_start,
+            render_end,
             &output_path,
             drawtext_filters.as_deref(),
             ass_path.as_deref(),
@@ -172,7 +165,6 @@ pub async fn render_flat_clip_for_candidate(
             studio,
             Some(job_id.clone()),
             preset_name.as_deref(),
-            effective_override,
         ) {
             Ok(path) => {
                 let path_string = path.to_string_lossy().to_string();
@@ -217,7 +209,6 @@ pub async fn render_flat_clip_for_candidate(
                     studio,
                     Some(job_id.clone()),
                     preset_name.as_deref(),
-                    effective_override,
                 ) {
                     Ok(path) => {
                         let path_string = path.to_string_lossy().to_string();
@@ -270,21 +261,6 @@ pub async fn render_flat_clip_for_candidate(
     .map_err(|e| e.to_string())?
 }
 
-pub async fn get_podcast_preview(
-    source_path: String,
-    start_sec: f64,
-    duration_sec: f64,
-) -> Result<media::DynamicPodcastReframingResult, String> {
-    tokio::task::spawn_blocking(move || {
-        Ok(media::detect_faces_full(
-            &source_path,
-            start_sec,
-            duration_sec,
-        ))
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
 
 pub fn cancel_job(
     app: &tauri::AppHandle,
@@ -451,7 +427,6 @@ pub fn build_drawtext_filters(
     end_sec: f64,
     cropped_width: i64,
     caption_style: &str,
-    is_podcast_split: bool,
 ) -> String {
     let candidate_words: Vec<&TranscriptWord> = words
         .iter()
@@ -539,21 +514,9 @@ pub fn build_drawtext_filters(
             clean_text.clone()
         };
 
-        let y_default = if is_podcast_split {
-            "(h-text_h)/2"
-        } else {
-            "h*0.72"
-        };
-        let y_high = if is_podcast_split {
-            "(h-text_h)/2"
-        } else {
-            "h*0.7"
-        };
-        let y_classic = if is_podcast_split {
-            "(h-text_h)/2"
-        } else {
-            "h*0.65"
-        };
+        let y_default = "h*0.72";
+        let y_high = "h*0.7";
+        let y_classic = "h*0.65";
 
         let drawtext = match caption_style {
             "submagic-viral" => {

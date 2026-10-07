@@ -1,10 +1,9 @@
 //! Issue #18: Golden test cases for all reframe modes
 //!
-//! Renders short test clips (1.5-2 seconds) across all 4 reframe modes:
+//! Renders short test clips (1.5-2 seconds) across all 3 reframe modes:
 //! - Original
 //! - VerticalCrop
 //! - SmartFaceTrack
-//! - PodcastSplit
 //!
 //! Validates:
 //! - Output file exists and is non-empty
@@ -175,46 +174,4 @@ fn test_reframe_golden_smart_face_track() {
     assert_eq!(probe.width, Some(1080), "smart face track width must be 1080");
     assert_eq!(probe.height, Some(1920), "smart face track height must be 1920");
     assert!(probe.audio_codec.is_some(), "audio must be preserved in SmartFaceTrack mode");
-}
-
-#[test]
-fn test_reframe_golden_podcast_split() {
-    let Some(source) = test_video() else {
-        eprintln!("SKIPPED test_reframe_golden_podcast_split: test video not present");
-        return;
-    };
-
-    let out = out_dir().join("golden_podcast_split.mp4");
-    let _ = std::fs::remove_file(&out);
-
-    let duration = probe_media(source.to_str().unwrap())
-        .ok()
-        .and_then(|p| p.duration_sec)
-        .unwrap_or(2.0);
-    let (start_sec, end_sec) = if duration >= 198.0 {
-        (196.0, 198.0)
-    } else {
-        (0.0, 2.0_f64.min(duration))
-    };
-
-    let res = render_flat_clip(
-        source.to_str().unwrap(),
-        start_sec,
-        end_sec,
-        &out,
-        None,
-        None,
-        Some("podcast_split"),
-        false,
-        false,
-        false,
-    );
-    assert!(res.is_ok(), "render failed: {:?}", res.err());
-    assert!(out.exists(), "output file must exist");
-    assert!(std::fs::metadata(&out).unwrap().len() > 1000, "output file must not be empty");
-
-    let probe = probe_media(out.to_str().unwrap()).expect("probe output");
-    assert_eq!(probe.width, Some(1080), "podcast split width must be 1080");
-    assert_eq!(probe.height, Some(1920), "podcast split height must be 1920");
-    assert!(probe.audio_codec.is_some(), "audio must be preserved in PodcastSplit mode");
 }

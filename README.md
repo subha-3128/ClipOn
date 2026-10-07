@@ -18,12 +18,11 @@ Built with **Tauri 2 + React 19 + TypeScript + Rust + SQLite + Apple Silicon Vid
 ## ⚡ Core Features
 
 - **🚀 Apple Silicon GPU Acceleration**: Native hardware-accelerated video transcoding via Apple VideoToolbox (`h264_videotoolbox`). Renders full-resolution 1080x1920 60fps vertical clips in seconds with near-zero CPU load.
-- **🎙️ Adaptive Dynamic Podcast Reframing (16:9 → 9:16)**:
-  - **1 Person**: Full 9:16 vertical crop centered on speaker.
-  - **2 People**: Split-screen top/bottom (speaker + listener or co-hosts).
-  - **3 People**: Dynamic 2-top + 1-bottom split screen.
-  - **Persistent Identities**: Robust re-identification across temporary occlusions and frame exits via Apple Vision appearance prototypes.
-  - **Seam-Line Centered Captions**: Subtitles dynamically positioned along layout dividing lines without obscuring speaker faces.
+- **🎙️ Smart Face Tracking & AI Reframing (16:9 → 9:16)**:
+  - **Smart Face Track**: Automatic horizontal pan tracking centered on the speaker using Apple Vision face detection with temporal smoothing.
+  - **Vertical Center Crop**: Clean standard 9:16 crop.
+  - **Original Aspect Ratio**: Preserves full source frame composition.
+  - **Kinetic Burned-in Subtitles**: Dynamic ASS word-level highlighted subtitles placed in safe lower-third margins.
 - **✨ AI Social Publishing Kit**:
   - Auto-generates **High-CTR Viral Titles** (Curiosity, Value, Controversy) per clip.
   - Trending topic hashtags with 1-click copy.
@@ -56,9 +55,9 @@ Built with **Tauri 2 + React 19 + TypeScript + Rust + SQLite + Apple Silicon Vid
 
 ### Supported Platforms
 
-- **macOS (Apple Silicon M1/M2/M3/M4 recommended)**: Fully supported with hardware-accelerated VideoToolbox rendering and Apple Vision framework multi-person tracking.
+- **macOS (Apple Silicon M1/M2/M3/M4 recommended)**: Fully supported with hardware-accelerated VideoToolbox rendering and Apple Vision face tracking.
 - **macOS (Intel x86_64)**: Supported with CPU fallback or Intel QuickSync.
-- _Windows / Linux_: Dynamic podcast tracking requires Apple Vision; standard vertical cropping and local Whisper/Ollama are platform-agnostic.
+- _Windows / Linux_: Hardware-accelerated encoding via NVENC/VAAPI and standard vertical cropping; local Whisper/Ollama are platform-agnostic.
 
 ### Required Binaries
 
@@ -87,7 +86,6 @@ ClipOn/
 │   │   ├── jobs/                    # Real-time job progress bar & cancel button
 │   │   ├── moments/                 # Candidate cards & viral moments panel
 │   │   ├── onboarding/              # First-run guided setup modal
-│   │   ├── podcast/                 # Multi-person timeline visualizer
 │   │   ├── projects/                # Sidebar, header & all-projects dashboard
 │   │   ├── rendering/               # Caption style modal & render controls
 │   │   ├── settings/                # Unified settings & diagnostic panel
@@ -98,24 +96,18 @@ ClipOn/
 │   ├── main.tsx                     # Top-level coordinator & lifecycle manager
 │   └── styles.css                   # Dark-mode professional design system
 │
-├── src-tauri/                       # Desktop native layer (Rust + Tauri v2)
-│   ├── bin/                         # Native helper binaries
-│   │   └── clipon-face-tracker      # Apple Vision Swift multi-person tracker
-│   └── src/                         # Rust backend
-│       ├── analysis_cache.rs        # Parameter-hashed cache for face tracking & LLM
-│       ├── credentials.rs           # OS Keyring secure credential storage
-│       ├── db.rs                    # SQLite schema with versioned migrations & foreign keys
-│       ├── dynamic_podcast_reframing.rs # Multi-person layout state machine
-│       ├── http_client.rs           # Resilient HTTP client with retry & rate-limit backoff
-│       ├── jobs.rs                  # Bounded render queue with process cancellation
-│       ├── llm.rs                   # AI moment ranking (Ollama, Claude, DeepSeek, etc.)
-│       ├── media/                   # FFmpeg rendering, VideoToolbox encoder, presets
-│       └── transcription.rs         # Local Whisper & Deepgram integration
-│
-└── docs/                            # Developer documentation
-    ├── ARCHITECTURE.md              # System design & data flow
-    ├── SECURITY.md                  # Security policies & credential handling
-    └── TESTING.md                   # Test suite guide & golden verification
+└── src-tauri/                       # Desktop native layer (Rust + Tauri v2)
+    ├── bin/                         # Native helper binaries
+    │   └── clipon-face-tracker      # Apple Vision Swift face tracking binary
+    └── src/                         # Rust backend
+        ├── analysis_cache.rs        # Parameter-hashed cache for face tracking & LLM
+        ├── credentials.rs           # OS Keyring secure credential storage
+        ├── db.rs                    # SQLite schema with versioned migrations & foreign keys
+        ├── http_client.rs           # Resilient HTTP client with retry & rate-limit backoff
+        ├── jobs.rs                  # Bounded render queue with process cancellation
+        ├── llm.rs                   # AI moment ranking (Ollama, Claude, DeepSeek, etc.)
+        ├── media/                   # FFmpeg rendering, face tracker, VideoToolbox encoder, presets
+        └── transcription.rs         # Local Whisper & Deepgram integration
 ```
 
 ---
@@ -158,14 +150,17 @@ Your package will be created in `src-tauri/target/release/bundle/dmg/`.
 # Run all Rust unit tests
 cargo test --manifest-path src-tauri/Cargo.toml --lib
 
-# Run Golden reframe integration tests (all 4 layout modes)
+# Run Golden reframe integration tests (Original, VerticalCrop, SmartFaceTrack)
 cargo test --manifest-path src-tauri/Cargo.toml --test reframe_golden
 
-# Run Podcast layout regression suite
-cargo test --manifest-path src-tauri/Cargo.toml --test podcast_layouts
+# Run Frontend unit & accessibility tests
+npm test
 
-# Verify Frontend TypeScript & bundle
+# Verify Frontend TypeScript & production bundle
 npm run build
+
+# Run comprehensive end-to-end smoke test
+./scripts/smoke_test.sh
 ```
 
 ---

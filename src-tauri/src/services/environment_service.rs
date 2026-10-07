@@ -38,7 +38,8 @@ pub async fn get_environment_status(state: &AppState) -> Result<EnvironmentStatu
     let local_whisper_supported = true;
     let ollama_supported = true;
     let ollama_install_supported = cfg!(target_os = "macos");
-    let dynamic_podcast_supported = cfg!(target_os = "macos");
+    let face_tracking_supported = cfg!(target_os = "macos");
+    let dynamic_podcast_supported = face_tracking_supported;
     let hardware_encoder_supported = media::supports_videotoolbox();
 
     Ok(EnvironmentStatus {
@@ -52,6 +53,8 @@ pub async fn get_environment_status(state: &AppState) -> Result<EnvironmentStatu
         has_openai_key: credentials::has(credentials::OPENAI).map_err(|e| e.to_string())?,
         has_openrouter_key: credentials::has(credentials::OPENROUTER).map_err(|e| e.to_string())?,
         has_groq_key: credentials::has(credentials::GROQ).map_err(|e| e.to_string())?,
+        has_nvidia_key: credentials::has(credentials::NVIDIA).unwrap_or(false)
+            || std::env::var("NVIDIA_API_KEY").is_ok(),
         has_instagram_token: credentials::has(credentials::INSTAGRAM).unwrap_or(false),
         llm_provider,
         has_local_whisper_model,
@@ -63,6 +66,7 @@ pub async fn get_environment_status(state: &AppState) -> Result<EnvironmentStatu
         local_whisper_supported,
         ollama_supported,
         ollama_install_supported,
+        face_tracking_supported,
         dynamic_podcast_supported,
         hardware_encoder_supported,
     })
@@ -356,6 +360,7 @@ mod tests {
             has_openai_key: false,
             has_openrouter_key: false,
             has_groq_key: false,
+            has_nvidia_key: false,
             has_instagram_token: false,
             llm_provider: "deepseek".to_string(),
             has_local_whisper_model: false,
@@ -367,6 +372,7 @@ mod tests {
             local_whisper_supported: true,
             ollama_supported: true,
             ollama_install_supported: true,
+            face_tracking_supported: true,
             dynamic_podcast_supported: true,
             hardware_encoder_supported: true,
         };
@@ -374,6 +380,7 @@ mod tests {
         let json = serde_json::to_string(&status).expect("must serialize");
         assert!(json.contains("\"platform\":\"macos\""));
         assert!(json.contains("\"ollamaInstallSupported\":true"));
+        assert!(json.contains("\"faceTrackingSupported\":true"));
         assert!(json.contains("\"dynamicPodcastSupported\":true"));
 
         let deserialized: EnvironmentStatus =
@@ -382,6 +389,7 @@ mod tests {
         assert!(deserialized.local_whisper_supported);
         assert!(deserialized.ollama_supported);
         assert!(deserialized.ollama_install_supported);
+        assert!(deserialized.face_tracking_supported);
         assert!(deserialized.dynamic_podcast_supported);
         assert!(deserialized.hardware_encoder_supported);
     }

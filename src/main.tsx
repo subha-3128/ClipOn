@@ -31,7 +31,6 @@ import type {
   NormalizedTranscript,
   BusyState,
   ReframeMode,
-  AppSection,
   ExportPresetPlatform,
 } from "./types";
 
@@ -157,6 +156,7 @@ function AppContent() {
   const [openaiKey, setOpenaiKey] = useState("");
   const [openrouterKey, setOpenrouterKey] = useState("");
   const [groqKey, setGroqKey] = useState("");
+  const [nvidiaKey, setNvidiaKey] = useState("");
 
   // Folder paths
   const [youtubeSaveDir, setYoutubeSaveDir] = useState(
@@ -191,16 +191,11 @@ function AppContent() {
     return localStorage.getItem("clipon_studio_audio") !== "false";
   });
 
-  const [appSection, setAppSection] = useState<AppSection>(() => {
-    const saved = localStorage.getItem("clipon_app_section");
-    return saved === "podcast" ? "podcast" : "shorts";
-  });
-
   const [reframeMode, setReframeMode] = useState<ReframeMode>(() => {
     const saved = (localStorage.getItem("clipon_reframe_mode") ||
       localStorage.getItem("autoshorts_reframe_mode")) as any;
     if (
-      saved === "podcast_split" ||
+      saved === "smart_face_track" ||
       saved === "original" ||
       saved === "vertical_crop"
     ) {
@@ -208,18 +203,6 @@ function AppContent() {
     }
     return "vertical_crop";
   });
-
-  const handleSectionChange = (section: AppSection) => {
-    setAppSection(section);
-    localStorage.setItem("clipon_app_section", section);
-    if (section === "podcast") {
-      setReframeMode("podcast_split");
-      localStorage.setItem("clipon_reframe_mode", "podcast_split");
-    } else if (reframeMode === "podcast_split") {
-      setReframeMode("vertical_crop");
-      localStorage.setItem("clipon_reframe_mode", "vertical_crop");
-    }
-  };
 
   const [exportPreset, setExportPreset] = useState<ExportPresetPlatform>(() => {
     return (
@@ -411,6 +394,7 @@ function AppContent() {
         env.hasDeepseekKey ||
         env.hasAnthropicKey ||
         env.hasGroqKey ||
+        env.hasNvidiaKey ||
         env.hasLocalWhisperModel ||
         env.hasOllama ||
         projectList.length > 0
@@ -878,7 +862,6 @@ function AppContent() {
 
   async function cutCandidate(candidateId: string) {
     if (!detail) return;
-    const cand = detail.candidates.find((c) => c.id === candidateId);
     setRenderingCandidateId(candidateId);
     setBusy("cut");
     try {
@@ -890,7 +873,6 @@ function AppContent() {
         punchZoom,
         studioAudio,
         exportPreset,
-        layoutOverride: cand?.layoutOverride || null,
       });
       showToast("Clip rendered successfully!");
     } catch (err) {
@@ -920,7 +902,6 @@ function AppContent() {
             punchZoom,
             studioAudio,
             exportPreset,
-            layoutOverride: candidate.layoutOverride || null,
           })
         )
       );
@@ -934,35 +915,6 @@ function AppContent() {
     }
   }
 
-  async function handleLayoutOverride(
-    candidateId: string,
-    layout: "auto" | "single" | "split_two" | "split_three"
-  ) {
-    if (!detail) return;
-    const overrideVal = layout === "auto" ? null : layout;
-    try {
-      await invoke("update_candidate_layout_override", {
-        candidateId,
-        layoutOverride: overrideVal,
-      });
-      setDetail((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          candidates: prev.candidates.map((c) =>
-            c.id === candidateId ? { ...c, layoutOverride: overrideVal } : c
-          ),
-        };
-      });
-      showToast(
-        layout === "auto"
-          ? "Reset to dynamic AI podcast layout"
-          : `Layout locked to ${layout === "single" ? "1-Person" : layout === "split_two" ? "2-Split" : "3-Split"}`
-      );
-    } catch (err) {
-      showError("Failed to update layout override", { details: String(err) });
-    }
-  }
 
   async function handleOpenSocialKit(candidate: Candidate) {
     setSocialKitModalCandidate(candidate);
@@ -1044,6 +996,7 @@ function AppContent() {
         ["anthropic", anthropicKey],
         ["deepseek", deepseekKey],
         ["groq", groqKey],
+        ["nvidia", nvidiaKey],
         ["openrouter", openrouterKey],
         ["instagram", instagramAccessToken],
       ].filter(([_, value]) => value && value.trim().length > 0);
@@ -1061,6 +1014,7 @@ function AppContent() {
       setAnthropicKey("");
       setDeepseekKey("");
       setGroqKey("");
+      setNvidiaKey("");
       setOpenrouterKey("");
       setInstagramAccessToken("");
 
@@ -1100,8 +1054,6 @@ function AppContent() {
 
       <main className="app-shell">
         <ProjectSidebar
-          appSection={appSection}
-          onSectionChange={handleSectionChange}
           busy={busy}
           environment={environment}
           projects={projects}
@@ -1123,8 +1075,6 @@ function AppContent() {
                 detail={detail}
                 transcript={transcript}
                 cutCount={cutCount}
-                appSection={appSection}
-                onSectionChange={handleSectionChange}
                 onBack={() => setDetail(null)}
                 onRename={renameProject}
                 onOpenClipsFolder={() => {
@@ -1175,7 +1125,6 @@ function AppContent() {
 
                 <MomentsPanel
                   detail={detail}
-                  appSection={appSection}
                   reframeMode={reframeMode}
                   setReframeMode={setReframeMode}
                   environment={environment}
@@ -1208,7 +1157,6 @@ function AppContent() {
                   cutCandidate={cutCandidate}
                   openFolder={openFolder}
                   handlePublishToInstagram={handlePublishToInstagram}
-                  onLayoutOverride={handleLayoutOverride}
                   onJobComplete={() => {
                     showToast("Render completed!");
                     if (detail) refresh(detail.project.id);
@@ -1223,7 +1171,6 @@ function AppContent() {
           ) : (
             <ProjectsDashboard
               projects={projects}
-              appSection={appSection}
               busy={busy}
               environment={environment}
               transcriptionEngine={transcriptionEngine}
@@ -1267,6 +1214,8 @@ function AppContent() {
         setOpenaiKey={setOpenaiKey}
         groqKey={groqKey}
         setGroqKey={setGroqKey}
+        nvidiaKey={nvidiaKey}
+        setNvidiaKey={setNvidiaKey}
         instagramProvider={instagramProvider}
         setInstagramProvider={setInstagramProvider}
         instagramAccountId={instagramAccountId}
