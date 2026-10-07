@@ -15,8 +15,9 @@ pub mod renderer;
 pub use active_speaker::{
     compute_active_speaker_cache_key, generate_speaker_aware_keyframes,
     get_or_compute_active_speaker_timeline, validate_clip_visuals, ActiveSpeakerDetector,
-    ActiveSpeakerSegment, ActiveSpeakerTimeline, LocalFusionDetector, NvidiaAsdDetector,
-    VisualValidationResult,
+    ActiveSpeakerProvider, ActiveSpeakerSegment, ActiveSpeakerService, ActiveSpeakerTimeline,
+    LocalFallbackProvider, LocalFusionDetector, NormalizedAsdResult, NvidiaAsdDetector,
+    NvidiaAsdProvider, NvidiaAudioStreamMode, VisualValidationResult,
 };
 #[allow(unused_imports)]
 pub use audio::{detect_silences, extract_audio};
