@@ -82,18 +82,66 @@ pub struct NvidiaDiarizationSegment {
     pub end: f64,
 }
 
+fn deserialize_speaker_bbox<'de, D>(deserializer: D) -> Result<Option<Vec<f64>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+    let opt_val = Option::<serde_json::Value>::deserialize(deserializer)?;
+    let val = match opt_val {
+        Some(v) => v,
+        None => return Ok(None),
+    };
+
+    match val {
+        serde_json::Value::Array(arr) => {
+            let nums: Vec<f64> = arr.iter().filter_map(|v| v.as_f64()).collect();
+            if nums.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(nums))
+            }
+        }
+        serde_json::Value::Object(map) => {
+            let x = map.get("x").or_else(|| map.get("left")).and_then(|v| v.as_f64());
+            let y = map.get("y").or_else(|| map.get("top")).and_then(|v| v.as_f64());
+            let w = map.get("width").or_else(|| map.get("w")).and_then(|v| v.as_f64());
+            let h = map.get("height").or_else(|| map.get("h")).and_then(|v| v.as_f64());
+
+            if let (Some(x), Some(y), Some(w), Some(h)) = (x, y, w, h) {
+                return Ok(Some(vec![x, y, w, h]));
+            }
+
+            let xmin = map.get("xmin").or_else(|| map.get("x1")).and_then(|v| v.as_f64());
+            let ymin = map.get("ymin").or_else(|| map.get("y1")).and_then(|v| v.as_f64());
+            let xmax = map.get("xmax").or_else(|| map.get("x2")).or_else(|| map.get("right")).and_then(|v| v.as_f64());
+            let ymax = map.get("ymax").or_else(|| map.get("y2")).or_else(|| map.get("bottom")).and_then(|v| v.as_f64());
+
+            if let (Some(x1), Some(y1), Some(x2), Some(y2)) = (xmin, ymin, xmax, ymax) {
+                return Ok(Some(vec![x1, y1, x2 - x1, y2 - y1]));
+            }
+
+            Ok(None)
+        }
+        _ => Ok(None),
+    }
+}
+
 /// Raw per-face/speaker detection emitted by NVIDIA Active Speaker Detection NIM
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NvidiaRawDetection {
-    #[serde(default, alias = "id", alias = "track_id")]
+    #[serde(default, alias = "id", alias = "track_id", alias = "person_id")]
     pub face_id: Option<usize>,
 
     #[serde(
         default,
+        deserialize_with = "deserialize_speaker_bbox",
         alias = "bbox",
         alias = "bounding_box",
         alias = "face_bbox",
-        alias = "box"
+        alias = "box",
+        alias = "rect",
+        alias = "coordinates"
     )]
     pub speaker_bbox: Option<Vec<f64>>,
 
@@ -101,7 +149,8 @@ pub struct NvidiaRawDetection {
         default,
         alias = "speaker_id",
         alias = "speaker",
-        alias = "diarization_speaker_id"
+        alias = "diarization_speaker_id",
+        alias = "speaker_label"
     )]
     pub diarized_speaker_id: Option<String>,
 
@@ -109,7 +158,8 @@ pub struct NvidiaRawDetection {
         default,
         alias = "speaking",
         alias = "speech_detected",
-        alias = "active_speaker"
+        alias = "active_speaker",
+        alias = "is_active"
     )]
     pub is_speaking: Option<bool>,
 
@@ -118,7 +168,8 @@ pub struct NvidiaRawDetection {
         alias = "score",
         alias = "speaking_confidence",
         alias = "speech_prob",
-        alias = "prob"
+        alias = "prob",
+        alias = "confidence"
     )]
     pub confidence: Option<f64>,
 
@@ -150,7 +201,14 @@ pub struct NvidiaRawFrame {
 /// Top-level response container from NVIDIA NIM
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NvidiaAsdResponse {
-    #[serde(default, alias = "frame_detections", alias = "predictions", alias = "data")]
+    #[serde(
+        default,
+        alias = "frame_detections",
+        alias = "predictions",
+        alias = "data",
+        alias = "detections",
+        alias = "output"
+    )]
     pub frames: Vec<NvidiaRawFrame>,
 
     #[serde(default)]
@@ -303,10 +361,19 @@ pub fn extract_asd_video_slice(
     duration_sec: f64,
     output_path: &Path,
 ) -> Result<()> {
+    let has_audio = crate::media::probe_media(source_path)
+        .map(|p| p.audio_codec.is_some())
+        .unwrap_or(true);
+
     let ffmpeg_bin = resolve_binary("ffmpeg");
     let mut cmd = Command::new(&ffmpeg_bin);
     cmd.arg("-nostdin");
     cmd.args(["-y", "-ss", &format!("{start_sec:.3}"), "-i", source_path]);
+
+    if !has_audio {
+        cmd.args(["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"]);
+    }
+
     cmd.args([
         "-t",
         &format!("{duration_sec:.3}"),
@@ -325,6 +392,11 @@ pub fn extract_asd_video_slice(
         "-pix_fmt",
         "yuv420p",
     ]);
+
+    if !has_audio {
+        cmd.arg("-shortest");
+    }
+
     cmd.arg(output_path);
 
     let output = cmd.output().context("Executing FFmpeg for ASD video slice")?;
@@ -493,13 +565,43 @@ pub fn get_person_keyframe_at<'a>(
         .min_by(|a, b| (a.t - t).abs().total_cmp(&(b.t - t).abs()))
 }
 
+/// Finds the nearest keyframe for a visual PersonTrack matching either relative or absolute frame timestamp
+pub fn get_person_keyframe_for_det<'a>(
+    person: &'a crate::media::face_tracker::VisionPersonTrack,
+    det: &NormalizedFrameDetection,
+) -> Option<&'a crate::media::face_tracker::VisionKeyframe> {
+    let best_rel = person
+        .keyframes
+        .iter()
+        .min_by(|a, b| (a.t - det.timestamp_sec).abs().total_cmp(&(b.t - det.timestamp_sec).abs()));
+    let best_abs = person
+        .keyframes
+        .iter()
+        .min_by(|a, b| (a.t - det.absolute_timestamp_sec).abs().total_cmp(&(b.t - det.absolute_timestamp_sec).abs()));
+
+    match (best_rel, best_abs) {
+        (Some(kr), Some(ka)) => {
+            let dist_r = (kr.t - det.timestamp_sec).abs();
+            let dist_a = (ka.t - det.absolute_timestamp_sec).abs();
+            if dist_r <= dist_a {
+                Some(kr)
+            } else {
+                Some(ka)
+            }
+        }
+        (Some(kr), None) => Some(kr),
+        (None, Some(ka)) => Some(ka),
+        (None, None) => None,
+    }
+}
+
 /// Computes frame-level spatial affinity between a normalized detection and a ClipOn PersonTrack
 pub fn compute_detection_person_affinity(
     det: &NormalizedFrameDetection,
     person: &crate::media::face_tracker::VisionPersonTrack,
 ) -> f64 {
-    let kf = match get_person_keyframe_at(person, det.absolute_timestamp_sec) {
-        Some(k) if k.visible && (k.t - det.absolute_timestamp_sec).abs() <= 1.2 => k,
+    let kf = match get_person_keyframe_for_det(person, det) {
+        Some(k) if k.visible && ((k.t - det.timestamp_sec).abs() <= 1.2 || (k.t - det.absolute_timestamp_sec).abs() <= 1.2) => k,
         _ => return 0.0,
     };
 
@@ -782,18 +884,68 @@ pub fn associate_faces_and_persons(
         initial_associated.push((resolved_person_id, det));
     }
 
-    // 3. Synthesize audio diarization -> person mapping from co-occurrence votes
+    // 3. Synthesize audio diarization -> person mapping from co-occurrence votes using collision-free bipartite matching
     let mut speaker_person_mapping: HashMap<String, usize> = HashMap::new();
-    let mut speaker_best_votes: HashMap<String, (usize, f64)> = HashMap::new();
+    let distinct_speakers: Vec<String> = {
+        let mut spks: Vec<String> = co_occurrence_votes.keys().map(|(s, _)| s.clone()).collect();
+        spks.sort();
+        spks.dedup();
+        spks
+    };
+    let distinct_persons: Vec<usize> = tracked_people.iter().map(|p| p.id).collect();
 
-    for ((spk, pid), vote_weight) in co_occurrence_votes {
-        let entry = speaker_best_votes.entry(spk).or_insert((pid, vote_weight));
-        if vote_weight > entry.1 {
-            *entry = (pid, vote_weight);
+    if distinct_speakers.len() == 2 && distinct_persons.len() >= 2 {
+        let s0 = &distinct_speakers[0];
+        let s1 = &distinct_speakers[1];
+        let p0 = distinct_persons[0];
+        let p1 = distinct_persons[1];
+
+        let score_a = co_occurrence_votes.get(&(s0.clone(), p0)).copied().unwrap_or(0.0)
+            + co_occurrence_votes.get(&(s1.clone(), p1)).copied().unwrap_or(0.0);
+        let score_b = co_occurrence_votes.get(&(s0.clone(), p1)).copied().unwrap_or(0.0)
+            + co_occurrence_votes.get(&(s1.clone(), p0)).copied().unwrap_or(0.0);
+
+        if score_a >= score_b {
+            speaker_person_mapping.insert(s0.clone(), p0);
+            speaker_person_mapping.insert(s1.clone(), p1);
+        } else {
+            speaker_person_mapping.insert(s0.clone(), p1);
+            speaker_person_mapping.insert(s1.clone(), p0);
         }
-    }
-    for (spk, (pid, _)) in speaker_best_votes {
-        speaker_person_mapping.insert(spk, pid);
+    } else {
+        // Greedy bipartite matching across all candidate pairs
+        let mut vote_candidates: Vec<(String, usize, f64)> = co_occurrence_votes
+            .iter()
+            .map(|((spk, pid), &weight)| (spk.clone(), *pid, weight))
+            .collect();
+        vote_candidates.sort_by(|a, b| b.2.total_cmp(&a.2));
+
+        let mut assigned_speakers: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut assigned_persons: std::collections::HashSet<usize> = std::collections::HashSet::new();
+
+        for (spk, pid, _) in vote_candidates {
+            if !assigned_speakers.contains(&spk) && !assigned_persons.contains(&pid) {
+                speaker_person_mapping.insert(spk.clone(), pid);
+                assigned_speakers.insert(spk);
+                assigned_persons.insert(pid);
+            }
+        }
+
+        // Handle any remaining unassigned speakers
+        for spk in &distinct_speakers {
+            if !speaker_person_mapping.contains_key(spk) {
+                let best_p = distinct_persons
+                    .iter()
+                    .max_by(|&&a, &&b| {
+                        let va = co_occurrence_votes.get(&(spk.clone(), a)).copied().unwrap_or(0.0);
+                        let vb = co_occurrence_votes.get(&(spk.clone(), b)).copied().unwrap_or(0.0);
+                        va.total_cmp(&vb)
+                    })
+                    .copied()
+                    .unwrap_or(1);
+                speaker_person_mapping.insert(spk.clone(), best_p);
+            }
+        }
     }
 
     // 4. Align detections with resolved audio diarization where spatial cues were ambiguous
@@ -851,66 +1003,92 @@ pub fn smooth_and_build_active_speaker_segments(
         return Vec::new();
     }
 
-    let mut speaking_dets: Vec<&AssociatedFrameDetection> =
+    let speaking_dets: Vec<&AssociatedFrameDetection> =
         detections.iter().filter(|d| d.is_speaking).collect();
-    speaking_dets.sort_by(|a, b| a.timestamp_sec.total_cmp(&b.timestamp_sec));
 
     if speaking_dets.is_empty() {
         return Vec::new();
     }
 
-    // Temporal clustering with Morphological Closing (Bridge speech pauses <= 0.40s)
-    let max_inter_word_gap = 0.40f64;
-    let mut raw_segments: Vec<ActiveSpeakerSegment> = Vec::new();
-
+    // 1. Group speaking detections by person_id to handle concurrent / interleaved speech tracks
+    let mut per_person_dets: HashMap<usize, Vec<&AssociatedFrameDetection>> = HashMap::new();
     for d in speaking_dets {
-        let abs_t = start_sec + d.timestamp_sec;
-        let conf = d.confidence.clamp(0.0, 1.0);
-
-        if let Some(last) = raw_segments.last_mut() {
-            if last.person_id == d.person_id && (abs_t - last.end) <= max_inter_word_gap {
-                last.end = abs_t + 0.05;
-                last.confidence = (last.confidence * 0.7) + (conf * 0.3);
-                if last.speaker_label.is_none() && d.diarized_speaker_id.is_some() {
-                    last.speaker_label = d.diarized_speaker_id.clone();
-                }
-                continue;
-            }
-        }
-
-        raw_segments.push(ActiveSpeakerSegment {
-            start: abs_t,
-            end: abs_t + 0.05,
-            person_id: d.person_id,
-            confidence: conf,
-            speaker_label: d.diarized_speaker_id.clone(),
-        });
+        per_person_dets.entry(d.person_id).or_default().push(d);
     }
 
-    // Morphological Opening: Prune spurious noise spikes (< 0.15s unless high confidence >= 0.90)
+    let max_inter_word_gap = 0.40f64;
     let min_valid_duration = 0.15f64;
-    let mut smoothed_segments: Vec<ActiveSpeakerSegment> = Vec::new();
+    let mut all_segments: Vec<ActiveSpeakerSegment> = Vec::new();
 
-    for seg in raw_segments {
-        let seg_dur = seg.end - seg.start;
-        if seg_dur >= min_valid_duration || seg.confidence >= 0.90 || (seg_dur >= 0.07 && seg.confidence >= 0.85) {
-            smoothed_segments.push(seg);
+    for (person_id, mut dets) in per_person_dets {
+        dets.sort_by(|a, b| a.timestamp_sec.total_cmp(&b.timestamp_sec));
+
+        // Morphological Closing per person (Bridge pauses <= 0.40s)
+        let mut person_raw: Vec<ActiveSpeakerSegment> = Vec::new();
+        for d in dets {
+            let abs_t = start_sec + d.timestamp_sec;
+            let conf = d.confidence.clamp(0.0, 1.0);
+
+            if let Some(last) = person_raw.last_mut() {
+                if (abs_t - last.end) <= max_inter_word_gap {
+                    last.end = abs_t + 0.05;
+                    last.confidence = (last.confidence * 0.7) + (conf * 0.3);
+                    if last.speaker_label.is_none() && d.diarized_speaker_id.is_some() {
+                        last.speaker_label = d.diarized_speaker_id.clone();
+                    }
+                    continue;
+                }
+            }
+
+            person_raw.push(ActiveSpeakerSegment {
+                start: abs_t,
+                end: abs_t + 0.05,
+                person_id,
+                confidence: conf,
+                speaker_label: d.diarized_speaker_id.clone(),
+            });
         }
-    }
 
-    // Overlap resolution for clean cut transitions
-    if smoothed_segments.len() > 1 {
-        for i in 0..(smoothed_segments.len() - 1) {
-            let next_start = smoothed_segments[i + 1].start;
-            if smoothed_segments[i].end > next_start {
-                let mid = (smoothed_segments[i].end + next_start) * 0.5;
-                smoothed_segments[i].end = mid;
-                smoothed_segments[i + 1].start = mid;
+        // Morphological Opening: Prune spurious noise spikes (< 0.15s unless high confidence >= 0.90)
+        for seg in person_raw {
+            let seg_dur = seg.end - seg.start;
+            if seg_dur >= min_valid_duration
+                || seg.confidence >= 0.90
+                || (seg_dur >= 0.07 && seg.confidence >= 0.85)
+            {
+                all_segments.push(seg);
             }
         }
     }
 
-    smoothed_segments
+    all_segments.sort_by(|a, b| a.start.total_cmp(&b.start));
+
+    // 2. Overlap resolution for clean cut transitions across different speakers
+    if all_segments.len() > 1 {
+        for i in 0..(all_segments.len() - 1) {
+            let next_start = all_segments[i + 1].start;
+            if all_segments[i].end > next_start {
+                if all_segments[i].person_id == all_segments[i + 1].person_id {
+                    // Same person: merge into a single continuous segment
+                    let merged_end = all_segments[i].end.max(all_segments[i + 1].end);
+                    all_segments[i].end = merged_end;
+                    all_segments[i + 1].start = merged_end;
+                } else {
+                    // Different person: clamp cut transition strictly within [start_i, end_{i+1}]
+                    let seg_i_start = all_segments[i].start;
+                    let seg_next_end = all_segments[i + 1].end;
+                    let mid = (all_segments[i].end + next_start) * 0.5;
+                    let cut_t = mid.clamp(seg_i_start, seg_next_end);
+                    all_segments[i].end = cut_t;
+                    all_segments[i + 1].start = cut_t;
+                }
+            }
+        }
+        // Filter out any degenerate segments (< 0.04s) produced by overlap cuts
+        all_segments.retain(|s| (s.end - s.start) >= 0.04);
+    }
+
+    all_segments
 }
 
 /// The unified 5-stage conversion pipeline:
@@ -1383,9 +1561,24 @@ pub fn compute_temporal_speaker_person_mapping(
 
     fn get_person_kf_at<'a>(
         p: &'a crate::media::face_tracker::VisionPersonTrack,
-        t: f64,
+        t_sample: f64,
+        start_sec: f64,
     ) -> Option<&'a crate::media::face_tracker::VisionKeyframe> {
-        p.keyframes.iter().min_by(|a, b| (a.t - t).abs().total_cmp(&(b.t - t).abs()))
+        let t_rel = (t_sample - start_sec).max(0.0);
+        let best_abs = p.keyframes.iter().min_by(|a, b| (a.t - t_sample).abs().total_cmp(&(b.t - t_sample).abs()));
+        let best_rel = p.keyframes.iter().min_by(|a, b| (a.t - t_rel).abs().total_cmp(&(b.t - t_rel).abs()));
+        match (best_abs, best_rel) {
+            (Some(ka), Some(kr)) => {
+                if (ka.t - t_sample).abs() <= (kr.t - t_rel).abs() {
+                    Some(ka)
+                } else {
+                    Some(kr)
+                }
+            }
+            (Some(ka), None) => Some(ka),
+            (None, Some(kr)) => Some(kr),
+            (None, None) => None,
+        }
     }
 
     // Accumulate temporal evidence matrix: E[speaker, person_id]
@@ -1401,8 +1594,10 @@ pub fn compute_temporal_speaker_person_mapping(
             while sample_t <= i_end {
                 let mut visible_persons: Vec<usize> = Vec::new();
                 for p in people {
-                    if let Some(kf) = get_person_kf_at(p, sample_t) {
-                        if kf.visible && (kf.t - sample_t).abs() < 0.60 {
+                    if let Some(kf) = get_person_kf_at(p, sample_t, start_sec) {
+                        let dist_abs = (kf.t - sample_t).abs();
+                        let dist_rel = (kf.t - (sample_t - start_sec)).abs();
+                        if kf.visible && (dist_abs < 0.60 || dist_rel < 0.60) {
                             visible_persons.push(p.id);
                         }
                     }
@@ -1439,7 +1634,7 @@ pub fn compute_temporal_speaker_person_mapping(
 
                 let mut person_motions: Vec<(usize, f64)> = Vec::new();
                 for p in people {
-                    if let Some(kf) = get_person_kf_at(p, sample_window_start) {
+                    if let Some(kf) = get_person_kf_at(p, sample_window_start, start_sec) {
                         let motion = measure_mouth_activity_motion(
                             source_path,
                             sample_window_start,
@@ -1569,10 +1764,36 @@ impl LocalFusionDetector {
 
                 let p_id = if let Some(ref speaker) = seg.speaker {
                     speaker_mapping.get(speaker).copied().unwrap_or_else(|| {
-                        people.first().map(|p| p.id).unwrap_or(1)
+                        // Speaker not in mapping: check visual visibility during segment
+                        let mid_t = (s_start + s_end) * 0.5;
+                        let visible: Vec<usize> = people.iter()
+                            .filter(|p| {
+                                let t_rel = (mid_t - start_sec).max(0.0);
+                                p.keyframes.iter().any(|k| k.visible && ((k.t - mid_t).abs() < 0.60 || (k.t - t_rel).abs() < 0.60))
+                            })
+                            .map(|p| p.id)
+                            .collect();
+                        if visible.len() == 1 {
+                            visible[0]
+                        } else {
+                            people.first().map(|p| p.id).unwrap_or(1)
+                        }
                     })
                 } else {
-                    people.first().map(|p| p.id).unwrap_or(1)
+                    // Segment has no diarization speaker: use visual presence evidence
+                    let mid_t = (s_start + s_end) * 0.5;
+                    let visible: Vec<usize> = people.iter()
+                        .filter(|p| {
+                            let t_rel = (mid_t - start_sec).max(0.0);
+                            p.keyframes.iter().any(|k| k.visible && ((k.t - mid_t).abs() < 0.60 || (k.t - t_rel).abs() < 0.60))
+                        })
+                        .map(|p| p.id)
+                        .collect();
+                    if visible.len() == 1 {
+                        visible[0]
+                    } else {
+                        people.first().map(|p| p.id).unwrap_or(1)
+                    }
                 };
 
                 segments.push(ActiveSpeakerSegment {
@@ -1584,13 +1805,43 @@ impl LocalFusionDetector {
                 });
             }
         } else {
-            segments.push(ActiveSpeakerSegment {
-                start: start_sec,
-                end: start_sec + duration_sec,
-                person_id: 1,
-                confidence: if vision_result.face_detected { 0.80 } else { 0.50 },
-                speaker_label: None,
-            });
+            // When transcript is not provided, generate visual presence intervals
+            if people.len() >= 2 {
+                let slice_step = 2.0f64;
+                let mut curr = start_sec;
+                while curr < start_sec + duration_sec {
+                    let slice_end = (curr + slice_step).min(start_sec + duration_sec);
+                    let mid_t = (curr + slice_end) * 0.5;
+                    let visible: Vec<usize> = people.iter()
+                        .filter(|p| {
+                            let t_rel = (mid_t - start_sec).max(0.0);
+                            p.keyframes.iter().any(|k| k.visible && ((k.t - mid_t).abs() < 0.60 || (k.t - t_rel).abs() < 0.60))
+                        })
+                        .map(|p| p.id)
+                        .collect();
+                    let pid = if visible.len() == 1 {
+                        visible[0]
+                    } else {
+                        people.first().map(|p| p.id).unwrap_or(1)
+                    };
+                    segments.push(ActiveSpeakerSegment {
+                        start: curr,
+                        end: slice_end,
+                        person_id: pid,
+                        confidence: if vision_result.face_detected { 0.75 } else { 0.50 },
+                        speaker_label: None,
+                    });
+                    curr = slice_end;
+                }
+            } else {
+                segments.push(ActiveSpeakerSegment {
+                    start: start_sec,
+                    end: start_sec + duration_sec,
+                    person_id: 1,
+                    confidence: if vision_result.face_detected { 0.80 } else { 0.50 },
+                    speaker_label: None,
+                });
+            }
         }
 
         // Apply temporal smoothing & gap bridging
@@ -1817,11 +2068,28 @@ pub fn generate_speaker_aware_keyframes(
 
     let get_person_center_at = |pid: usize, t_abs: f64| -> f64 {
         if let Some(person) = people.iter().find(|p| p.id == pid) {
-            if let Some(kf) = person
+            let t_rel = (t_abs - clip_start).max(0.0);
+            let best_abs = person
                 .keyframes
                 .iter()
-                .min_by(|a, b| (a.t - t_abs).abs().total_cmp(&(b.t - t_abs).abs()))
-            {
+                .min_by(|a, b| (a.t - t_abs).abs().total_cmp(&(b.t - t_abs).abs()));
+            let best_rel = person
+                .keyframes
+                .iter()
+                .min_by(|a, b| (a.t - t_rel).abs().total_cmp(&(b.t - t_rel).abs()));
+            let closest = match (best_abs, best_rel) {
+                (Some(ka), Some(kr)) => {
+                    if (ka.t - t_abs).abs() <= (kr.t - t_rel).abs() {
+                        Some(ka)
+                    } else {
+                        Some(kr)
+                    }
+                }
+                (Some(ka), None) => Some(ka),
+                (None, Some(kr)) => Some(kr),
+                (None, None) => None,
+            };
+            if let Some(kf) = closest {
                 return kf.x.clamp(0.20, 0.80);
             }
             if let Some(last_kf) = person.keyframes.last() {
@@ -2812,5 +3080,241 @@ mod tests {
             "thresh_0.55_hold_2.0_diar_diarize_v2", // changed diarization version
         );
         assert_ne!(key1, diff_diar);
+    }
+
+    #[test]
+    fn test_nvidia_json_polymorphic_bbox_deserialization() {
+        // Test array bbox format
+        let json_arr = r#"{
+            "timestamp": 1.25,
+            "person_id": 101,
+            "bbox": [0.15, 0.20, 0.25, 0.30],
+            "is_active": true,
+            "prob": 0.94
+        }"#;
+        let frame_arr: NvidiaRawFrame = serde_json::from_str(json_arr).expect("must parse array bbox frame");
+        assert_eq!(frame_arr.flat.face_id, Some(101));
+        assert_eq!(frame_arr.flat.speaker_bbox, Some(vec![0.15, 0.20, 0.25, 0.30]));
+        assert_eq!(frame_arr.flat.is_speaking, Some(true));
+        assert_eq!(frame_arr.flat.confidence, Some(0.94));
+
+        // Test object bbox with { x, y, width, height }
+        let json_map_xywh = r#"{
+            "timestamp": 2.50,
+            "faces": [
+                {
+                    "track_id": 202,
+                    "rect": { "x": 0.60, "y": 0.25, "width": 0.20, "height": 0.35 },
+                    "speaking": true,
+                    "score": 0.88,
+                    "speaker_label": "S2"
+                }
+            ]
+        }"#;
+        let frame_map: NvidiaRawFrame = serde_json::from_str(json_map_xywh).expect("must parse xywh map frame");
+        assert_eq!(frame_map.faces.len(), 1);
+        assert_eq!(frame_map.faces[0].face_id, Some(202));
+        assert_eq!(frame_map.faces[0].speaker_bbox, Some(vec![0.60, 0.25, 0.20, 0.35]));
+        assert_eq!(frame_map.faces[0].is_speaking, Some(true));
+        assert_eq!(frame_map.faces[0].diarized_speaker_id, Some("S2".to_string()));
+
+        // Test object bbox with { xmin, ymin, xmax, ymax }
+        let json_map_corners = r#"{
+            "t": 3.75,
+            "box": { "xmin": 0.10, "ymin": 0.15, "xmax": 0.40, "ymax": 0.55 },
+            "speech_detected": true
+        }"#;
+        let frame_corners: NvidiaRawFrame = serde_json::from_str(json_map_corners).expect("must parse corner map frame");
+        assert_eq!(frame_corners.timestamp, 3.75);
+        let b = frame_corners.flat.speaker_bbox.expect("bbox parsed");
+        assert!((b[0] - 0.10).abs() < 1e-4);
+        assert!((b[1] - 0.15).abs() < 1e-4);
+        assert!((b[2] - 0.30).abs() < 1e-4); // xmax - xmin = 0.40 - 0.10 = 0.30
+        assert!((b[3] - 0.40).abs() < 1e-4); // ymax - ymin = 0.55 - 0.15 = 0.40
+    }
+
+    #[test]
+    fn test_bipartite_mapping_prevents_multiple_speakers_collapsing() {
+        use crate::media::face_tracker::{VisionKeyframe, VisionPersonTrack, VisionTrackingPayload};
+
+        // Create 2 people
+        let face_result = FaceTrackerResult {
+            avg_center_x: 0.50,
+            face_detected: true,
+            width: Some(1920.0),
+            height: Some(1080.0),
+            tracking: Some(VisionTrackingPayload {
+                two_faces_detected: true,
+                top_center_x: None,
+                top_center_y: None,
+                bottom_center_x: None,
+                bottom_center_y: None,
+                segments: vec![],
+                people: vec![
+                    VisionPersonTrack {
+                        id: 1,
+                        name: "Person 1".to_string(),
+                        keyframes: vec![VisionKeyframe {
+                            t: 0.0,
+                            x: 0.25,
+                            y: 0.35,
+                            width: 0.15,
+                            height: 0.20,
+                            confidence: 1.0,
+                            visible: true,
+                            state: None,
+                        }],
+                    },
+                    VisionPersonTrack {
+                        id: 2,
+                        name: "Person 2".to_string(),
+                        keyframes: vec![VisionKeyframe {
+                            t: 0.0,
+                            x: 0.75,
+                            y: 0.35,
+                            width: 0.15,
+                            height: 0.20,
+                            confidence: 1.0,
+                            visible: true,
+                            state: None,
+                        }],
+                    },
+                ],
+            }),
+        };
+
+        // Scenario:
+        // Speaker S1 speaks: Person 1 is speaking (x=0.25), receives 10 votes for Person 1.
+        // Speaker S2 speaks: Person 2 is speaking (x=0.75), receives 8 votes for Person 2,
+        // but due to noise/overlap, also has 3 votes for Person 1.
+        let detections = vec![
+            // S1 speaking -> Person 1
+            NormalizedFrameDetection {
+                timestamp_sec: 1.0,
+                absolute_timestamp_sec: 1.0,
+                speaker_bbox: Some([0.18, 0.25, 0.14, 0.20]),
+                bbox_center: Some((0.25, 0.35)),
+                raw_face_id: Some(1),
+                diarized_speaker_id: Some("S1".to_string()),
+                is_speaking: true,
+                confidence: 0.95,
+            },
+            NormalizedFrameDetection {
+                timestamp_sec: 2.0,
+                absolute_timestamp_sec: 2.0,
+                speaker_bbox: Some([0.18, 0.25, 0.14, 0.20]),
+                bbox_center: Some((0.25, 0.35)),
+                raw_face_id: Some(1),
+                diarized_speaker_id: Some("S1".to_string()),
+                is_speaking: true,
+                confidence: 0.95,
+            },
+            // S2 speaking -> Person 2
+            NormalizedFrameDetection {
+                timestamp_sec: 3.0,
+                absolute_timestamp_sec: 3.0,
+                speaker_bbox: Some([0.68, 0.25, 0.14, 0.20]),
+                bbox_center: Some((0.75, 0.35)),
+                raw_face_id: Some(2),
+                diarized_speaker_id: Some("S2".to_string()),
+                is_speaking: true,
+                confidence: 0.90,
+            },
+        ];
+
+        let associated = associate_faces_and_persons(&detections, Some(&face_result));
+        // Verify collision-free 1-to-1 matching:
+        assert_eq!(associated.speaker_person_mapping.get("S1"), Some(&1));
+        assert_eq!(associated.speaker_person_mapping.get("S2"), Some(&2));
+        assert_ne!(
+            associated.speaker_person_mapping.get("S1"),
+            associated.speaker_person_mapping.get("S2"),
+            "Speakers S1 and S2 must not collapse to the same person"
+        );
+    }
+
+    #[test]
+    fn test_smooth_and_build_segments_overlap_safety() {
+        let mut detections = Vec::new();
+        // Person 1 speaks from 1.0 to 3.0 (every 0.2s)
+        let mut t = 1.0;
+        while t <= 3.01 {
+            detections.push(AssociatedFrameDetection {
+                timestamp_sec: t,
+                absolute_timestamp_sec: t,
+                person_id: 1,
+                speaker_bbox: None,
+                bbox_center: None,
+                diarized_speaker_id: Some("S1".to_string()),
+                is_speaking: true,
+                confidence: 0.90,
+            });
+            t += 0.20;
+        }
+
+        // Person 2 speaks from 2.5 to 4.5 (every 0.2s, overlapping between 2.5 and 3.0)
+        let mut t2 = 2.5;
+        while t2 <= 4.51 {
+            detections.push(AssociatedFrameDetection {
+                timestamp_sec: t2,
+                absolute_timestamp_sec: t2,
+                person_id: 2,
+                speaker_bbox: None,
+                bbox_center: None,
+                diarized_speaker_id: Some("S2".to_string()),
+                is_speaking: true,
+                confidence: 0.92,
+            });
+            t2 += 0.20;
+        }
+
+        let segments = smooth_and_build_active_speaker_segments(&detections, 0.0, 5.0);
+        assert_eq!(segments.len(), 2);
+        // Both segments must have positive duration: end > start
+        for s in &segments {
+            assert!(s.end > s.start, "Segment must have positive duration: {:?}", s);
+            assert!(s.end - s.start >= 0.04);
+        }
+        // Cut transition point must be identical: seg[0].end == seg[1].start
+        assert!((segments[0].end - segments[1].start).abs() < 1e-4);
+        assert_eq!(segments[0].person_id, 1);
+        assert_eq!(segments[1].person_id, 2);
+    }
+
+    #[test]
+    fn test_relative_and_absolute_keyframe_timestamps_matching() {
+        use crate::media::face_tracker::{VisionKeyframe, VisionPersonTrack};
+
+        // Keyframe has relative time t = 5.0 (from a 30s clip slice)
+        let person = VisionPersonTrack {
+            id: 1,
+            name: "Speaker A".to_string(),
+            keyframes: vec![VisionKeyframe {
+                t: 5.0,
+                x: 0.35,
+                y: 0.40,
+                width: 0.16,
+                height: 0.22,
+                confidence: 1.0,
+                visible: true,
+                state: None,
+            }],
+        };
+
+        // Detection has absolute time 105.0 and relative slice time 5.0
+        let det = NormalizedFrameDetection {
+            timestamp_sec: 5.0,
+            absolute_timestamp_sec: 105.0,
+            speaker_bbox: Some([0.27, 0.29, 0.16, 0.22]),
+            bbox_center: Some((0.35, 0.40)),
+            raw_face_id: Some(1),
+            diarized_speaker_id: Some("S1".to_string()),
+            is_speaking: true,
+            confidence: 0.95,
+        };
+
+        let aff = compute_detection_person_affinity(&det, &person);
+        // Affinity must be high despite absolute_timestamp_sec being 105.0 vs keyframe t=5.0
+        assert!(aff > 1.0, "Affinity must match across relative slice coordinates: aff = {}", aff);
     }
 }
