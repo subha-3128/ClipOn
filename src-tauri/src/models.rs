@@ -9,6 +9,9 @@ fn default_true() -> bool {
 fn default_false() -> bool {
     false
 }
+fn default_local_provider() -> String {
+    "Local fallback".to_string()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -26,6 +29,10 @@ pub struct EnvironmentStatus {
     pub has_nvidia_key: bool,
     #[serde(default)]
     pub has_nvidia_function_id: bool,
+    #[serde(default = "default_local_provider")]
+    pub active_speaker_provider: String,
+    #[serde(default)]
+    pub active_speaker_status: Option<String>,
     pub has_instagram_token: bool,
     pub llm_provider: String,
     pub has_local_whisper_model: bool,

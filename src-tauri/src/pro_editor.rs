@@ -577,6 +577,26 @@ pub fn calculate_composite_reel_scores(
 
                 let mut v_badges = Vec::new();
 
+                // Explicit Active Speaker Provider Provenance Badge
+                if timeline.provider == "nvidia_api" {
+                    v_badges.push("⚡ Active Speaker: NVIDIA ASD".to_string());
+                } else {
+                    let fallback_msg = match &timeline.fallback_reason {
+                        Some(reason) => {
+                            let brief = if reason.contains("credentials") || reason.contains("API key") {
+                                "No API key"
+                            } else if reason.contains("Function ID") {
+                                "No Function ID"
+                            } else {
+                                "Inference fallback"
+                            };
+                            format!("⚠️ Active Speaker: Local Fallback ({})", brief)
+                        }
+                        None => "⚠️ Active Speaker: Local Fallback".to_string(),
+                    };
+                    v_badges.push(fallback_msg);
+                }
+
                 // Camera-Switch Penalty: penalize rapid speaker flip-flops (> 4 switches per 30s)
                 let switches = if relevant_segs.len() > 1 {
                     relevant_segs.windows(2).filter(|w| w[0].person_id != w[1].person_id).count()
@@ -589,9 +609,9 @@ pub fn calculate_composite_reel_scores(
                     let penalty = ((switches - max_acceptable_switches) as f64 * 3.5).min(15.0);
                     v_score -= penalty;
                 } else if switches >= 1 {
-                    v_badges.push("👥 Dynamic Dual-Speaker");
+                    v_badges.push("👥 Dynamic Dual-Speaker".to_string());
                 } else {
-                    v_badges.push("🎯 Focused Single-Speaker");
+                    v_badges.push("🎯 Focused Single-Speaker".to_string());
                 }
 
                 (v_score.clamp(45.0, 98.0), v_badges)
@@ -622,8 +642,8 @@ pub fn calculate_composite_reel_scores(
                 prefix.push_str(hook_badges[0]);
                 prefix.push_str(". ");
             }
-            if !visual_badges.is_empty() {
-                prefix.push_str(visual_badges[0]);
+            for v_badge in &visual_badges {
+                prefix.push_str(v_badge);
                 prefix.push_str(". ");
             }
             if hook_energy_ratio >= 1.15 {
@@ -1275,5 +1295,68 @@ mod tests {
         assert!(final_candidate.score >= 88.0, "Score was only {}", final_candidate.score);
         assert!(final_candidate.rationale.contains("30–45s Sweet Spot"));
         assert!(final_candidate.rationale.contains("Curiosity Question"));
+    }
+
+    #[test]
+    fn test_active_speaker_provider_badges_in_rationale() {
+        use crate::media::active_speaker::{ActiveSpeakerSegment, ActiveSpeakerTimeline};
+        use std::collections::HashMap;
+
+        let transcript = NormalizedTranscript {
+            language: "en".to_string(),
+            duration: 40.0,
+            speakers: vec!["Host".to_string()],
+            words: vec![TranscriptWord {
+                text: "Hello".to_string(),
+                start: 0.0,
+                end: 35.0,
+                speaker: Some("Host".to_string()),
+            }],
+            segments: vec![],
+        };
+        let drafts = vec![CandidateDraft {
+            start: 0.0,
+            end: 35.0,
+            score: 0.90,
+            hook: "Why is active speaker detection important?".to_string(),
+            rationale: "Testing rationale".to_string(),
+        }];
+
+        // Test NVIDIA ASD timeline
+        let nvidia_timeline = ActiveSpeakerTimeline {
+            segments: vec![ActiveSpeakerSegment {
+                start: 0.0,
+                end: 35.0,
+                person_id: 1,
+                confidence: 0.98,
+                speaker_label: Some("Host".to_string()),
+            }],
+            provider: "nvidia_api".to_string(),
+            source_duration: 40.0,
+            speaker_person_mapping: HashMap::new(),
+            confidence: 0.98,
+            fallback_reason: None,
+        };
+        let nvidia_scored = calculate_composite_reel_scores(None, &drafts, &transcript, Some(&nvidia_timeline));
+        assert!(nvidia_scored[0].rationale.contains("Active Speaker: NVIDIA ASD"));
+
+        // Test Local Fallback timeline
+        let fallback_timeline = ActiveSpeakerTimeline {
+            segments: vec![ActiveSpeakerSegment {
+                start: 0.0,
+                end: 35.0,
+                person_id: 1,
+                confidence: 0.75,
+                speaker_label: Some("Host".to_string()),
+            }],
+            provider: "local_vision_fusion".to_string(),
+            source_duration: 40.0,
+            speaker_person_mapping: HashMap::new(),
+            confidence: 0.75,
+            fallback_reason: Some("No API key configured".to_string()),
+        };
+        let fallback_scored = calculate_composite_reel_scores(None, &drafts, &transcript, Some(&fallback_timeline));
+        assert!(fallback_scored[0].rationale.contains("Active Speaker: Local Fallback"));
+        assert!(fallback_scored[0].rationale.contains("No API key"));
     }
 }

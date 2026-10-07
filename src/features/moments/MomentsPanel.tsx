@@ -201,6 +201,27 @@ export function MomentsPanel({
               <option value="original">Original Aspect Ratio</option>
             </select>
           </div>
+
+          <div
+            className={`active-speaker-status-pill ${
+              environment?.activeSpeakerProvider === "NVIDIA"
+                ? "nvidia"
+                : "local-fallback"
+            }`}
+            title={
+              environment?.activeSpeakerStatus ||
+              (environment?.activeSpeakerProvider === "NVIDIA"
+                ? "Active Speaker Tracking: NVIDIA ASD NIM"
+                : "Active Speaker Tracking: Local Vision + Diarization Fallback")
+            }
+          >
+            <span className="asd-pill-label">ASD:</span>
+            <span className="asd-pill-value">
+              {environment?.activeSpeakerProvider === "NVIDIA"
+                ? "⚡ NVIDIA ASD"
+                : "⚠️ Local Fallback"}
+            </span>
+          </div>
         </div>
 
         {/* Feature Toggles */}

@@ -49,6 +49,15 @@ export function StatusBar({ environment, canUseCloudKey }: StatusBarProps) {
         <span className={`status-tag ${canUseCloudKey ? "active" : ""}`}>
           Deepgram
         </span>
+        <span
+          className={`status-tag asd-tag ${environment?.activeSpeakerProvider === "NVIDIA" ? "active" : "fallback"}`}
+          title={
+            environment?.activeSpeakerStatus ||
+            `Active Speaker Provider: ${environment?.activeSpeakerProvider || "Local fallback"}`
+          }
+        >
+          ASD: {environment?.activeSpeakerProvider === "NVIDIA" ? "NVIDIA" : "Local"}
+        </span>
       </div>
     </footer>
   );

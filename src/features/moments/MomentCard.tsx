@@ -79,6 +79,22 @@ export function MomentCard({
               ⚡ High Audio Energy
             </span>
           )}
+          {candidate.rationale.includes("Active Speaker: NVIDIA ASD") && (
+            <span
+              className="moment-asd-badge nvidia"
+              title="Active Speaker Provider: NVIDIA ASD NIM (gRPC / NVCF neural inference)"
+            >
+              ⚡ NVIDIA ASD
+            </span>
+          )}
+          {candidate.rationale.includes("Active Speaker: Local Fallback") && (
+            <span
+              className="moment-asd-badge local-fallback"
+              title="Active Speaker Provider: Local Fallback (Apple Vision + Diarization Fusion)"
+            >
+              ⚠️ Local Fallback
+            </span>
+          )}
           <span className="moment-duration-badge">
             {formatTime(candidate.startSec)} - {formatTime(candidate.endSec)} (
             {Math.round(candidate.endSec - candidate.startSec)}s)

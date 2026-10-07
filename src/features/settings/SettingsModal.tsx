@@ -412,6 +412,49 @@ export function SettingsModal({
               </span>
             </div>
 
+            {/* Active Speaker Provider Status Card */}
+            <div
+              className={`settings-provider-card ${
+                environment?.activeSpeakerProvider === "NVIDIA"
+                  ? "nvidia-active"
+                  : "fallback-active"
+              }`}
+            >
+              <div className="settings-provider-header">
+                <div className="settings-provider-title">
+                  <Zap
+                    size={14}
+                    className={
+                      environment?.activeSpeakerProvider === "NVIDIA"
+                        ? "provider-icon-green"
+                        : "provider-icon-amber"
+                    }
+                  />
+                  <span>Active Speaker Provider:</span>
+                  <strong>
+                    {environment?.activeSpeakerProvider || "Local fallback"}
+                  </strong>
+                </div>
+                <span
+                  className={`status-pill ${
+                    environment?.activeSpeakerProvider === "NVIDIA"
+                      ? "pill-green"
+                      : "pill-amber"
+                  }`}
+                >
+                  {environment?.activeSpeakerProvider === "NVIDIA"
+                    ? "⚡ NVIDIA NIM Active"
+                    : "⚠️ Local Fallback Active"}
+                </span>
+              </div>
+              <p className="settings-provider-desc">
+                {environment?.activeSpeakerStatus ||
+                  (environment?.hasNvidiaKey
+                    ? "NVIDIA NIM ASD is configured as the active speaker detection engine."
+                    : "NVIDIA API key not set. ClipOn uses Local Fallback (Apple Vision face tracking + diarization temporal fusion). Provide an NVIDIA API Key and NVCF Function ID above to enable neural active speaker inference.")}
+              </p>
+            </div>
+
             {/* Instagram Reels API */}
             <div className="settings-section-divider">
               <Instagram size={14} />
@@ -922,6 +965,22 @@ export function SettingsModal({
                   {environment?.hasOllama
                     ? "Running (127.0.0.1:11434)"
                     : "Not detected"}
+                </span>
+              </div>
+              <div className="diag-item">
+                <span className="diag-name">
+                  Active Speaker Detection Provider
+                </span>
+                <span
+                  className={`diag-badge ${
+                    environment?.activeSpeakerProvider === "NVIDIA"
+                      ? "ok"
+                      : "warn"
+                  }`}
+                >
+                  {environment?.activeSpeakerProvider === "NVIDIA"
+                    ? "NVIDIA NIM ASD (Neural)"
+                    : "Local Fallback (Apple Vision)"}
                 </span>
               </div>
             </div>

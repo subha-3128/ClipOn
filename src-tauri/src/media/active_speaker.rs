@@ -33,6 +33,8 @@ pub struct ActiveSpeakerTimeline {
     pub source_duration: f64,
     pub speaker_person_mapping: HashMap<String, usize>,
     pub confidence: f64,
+    #[serde(default)]
+    pub fallback_reason: Option<String>,
 }
 
 impl Default for ActiveSpeakerTimeline {
@@ -43,6 +45,7 @@ impl Default for ActiveSpeakerTimeline {
             source_duration: 0.0,
             speaker_person_mapping: HashMap::new(),
             confidence: 0.5,
+            fallback_reason: None,
         }
     }
 }
@@ -944,6 +947,7 @@ pub fn convert_nvidia_frames_to_timeline(
         source_duration: duration_sec,
         speaker_person_mapping: associated.speaker_person_mapping,
         confidence: avg_confidence,
+        fallback_reason: None,
     }
 }
 
@@ -1612,6 +1616,7 @@ impl LocalFusionDetector {
             source_duration: duration_sec,
             speaker_person_mapping: speaker_mapping,
             confidence,
+            fallback_reason: None,
         })
     }
 }
@@ -1702,6 +1707,21 @@ pub async fn get_or_compute_active_speaker_timeline(
 
     // 1. Check persistent AnalysisCache
     if let Some(cached) = cache.get::<ActiveSpeakerTimeline>(&cache_key, "active_speaker") {
+        if cached.provider == "nvidia_api" {
+            println!(
+                "\n======================================================================\n[ClipOn ASD] ACTIVE SPEAKER PROVIDER: NVIDIA ASD (cached)\nStatus: High-fidelity per-frame neural inference with Apple Vision face fusion.\nSegments: {}\n======================================================================\n",
+                cached.segments.len()
+            );
+        } else {
+            let reason = cached
+                .fallback_reason
+                .as_deref()
+                .unwrap_or("No NVIDIA credentials configured");
+            eprintln!(
+                "\n======================================================================\n[ClipOn ASD] ACTIVE SPEAKER PROVIDER: Local fallback (cached)\nReason: {}\nQuality: Apple Vision face tracking + diarization temporal fusion.\n======================================================================\n",
+                reason
+            );
+        }
         return cached;
     }
 
@@ -1709,36 +1729,9 @@ pub async fn get_or_compute_active_speaker_timeline(
     let face_result = FaceTracker::analyze(source_path, start_sec, duration_sec);
 
     // 3. Attempt primary NVIDIA API Active Speaker Detection with FaceTracker fusion
-    let timeline_res = if let Ok(nvidia_detector) = NvidiaAsdDetector::try_new() {
-        match nvidia_detector
-            .detect_active_speakers_with_faces(
-                source_path,
-                start_sec,
-                duration_sec,
-                transcript,
-                Some(&face_result),
-            )
-            .await
-        {
-            Ok(timeline) => Some(timeline),
-            Err(e) => {
-                eprintln!(
-                    "[ClipOn ASD] Notice: NVIDIA Active Speaker inference fallback ({}). Using local multimodal fusion.",
-                    e
-                );
-                None
-            }
-        }
-    } else {
-        None
-    };
-
-    // 4. Fallback to Local Multimodal Vision-Audio Fusion
-    let final_timeline = match timeline_res {
-        Some(t) => t,
-        None => {
-            let local_detector = LocalFusionDetector::new();
-            local_detector
+    let (timeline_res, fallback_reason) = match NvidiaAsdDetector::try_new() {
+        Ok(nvidia_detector) => {
+            match nvidia_detector
                 .detect_active_speakers_with_faces(
                     source_path,
                     start_sec,
@@ -1747,7 +1740,52 @@ pub async fn get_or_compute_active_speaker_timeline(
                     Some(&face_result),
                 )
                 .await
-                .unwrap_or_default()
+            {
+                Ok(timeline) => {
+                    println!(
+                        "\n======================================================================\n[ClipOn ASD] ACTIVE SPEAKER PROVIDER: NVIDIA ASD\nStatus: SUCCESS (per-frame neural ASD with Apple Vision face fusion)\nSegments: {}\nConfidence: {:.2}\n======================================================================\n",
+                        timeline.segments.len(),
+                        timeline.confidence
+                    );
+                    (Some(timeline), None)
+                }
+                Err(e) => {
+                    let err_str = e.to_string();
+                    eprintln!(
+                        "\n======================================================================\n[ClipOn ASD] WARNING: NVIDIA ASD FAILED -> FALLING BACK TO LOCAL FUSION\nError: {}\nActive speaker provider is now: Local fallback\n======================================================================\n",
+                        err_str
+                    );
+                    (None, Some(format!("NVIDIA inference failed: {}", err_str)))
+                }
+            }
+        }
+        Err(e) => {
+            let reason = format!("NVIDIA credentials not configured or invalid: {}", e);
+            eprintln!(
+                "\n======================================================================\n[ClipOn ASD] NOTICE: ACTIVE SPEAKER PROVIDER: Local fallback\nReason: {}\nActive speaker provider is now: Local fallback (Apple Vision + Diarization)\n======================================================================\n",
+                reason
+            );
+            (None, Some(reason))
+        }
+    };
+
+    // 4. Fallback to Local Multimodal Vision-Audio Fusion
+    let final_timeline = match timeline_res {
+        Some(t) => t,
+        None => {
+            let local_detector = LocalFusionDetector::new();
+            let mut local_tl = local_detector
+                .detect_active_speakers_with_faces(
+                    source_path,
+                    start_sec,
+                    duration_sec,
+                    transcript,
+                    Some(&face_result),
+                )
+                .await
+                .unwrap_or_default();
+            local_tl.fallback_reason = fallback_reason;
+            local_tl
         }
     };
 
@@ -2325,6 +2363,7 @@ mod tests {
             source_duration: 30.0,
             speaker_person_mapping: HashMap::new(),
             confidence: 0.90,
+            fallback_reason: None,
         };
 
         let face_result = FaceTrackerResult {
@@ -2679,6 +2718,7 @@ mod tests {
             source_duration: 6.0,
             speaker_person_mapping: associated.speaker_person_mapping,
             confidence: 0.95,
+            fallback_reason: None,
         };
 
         let keyframes = generate_speaker_aware_keyframes(&timeline, &face_tracker_result, 0.0, 6.0);

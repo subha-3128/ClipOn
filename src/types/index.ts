@@ -13,6 +13,8 @@ export type EnvironmentStatus = {
   hasGroqKey: boolean;
   hasNvidiaKey?: boolean;
   hasNvidiaFunctionId?: boolean;
+  activeSpeakerProvider?: string;
+  activeSpeakerStatus?: string;
   hasInstagramToken: boolean;
   llmProvider: string;
   hasLocalWhisperModel: boolean;
