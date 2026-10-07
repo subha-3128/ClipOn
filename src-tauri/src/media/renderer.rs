@@ -42,7 +42,11 @@ pub fn cleanup_stale_temp_dirs() {
     if let Ok(entries) = std::fs::read_dir(temp_dir) {
         for entry in entries.flatten() {
             if let Ok(name) = entry.file_name().into_string() {
-                if name.starts_with("clipon_track_") || name.starts_with("clipon_job_") || name.starts_with("clipon_pod_") {
+                if name.starts_with("clipon_track_")
+                    || name.starts_with("clipon_job_")
+                    || name.starts_with("clipon_reframe_")
+                    || name.starts_with("clipon_pod_")
+                {
                     let _ = std::fs::remove_dir_all(entry.path());
                 }
             }
@@ -260,6 +264,106 @@ pub fn execute_render_plan(plan: &RenderPlan) -> Result<PathBuf> {
                     }
                     cmd.args(["-vf", &filter]);
                 }
+                ReframePlan::SplitScreen => {
+                    let iw_f = probe.width.unwrap_or(1920) as f64;
+                    let ih_f = probe.height.unwrap_or(1080) as f64;
+
+                    let tracker_info = super::face_tracker::detect_faces_full(
+                        &plan.source,
+                        start_sec,
+                        duration_sec,
+                    );
+                    let people = tracker_info.people();
+
+                    let assigned_ids: Vec<usize> = if people.len() >= 3 {
+                        vec![1, 2, 3]
+                    } else if people.len() >= 2 {
+                        vec![1, 2]
+                    } else {
+                        vec![1]
+                    };
+
+                    let default_layout = match assigned_ids.len() {
+                        3 => "split_three",
+                        2 => "split_two",
+                        _ => "single",
+                    };
+
+                    let top_fb_x = tracker_info
+                        .tracking
+                        .as_ref()
+                        .and_then(|t| t.top_center_x)
+                        .unwrap_or(0.26);
+                    let top_fb_y = tracker_info
+                        .tracking
+                        .as_ref()
+                        .and_then(|t| t.top_center_y)
+                        .unwrap_or(0.38);
+                    let bot_fb_x = tracker_info
+                        .tracking
+                        .as_ref()
+                        .and_then(|t| t.bottom_center_x)
+                        .unwrap_or(0.78);
+                    let bot_fb_y = tracker_info
+                        .tracking
+                        .as_ref()
+                        .and_then(|t| t.bottom_center_y)
+                        .unwrap_or(0.38);
+
+                    let base_filter = super::filters::build_multi_speaker_layout_filter_graph(
+                        default_layout,
+                        &assigned_ids,
+                        people,
+                        iw_f,
+                        ih_f,
+                        0.0,
+                        duration_sec,
+                        top_fb_x,
+                        top_fb_y,
+                        bot_fb_x,
+                        bot_fb_y,
+                    );
+
+                    let mut filter_graph = format!("{}[v_split]", base_filter);
+                    let mut current_video_stream = "[v_split]".to_string();
+
+                    if plan.punch_zoom {
+                        let punch = crate::pro_editor::build_punch_zoom_filter(1080, 1920);
+                        filter_graph = format!(
+                            "{};{}{}[v_punch]",
+                            filter_graph, current_video_stream, punch
+                        );
+                        current_video_stream = "[v_punch]".to_string();
+                    }
+
+                    if let Some(CaptionPlan::AssSubtitle(ass)) = &plan.captions {
+                        if let Some(ass_filter) = build_ass_filter(ass) {
+                            filter_graph = format!(
+                                "{};{}{}[v_sub]",
+                                filter_graph, current_video_stream, ass_filter
+                            );
+                            current_video_stream = "[v_sub]".to_string();
+                        }
+                    } else if let Some(CaptionPlan::Drawtext(drawtext)) = &plan.captions {
+                        if !drawtext.is_empty() {
+                            filter_graph = format!(
+                                "{};{}{}[v_draw]",
+                                filter_graph, current_video_stream, drawtext
+                            );
+                            current_video_stream = "[v_draw]".to_string();
+                        }
+                    }
+
+                    if let Some((ref v_jump, _)) = jump_cuts {
+                        filter_graph = format!(
+                            "{};{}{}[v_jump]",
+                            filter_graph, current_video_stream, v_jump
+                        );
+                        current_video_stream = "[v_jump]".to_string();
+                    }
+
+                    cmd.args(["-filter_complex", &filter_graph, "-map", &current_video_stream]);
+                }
             }
 
             apply_video_encoder_args(&mut cmd, use_videotoolbox, plan.output.video_bitrate_kbps);
@@ -428,7 +532,7 @@ mod tests {
 
     #[test]
     fn test_temp_dir_guard_lifecycle() {
-        let path = std::env::temp_dir().join(format!("clipon_track_test_{}", uuid::Uuid::new_v4()));
+        let path = std::env::temp_dir().join(format!("clipon_reframe_test_{}", uuid::Uuid::new_v4()));
         {
             let guard = TempDirGuard::new(path.clone());
             assert!(guard.path().exists());
@@ -440,13 +544,15 @@ mod tests {
     #[test]
     fn test_cleanup_stale_temp_dirs() {
         let p1 = std::env::temp_dir().join(format!("clipon_track_stale_{}", uuid::Uuid::new_v4()));
-        let p2 = std::env::temp_dir().join(format!("clipon_job_stale_{}", uuid::Uuid::new_v4()));
+        let p2 = std::env::temp_dir().join(format!("clipon_reframe_stale_{}", uuid::Uuid::new_v4()));
+        let p3 = std::env::temp_dir().join(format!("clipon_job_stale_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&p1).unwrap();
         std::fs::create_dir_all(&p2).unwrap();
-        assert!(p1.exists() && p2.exists());
+        std::fs::create_dir_all(&p3).unwrap();
+        assert!(p1.exists() && p2.exists() && p3.exists());
 
         cleanup_stale_temp_dirs();
-        assert!(!p1.exists() && !p2.exists());
+        assert!(!p1.exists() && !p2.exists() && !p3.exists());
     }
 
     #[test]

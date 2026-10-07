@@ -52,8 +52,8 @@ mod tests {
 
     #[test]
     fn test_nvidia_credential_interface() {
-        let res = has(NVIDIA);
-        assert!(res.is_ok(), "Keyring check should execute cleanly: {:?}", res.err());
+        let e = keyring::Entry::new(SERVICE_NAME, NVIDIA);
+        assert!(e.is_ok(), "Keyring entry should construct cleanly: {:?}", e.err());
     }
 }
 

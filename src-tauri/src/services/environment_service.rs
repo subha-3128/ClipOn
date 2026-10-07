@@ -39,7 +39,7 @@ pub async fn get_environment_status(state: &AppState) -> Result<EnvironmentStatu
     let ollama_supported = true;
     let ollama_install_supported = cfg!(target_os = "macos");
     let face_tracking_supported = cfg!(target_os = "macos");
-    let dynamic_podcast_supported = face_tracking_supported;
+    let multi_speaker_reframing_supported = face_tracking_supported;
     let hardware_encoder_supported = media::supports_videotoolbox();
 
     let has_nvidia_key = credentials::has(credentials::NVIDIA).unwrap_or(false)
@@ -91,7 +91,7 @@ pub async fn get_environment_status(state: &AppState) -> Result<EnvironmentStatu
         ollama_supported,
         ollama_install_supported,
         face_tracking_supported,
-        dynamic_podcast_supported,
+        multi_speaker_reframing_supported,
         hardware_encoder_supported,
     })
 }
@@ -400,7 +400,7 @@ mod tests {
             ollama_supported: true,
             ollama_install_supported: true,
             face_tracking_supported: true,
-            dynamic_podcast_supported: true,
+            multi_speaker_reframing_supported: true,
             hardware_encoder_supported: true,
         };
 
@@ -408,7 +408,7 @@ mod tests {
         assert!(json.contains("\"platform\":\"macos\""));
         assert!(json.contains("\"ollamaInstallSupported\":true"));
         assert!(json.contains("\"faceTrackingSupported\":true"));
-        assert!(json.contains("\"dynamicPodcastSupported\":true"));
+        assert!(json.contains("\"multiSpeakerReframingSupported\":true"));
         assert!(json.contains("\"activeSpeakerProvider\":\"Local fallback\""));
 
         let deserialized: EnvironmentStatus =
@@ -419,7 +419,7 @@ mod tests {
         assert!(deserialized.ollama_supported);
         assert!(deserialized.ollama_install_supported);
         assert!(deserialized.face_tracking_supported);
-        assert!(deserialized.dynamic_podcast_supported);
+        assert!(deserialized.multi_speaker_reframing_supported);
         assert!(deserialized.hardware_encoder_supported);
     }
 }

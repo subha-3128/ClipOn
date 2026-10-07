@@ -51,8 +51,8 @@ pub struct EnvironmentStatus {
     pub ollama_install_supported: bool,
     #[serde(default = "default_false")]
     pub face_tracking_supported: bool,
-    #[serde(default = "default_false")]
-    pub dynamic_podcast_supported: bool,
+    #[serde(default = "default_false", alias = "dynamic_podcast_supported")]
+    pub multi_speaker_reframing_supported: bool,
     #[serde(default = "default_false")]
     pub hardware_encoder_supported: bool,
 }

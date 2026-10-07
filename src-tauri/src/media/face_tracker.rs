@@ -37,6 +37,15 @@ pub struct VisionPersonTrack {
     pub keyframes: Vec<VisionKeyframe>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LayoutSegment {
+    pub start: f64,
+    pub end: f64,
+    pub number_of_people: usize,
+    pub layout_type: String, // "single", "split_two", "split_three"
+    pub person_ids: Vec<usize>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct VisionTrackingPayload {
     #[serde(default)]
@@ -51,6 +60,8 @@ pub struct VisionTrackingPayload {
     pub bottom_center_y: Option<f64>,
     #[serde(default)]
     pub people: Vec<VisionPersonTrack>,
+    #[serde(default)]
+    pub segments: Vec<LayoutSegment>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,17 +72,40 @@ pub struct FaceTrackerResult {
     pub width: Option<f64>,
     #[serde(default)]
     pub height: Option<f64>,
-    #[serde(default)]
-    pub podcast: Option<VisionTrackingPayload>,
+    #[serde(default, alias = "podcast")]
+    pub tracking: Option<VisionTrackingPayload>,
 }
 
 impl FaceTrackerResult {
     pub fn people(&self) -> &[VisionPersonTrack] {
-        self.podcast
+        self.tracking
             .as_ref()
             .map(|p| p.people.as_slice())
             .unwrap_or(&[])
     }
+
+    pub fn segments(&self) -> &[LayoutSegment] {
+        self.tracking
+            .as_ref()
+            .map(|p| p.segments.as_slice())
+            .unwrap_or(&[])
+    }
+}
+
+pub fn merge_adjacent_segments(segments: &[LayoutSegment]) -> Vec<LayoutSegment> {
+    if segments.is_empty() {
+        return Vec::new();
+    }
+    let mut merged: Vec<LayoutSegment> = vec![segments[0].clone()];
+    for seg in &segments[1..] {
+        let last = merged.last_mut().unwrap();
+        if last.layout_type == seg.layout_type && last.person_ids == seg.person_ids {
+            last.end = seg.end;
+        } else {
+            merged.push(seg.clone());
+        }
+    }
+    merged
 }
 
 impl Default for FaceTrackerResult {
@@ -81,12 +115,13 @@ impl Default for FaceTrackerResult {
             face_detected: false,
             width: None,
             height: None,
-            podcast: None,
+            tracking: None,
         }
     }
 }
 
 pub struct FaceTracker;
+
 
 impl FaceTracker {
     /// Resolves the face tracker binary dynamically with zero hardcoded developer paths.
@@ -172,6 +207,9 @@ impl FaceTracker {
         if let Some(cached) = cache.get::<FaceTrackerResult>(&cache_key, "face_tracking") {
             return cached;
         }
+        if let Some(cached) = cache.get::<FaceTrackerResult>(&cache_key, "podcast_analysis") {
+            return cached;
+        }
 
         let binary_path = match Self::resolve_tracker_binary() {
             Ok(p) => p,
@@ -192,7 +230,7 @@ impl FaceTracker {
         let res = serde_json::from_str::<FaceTrackerResult>(stdout.trim())
             .unwrap_or_default();
 
-        if res.face_detected {
+        if res.face_detected || res.tracking.is_some() {
             let _ = cache.put(&cache_key, "face_tracking", &res);
         }
 
@@ -227,5 +265,41 @@ mod tests {
             "Tracker binary should resolve: {:?}",
             res.err()
         );
+    }
+
+    #[test]
+    fn test_merge_adjacent_segments() {
+        let segs = vec![
+            LayoutSegment {
+                start: 0.0,
+                end: 3.0,
+                number_of_people: 2,
+                layout_type: "split_two".to_string(),
+                person_ids: vec![1, 2],
+            },
+            LayoutSegment {
+                start: 3.0,
+                end: 6.0,
+                number_of_people: 2,
+                layout_type: "split_two".to_string(),
+                person_ids: vec![1, 2],
+            },
+            LayoutSegment {
+                start: 6.0,
+                end: 10.0,
+                number_of_people: 1,
+                layout_type: "single".to_string(),
+                person_ids: vec![1],
+            },
+        ];
+
+        let merged = merge_adjacent_segments(&segs);
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].start, 0.0);
+        assert_eq!(merged[0].end, 6.0);
+        assert_eq!(merged[0].layout_type, "split_two");
+        assert_eq!(merged[1].start, 6.0);
+        assert_eq!(merged[1].end, 10.0);
+        assert_eq!(merged[1].layout_type, "single");
     }
 }

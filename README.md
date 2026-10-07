@@ -9,7 +9,7 @@
 
 ---
 
-**ClipOn** is an ultra-fast, local-first desktop application designed for content creators, podcasters, and video editors to transform long-form recordings and YouTube videos into high-converting, viral vertical short-form clips (**9:16 YouTube Shorts, Instagram Reels, and TikToks**) powered by AI moment ranking and adaptive multi-person dynamic podcast reframing.
+**ClipOn** is an ultra-fast, local-first desktop application designed for content creators, video editors, and digital storytellers to transform long-form recordings and YouTube videos into high-converting, viral vertical short-form clips (**9:16 YouTube Shorts, Instagram Reels, and TikToks**) powered by AI moment ranking and adaptive multi-person dynamic reel reframing.
 
 Built with **Tauri 2 + React 19 + TypeScript + Rust + SQLite + Apple Silicon VideoToolbox + Apple Vision**.
 

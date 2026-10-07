@@ -46,9 +46,9 @@ import sys
 with open(sys.argv[1], encoding="utf-8") as handle:
     result = json.load(handle)
 
-podcast = result.get("podcast") or {}
-people = podcast.get("people") or []
-segments = podcast.get("segments") or []
+tracking = result.get("tracking") or result.get("podcast") or {}
+people = tracking.get("people") or []
+segments = tracking.get("segments") or []
 ids = [person.get("id") for person in people]
 print(f"people={len(people)}")
 print(f"person_ids={ids}")

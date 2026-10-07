@@ -2262,12 +2262,13 @@ mod tests {
             face_detected: true,
             width: Some(1920.0),
             height: Some(1080.0),
-            podcast: Some(VisionTrackingPayload {
+            tracking: Some(VisionTrackingPayload {
                 two_faces_detected: true,
                 top_center_x: None,
                 top_center_y: None,
                 bottom_center_x: None,
                 bottom_center_y: None,
+                segments: vec![],
                 people: vec![
                     VisionPersonTrack {
                         id: 1,
@@ -2371,7 +2372,7 @@ mod tests {
             face_detected: true,
             width: Some(1920.0),
             height: Some(1080.0),
-            podcast: None,
+            tracking: None,
         };
 
         let keyframes = generate_speaker_aware_keyframes(&timeline, &face_result, 10.0, 20.0);
@@ -2387,7 +2388,7 @@ mod tests {
             face_detected: true,
             width: Some(1920.0),
             height: Some(0.25),
-            podcast: None,
+            tracking: None,
         };
 
         let validation = validate_clip_visuals(&timeline, &face_result, 0.0, 15.0);
@@ -2562,12 +2563,13 @@ mod tests {
             face_detected: true,
             width: Some(1920.0),
             height: Some(1080.0),
-            podcast: Some(VisionTrackingPayload {
+            tracking: Some(VisionTrackingPayload {
                 two_faces_detected: true,
                 top_center_x: None,
                 top_center_y: None,
                 bottom_center_x: None,
                 bottom_center_y: None,
+                segments: vec![],
                 people: vec![
                     VisionPersonTrack {
                         id: 1,

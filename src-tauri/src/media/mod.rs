@@ -30,8 +30,8 @@ pub use face_tracker::{
 pub use ffmpeg::{command_exists, resolve_binary};
 #[allow(unused_imports)]
 pub use filters::{
-    build_center_crop_filter, build_dynamic_crop_expr, build_original_scale_filter,
-    build_smart_face_crop_filter, PodcastKeyframe, TrackingKeyframe,
+    build_center_crop_filter, build_dynamic_crop_expr, build_multi_speaker_layout_filter_graph,
+    build_original_scale_filter, build_smart_face_crop_filter, PersonKeyframe, TrackingKeyframe,
 };
 #[allow(unused_imports)]
 pub use presets::{ExportPlatform, OutputPreset};

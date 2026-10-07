@@ -24,6 +24,7 @@ pub enum ReframePlan {
     Original,
     VerticalCrop,
     SmartFaceTrack,
+    SplitScreen,
 }
 
 impl Default for ReframePlan {
@@ -37,6 +38,7 @@ impl ReframePlan {
         match mode.unwrap_or("vertical_crop") {
             "original" => Self::Original,
             "smart_face_track" => Self::SmartFaceTrack,
+            "split_screen" | "multi_speaker_split" | "podcast_split" => Self::SplitScreen,
             _ => Self::VerticalCrop,
         }
     }
@@ -44,9 +46,9 @@ impl ReframePlan {
     pub fn validate(&self, _source_aspect_ratio: f64, has_face_data: bool) -> Result<(), &'static str> {
         match self {
             Self::Original | Self::VerticalCrop => Ok(()),
-            Self::SmartFaceTrack => {
+            Self::SmartFaceTrack | Self::SplitScreen => {
                 if !has_face_data {
-                    Err("SmartFaceTrack requires face tracking metadata")
+                    Err("Face tracking metadata required for adaptive reframing")
                 } else {
                     Ok(())
                 }

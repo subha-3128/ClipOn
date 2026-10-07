@@ -4,7 +4,7 @@ import AppKit
 import Accelerate
 
 // =============================================================================
-// DynamicPodcastReframing Data Model
+// Multi-Person Reel Reframing Data Model
 // =============================================================================
 
 enum TrackingState: String, Codable {
@@ -40,7 +40,7 @@ struct LayoutSegment: Codable {
     let person_ids: [Int]
 }
 
-struct LegacyPodcastKeyframe: Codable {
+struct TrackingKeyframeOutput: Codable {
     let t: Double
     let x: Double
     let y: Double
@@ -622,10 +622,10 @@ struct LayoutConfirmationMachine {
 }
 
 // =============================================================================
-// DynamicPodcastReframingEngine
+// MultiPersonReframingEngine
 // =============================================================================
 
-class DynamicPodcastReframingEngine {
+class MultiPersonReframingEngine {
     // Configuration thresholds
     let sampleRateFps: Double = 3.5            // 3.5 samples/sec (285ms intervals)
     let enterThresholdHits: Int = 3            // Require 3 consecutive hits (~0.85s) to confirm entry
@@ -636,7 +636,7 @@ class DynamicPodcastReframingEngine {
     let maxSupportedPeople: Int = 3            // Up to 3 active people in 9:16 vertical canvas
 
     func execute(videoPath: String, startSec: Double, durationSec: Double) -> String {
-        let tempDir = NSTemporaryDirectory() + "clipon_pod_\(UUID().uuidString)"
+        let tempDir = NSTemporaryDirectory() + "clipon_reframe_\(UUID().uuidString)"
         defer {
             try? FileManager.default.removeItem(atPath: tempDir)
         }
@@ -925,11 +925,11 @@ class DynamicPodcastReframingEngine {
         let peopleJson = (try? String(data: encoder.encode(tracksOutput), encoding: .utf8)) ?? "[]"
         let segmentsJson = (try? String(data: encoder.encode(stabilizedSegments), encoding: .utf8)) ?? "[]"
 
-        let p1Kfs: [LegacyPodcastKeyframe] = (confirmedTracks.first?.keyframes ?? []).map {
-            LegacyPodcastKeyframe(t: $0.t, x: $0.x, y: $0.y)
+        let p1Kfs: [TrackingKeyframeOutput] = (confirmedTracks.first?.keyframes ?? []).map {
+            TrackingKeyframeOutput(t: $0.t, x: $0.x, y: $0.y)
         }
-        let p2Kfs: [LegacyPodcastKeyframe] = (confirmedTracks.count > 1 ? confirmedTracks[1].keyframes : []).map {
-            LegacyPodcastKeyframe(t: $0.t, x: $0.x, y: $0.y)
+        let p2Kfs: [TrackingKeyframeOutput] = (confirmedTracks.count > 1 ? confirmedTracks[1].keyframes : []).map {
+            TrackingKeyframeOutput(t: $0.t, x: $0.x, y: $0.y)
         }
 
         let p1Json = (try? String(data: encoder.encode(p1Kfs), encoding: .utf8)) ?? "[]"
@@ -942,10 +942,8 @@ class DynamicPodcastReframingEngine {
         let p2HomeY = confirmedTracks.count > 1 ? confirmedTracks[1].lastKnownY : 0.38
         let twoFacesDetected = confirmedTracks.count >= 2
 
-        return String(
-            format: "{\"avg_center_x\": %.3f, \"face_detected\": %@, \"width\": 1920, \"height\": 1080, \"podcast\": {\"top_center_x\": %.3f, \"top_center_y\": %.3f, \"bottom_center_x\": %.3f, \"bottom_center_y\": %.3f, \"two_faces_detected\": %@, \"person_1_keyframes\": %@, \"person_2_keyframes\": %@, \"people\": %@, \"segments\": %@}}",
-            avgCenterX,
-            allFaceCenters.isEmpty ? "false" : "true",
+        let payloadJson = String(
+            format: "{\"top_center_x\": %.3f, \"top_center_y\": %.3f, \"bottom_center_x\": %.3f, \"bottom_center_y\": %.3f, \"two_faces_detected\": %@, \"person_1_keyframes\": %@, \"person_2_keyframes\": %@, \"people\": %@, \"segments\": %@}",
             p1HomeX, p1HomeY,
             p2HomeX, p2HomeY,
             twoFacesDetected ? "true" : "false",
@@ -953,6 +951,14 @@ class DynamicPodcastReframingEngine {
             p2Json,
             peopleJson,
             segmentsJson
+        )
+
+        return String(
+            format: "{\"avg_center_x\": %.3f, \"face_detected\": %@, \"width\": 1920, \"height\": 1080, \"tracking\": %@, \"podcast\": %@}",
+            avgCenterX,
+            allFaceCenters.isEmpty ? "false" : "true",
+            payloadJson,
+            payloadJson
         )
     }
 }
@@ -1068,7 +1074,7 @@ if args.count == 2 && args[1] == "--selftest-layout" {
     exit(Int32(runLayoutSelfTest()))
 }
 if args.count < 4 {
-    print("{\"avg_center_x\": 0.5, \"face_detected\": false, \"podcast\": {\"top_center_x\": 0.26, \"top_center_y\": 0.38, \"bottom_center_x\": 0.78, \"bottom_center_y\": 0.38, \"two_faces_detected\": false, \"people\": [], \"segments\": []}}")
+    print("{\"avg_center_x\": 0.5, \"face_detected\": false, \"tracking\": {\"top_center_x\": 0.26, \"top_center_y\": 0.38, \"bottom_center_x\": 0.78, \"bottom_center_y\": 0.38, \"two_faces_detected\": false, \"people\": [], \"segments\": []}, \"podcast\": {\"top_center_x\": 0.26, \"top_center_y\": 0.38, \"bottom_center_x\": 0.78, \"bottom_center_y\": 0.38, \"two_faces_detected\": false, \"people\": [], \"segments\": []}}")
     exit(0)
 }
 
@@ -1076,6 +1082,6 @@ let videoPath = args[1]
 let startSec = Double(args[2]) ?? 0.0
 let durationSec = Double(args[3]) ?? 1.0
 
-let engine = DynamicPodcastReframingEngine()
+let engine = MultiPersonReframingEngine()
 let output = engine.execute(videoPath: videoPath, startSec: startSec, durationSec: durationSec)
 print(output)
