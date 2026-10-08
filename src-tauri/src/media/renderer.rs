@@ -54,7 +54,6 @@ pub fn cleanup_stale_temp_dirs() {
     }
 }
 
-
 pub fn escape_ffmpeg_concat_file_entry(path: &Path) -> String {
     let raw = path.to_string_lossy();
     // In FFmpeg concat demuxer format, special characters such as ' and \
@@ -127,9 +126,7 @@ pub fn execute_render_plan(plan: &RenderPlan) -> Result<PathBuf> {
     };
 
     let tracker_info = match plan.reframe {
-        ReframePlan::SmartFaceTrack => {
-            detect_faces_full(&plan.source, start_sec, duration_sec)
-        }
+        ReframePlan::SmartFaceTrack => detect_faces_full(&plan.source, start_sec, duration_sec),
         _ => FaceTrackerResult::default(),
     };
 
@@ -179,15 +176,23 @@ pub fn execute_render_plan(plan: &RenderPlan) -> Result<PathBuf> {
                         full_dur,
                     );
                     let mut active_timeline_opt = cache
-                        .get::<super::active_speaker::ActiveSpeakerTimeline>(&cache_key, "active_speaker");
+                        .get::<super::active_speaker::ActiveSpeakerTimeline>(
+                            &cache_key,
+                            "active_speaker",
+                        );
 
                     if active_timeline_opt.is_none() {
-                        let clip_cache_key = super::active_speaker::compute_active_speaker_cache_key(
-                            &plan.source,
-                            start_sec,
-                            duration_sec,
-                        );
-                        active_timeline_opt = cache.get::<super::active_speaker::ActiveSpeakerTimeline>(&clip_cache_key, "active_speaker");
+                        let clip_cache_key =
+                            super::active_speaker::compute_active_speaker_cache_key(
+                                &plan.source,
+                                start_sec,
+                                duration_sec,
+                            );
+                        active_timeline_opt = cache
+                            .get::<super::active_speaker::ActiveSpeakerTimeline>(
+                                &clip_cache_key,
+                                "active_speaker",
+                            );
                     }
                     let active_timeline = active_timeline_opt.unwrap_or_default();
 
@@ -362,7 +367,12 @@ pub fn execute_render_plan(plan: &RenderPlan) -> Result<PathBuf> {
                         current_video_stream = "[v_jump]".to_string();
                     }
 
-                    cmd.args(["-filter_complex", &filter_graph, "-map", &current_video_stream]);
+                    cmd.args([
+                        "-filter_complex",
+                        &filter_graph,
+                        "-map",
+                        &current_video_stream,
+                    ]);
                 }
             }
 
@@ -469,10 +479,8 @@ pub fn render_flat_clip_with_job(
 
     let captions = if let Some(ass) = ass_subtitle_path {
         Some(CaptionPlan::AssSubtitle(ass.to_path_buf()))
-    } else if let Some(drawtext) = drawtext_filters {
-        Some(CaptionPlan::Drawtext(drawtext.to_string()))
     } else {
-        None
+        drawtext_filters.map(|drawtext| CaptionPlan::Drawtext(drawtext.to_string()))
     };
 
     let preset = export_preset
@@ -532,7 +540,8 @@ mod tests {
 
     #[test]
     fn test_temp_dir_guard_lifecycle() {
-        let path = std::env::temp_dir().join(format!("clipon_reframe_test_{}", uuid::Uuid::new_v4()));
+        let path =
+            std::env::temp_dir().join(format!("clipon_reframe_test_{}", uuid::Uuid::new_v4()));
         {
             let guard = TempDirGuard::new(path.clone());
             assert!(guard.path().exists());
@@ -544,7 +553,8 @@ mod tests {
     #[test]
     fn test_cleanup_stale_temp_dirs() {
         let p1 = std::env::temp_dir().join(format!("clipon_track_stale_{}", uuid::Uuid::new_v4()));
-        let p2 = std::env::temp_dir().join(format!("clipon_reframe_stale_{}", uuid::Uuid::new_v4()));
+        let p2 =
+            std::env::temp_dir().join(format!("clipon_reframe_stale_{}", uuid::Uuid::new_v4()));
         let p3 = std::env::temp_dir().join(format!("clipon_job_stale_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&p1).unwrap();
         std::fs::create_dir_all(&p2).unwrap();
@@ -563,6 +573,9 @@ mod tests {
 
         let p2 = Path::new("C:\\Users\\User\\Videos\\clip's.mp4");
         let entry2 = escape_ffmpeg_concat_file_entry(p2);
-        assert_eq!(entry2, "file 'C:\\\\Users\\\\User\\\\Videos\\\\clip\\'s.mp4'\n");
+        assert_eq!(
+            entry2,
+            "file 'C:\\\\Users\\\\User\\\\Videos\\\\clip\\'s.mp4'\n"
+        );
     }
 }

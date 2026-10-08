@@ -72,7 +72,6 @@ export function ProjectHeader({
         </div>
 
         <div className="topbar-right">
-
           <button
             className="topbar-action-btn"
             onClick={onOpenClipsFolder}

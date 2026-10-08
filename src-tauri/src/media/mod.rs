@@ -24,9 +24,7 @@ pub use audio::{detect_silences, extract_audio};
 #[allow(unused_imports)]
 pub use encoder::{detect_hardware_capabilities, supports_videotoolbox, HardwareCapabilities};
 #[allow(unused_imports)]
-pub use face_tracker::{
-    detect_face_center_x, detect_faces_full, FaceTracker, FaceTrackerResult,
-};
+pub use face_tracker::{detect_face_center_x, detect_faces_full, FaceTracker, FaceTrackerResult};
 #[allow(unused_imports)]
 pub use ffmpeg::{command_exists, resolve_binary};
 #[allow(unused_imports)]

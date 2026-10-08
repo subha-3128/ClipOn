@@ -243,6 +243,7 @@ pub fn get(name: &str) -> Result<Option<String>> {
 /// 1. Current process environment
 /// 2. Local file keystore (chmod 0600)
 /// 3. .env files
+///
 /// Never triggers OS keychain prompts.
 pub fn save(name: &str, value: &str) -> Result<()> {
     if !ALL_CREDENTIALS.contains(&name) {
@@ -301,7 +302,8 @@ mod tests {
 
     impl TestStoreGuard {
         fn new(name: &str) -> Self {
-            let dir = std::env::temp_dir().join(format!("clipon_test_{}_{}", name, std::process::id()));
+            let dir =
+                std::env::temp_dir().join(format!("clipon_test_{}_{}", name, std::process::id()));
             let _ = std::fs::create_dir_all(&dir);
             let path = dir.join("test_credentials.json");
             set_test_store_path(Some(path.clone()));

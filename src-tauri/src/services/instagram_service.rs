@@ -97,7 +97,9 @@ pub async fn publish_candidate_to_instagram(
                 }
             }
         }
-        let kit = llm::generate_social_kit(&candidate.id, &candidate.hook, &transcript_text, None, None).await;
+        let kit =
+            llm::generate_social_kit(&candidate.id, &candidate.hook, &transcript_text, None, None)
+                .await;
         let hashtags = kit.hashtags.join(" ");
         format!(
             "{}\n\n{}\n\n{}\n\n{}",

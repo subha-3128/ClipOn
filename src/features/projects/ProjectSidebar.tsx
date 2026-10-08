@@ -52,7 +52,6 @@ export function ProjectSidebar({
         </div>
       </div>
 
-
       {/* Quick Actions */}
       <div className="sidebar-actions">
         <button

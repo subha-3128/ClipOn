@@ -50,7 +50,8 @@ where
                     .and_then(|v| v.parse::<u64>().ok());
 
                 // Retryable: 429 Too Many Requests or 5xx Server Errors
-                let is_retryable = status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error();
+                let is_retryable =
+                    status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error();
                 if is_retryable && attempt < max_retries {
                     attempt += 1;
                     let backoff = if let Some(secs) = retry_after_secs {
@@ -66,7 +67,9 @@ where
                 if status == StatusCode::TOO_MANY_REQUESTS {
                     let hint = retry_after_secs
                         .map(|s| format!("Rate limit reached. Retry after {}s.", s))
-                        .unwrap_or_else(|| "Rate limit reached. Please wait before retrying.".to_string());
+                        .unwrap_or_else(|| {
+                            "Rate limit reached. Please wait before retrying.".to_string()
+                        });
                     return Err(anyhow!("{hint} ({body})"));
                 }
                 if status == StatusCode::SERVICE_UNAVAILABLE {

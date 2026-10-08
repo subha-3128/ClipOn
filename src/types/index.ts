@@ -93,7 +93,15 @@ export type CandidateFeedback = {
   id: string;
   candidateId: string;
   projectId: string;
-  action: 'kept' | 'rejected' | 'boundary_edit' | 'crop_edit' | 'caption_edit' | 'rating' | 'published' | string;
+  action:
+    | "kept"
+    | "rejected"
+    | "boundary_edit"
+    | "crop_edit"
+    | "caption_edit"
+    | "rating"
+    | "published"
+    | string;
   rating?: number | null;
   detailsJson?: string | null;
   createdAt: string;
@@ -205,4 +213,27 @@ export type ExportPresetConfig = {
   fps: number;
   bitrateKbps: number;
   iconName: string;
+};
+
+// ===== Engine & Error Types =====
+
+export type LlmEngine =
+  "claude" | "deepseek" | "local" | "gemini" | "openai" | "openrouter" | "groq";
+
+export type ErrorSeverity = "info" | "warning" | "error" | "fatal";
+
+export type ErrorAction = {
+  label: string;
+  onClick: () => void;
+};
+
+export type AppError = {
+  id: string;
+  code: string;
+  message: string;
+  details?: string;
+  severity: ErrorSeverity;
+  recoverable: boolean;
+  action?: ErrorAction;
+  timestamp: number;
 };

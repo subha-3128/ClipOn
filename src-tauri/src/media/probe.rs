@@ -92,8 +92,7 @@ pub fn validate_rendered_output(
     if !output_path.exists() {
         return Err(anyhow!("Rendered file does not exist: {:?}", output_path));
     }
-    let metadata = std::fs::metadata(output_path)
-        .context("Reading rendered file metadata")?;
+    let metadata = std::fs::metadata(output_path).context("Reading rendered file metadata")?;
     if metadata.len() < 1024 {
         return Err(anyhow!(
             "Rendered file is suspiciously small or empty (< 1KB): {:?}",
@@ -110,13 +109,18 @@ pub fn validate_rendered_output(
 
     if let (Some(w), Some(h)) = (probe.width, probe.height) {
         if w <= 0 || h <= 0 {
-            return Err(anyhow!("Rendered output has invalid dimensions: {}x{}", w, h));
+            return Err(anyhow!(
+                "Rendered output has invalid dimensions: {}x{}",
+                w,
+                h
+            ));
         }
         // Vertical aspect ratio check for Reels/Shorts: width must not exceed height
         if w > h {
             return Err(anyhow!(
                 "Rendered output is landscape ({}x{}), expected vertical 9:16 format",
-                w, h
+                w,
+                h
             ));
         }
     } else {
@@ -127,7 +131,9 @@ pub fn validate_rendered_output(
         if dur < expected_min_duration || dur > expected_max_duration {
             return Err(anyhow!(
                 "Rendered duration ({:.1}s) out of expected range [{:.1}s, {:.1}s]",
-                dur, expected_min_duration, expected_max_duration
+                dur,
+                expected_min_duration,
+                expected_max_duration
             ));
         }
     }
@@ -165,11 +171,15 @@ mod tests {
     fn test_probe_media_corrupt_file() {
         let tmp = std::env::temp_dir().join("corrupt_test.mp4");
         let mut f = std::fs::File::create(&tmp).unwrap();
-        f.write_all(b"not a valid video stream content here").unwrap();
+        f.write_all(b"not a valid video stream content here")
+            .unwrap();
         let res = probe_media(tmp.to_str().unwrap());
         let _ = std::fs::remove_file(&tmp);
         assert!(res.is_err());
-        assert!(res.unwrap_err().to_string().contains("corrupted or unsupported"));
+        assert!(res
+            .unwrap_err()
+            .to_string()
+            .contains("corrupted or unsupported"));
     }
 
     #[test]

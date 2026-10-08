@@ -177,7 +177,9 @@ impl LlmProvider for GeminiProvider {
             return Ok(text);
         }
 
-        Err(anyhow!("All Gemini models failed. Last error: {last_error}"))
+        Err(anyhow!(
+            "All Gemini models failed. Last error: {last_error}"
+        ))
     }
 }
 
@@ -252,7 +254,11 @@ impl OpenAiProvider {
         let model = model_override
             .filter(|m| !m.trim().is_empty())
             .map(|m| m.trim().to_string())
-            .or_else(|| std::env::var("OPENAI_MODEL").ok().filter(|m| !m.trim().is_empty()))
+            .or_else(|| {
+                std::env::var("OPENAI_MODEL")
+                    .ok()
+                    .filter(|m| !m.trim().is_empty())
+            })
             .unwrap_or_else(|| "gpt-4o-mini".to_string());
         Self {
             api_key: api_key.trim().to_string(),
@@ -334,7 +340,11 @@ impl GroqProvider {
         let model = model_override
             .filter(|m| !m.trim().is_empty())
             .map(|m| m.trim().to_string())
-            .or_else(|| std::env::var("GROQ_MODEL").ok().filter(|m| !m.trim().is_empty()))
+            .or_else(|| {
+                std::env::var("GROQ_MODEL")
+                    .ok()
+                    .filter(|m| !m.trim().is_empty())
+            })
             .unwrap_or_else(|| "llama-3.3-70b-versatile".to_string());
         Self {
             api_key: api_key.trim().to_string(),
@@ -469,8 +479,7 @@ impl LlmProvider for ClaudeProvider {
             return Err(anyhow!("Claude request failed ({status}): {body}"));
         }
 
-        let message: AnthropicMessage =
-            response.json().await.context("parsing Claude response")?;
+        let message: AnthropicMessage = response.json().await.context("parsing Claude response")?;
         message
             .content
             .into_iter()
@@ -489,10 +498,14 @@ impl LocalLlmProvider {
         let model = model_name
             .filter(|m| !m.trim().is_empty())
             .map(|m| m.trim().to_string())
-            .or_else(|| std::env::var("OLLAMA_MODEL").ok().filter(|m| !m.trim().is_empty()))
+            .or_else(|| {
+                std::env::var("OLLAMA_MODEL")
+                    .ok()
+                    .filter(|m| !m.trim().is_empty())
+            })
             .unwrap_or_else(|| "llama3.2".to_string());
-        let host = std::env::var("OLLAMA_HOST")
-            .unwrap_or_else(|_| "http://localhost:11434".to_string());
+        let host =
+            std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".to_string());
         Self { model, host }
     }
 }
@@ -769,10 +782,9 @@ fn parse_number(val: Option<&serde_json::Value>) -> Option<f64> {
         f
     } else if let Some(s) = v.as_str() {
         s.trim().parse::<f64>().ok()?
-    } else if let Some(i) = v.as_i64() {
-        i as f64
     } else {
-        return None;
+        let i = v.as_i64()?;
+        i as f64
     };
     if n.is_finite() {
         Some(n)
@@ -793,8 +805,7 @@ pub fn parse_candidate_json(
         .trim_end_matches("```")
         .trim();
 
-    let val: serde_json::Value =
-        serde_json::from_str(trimmed).context("parsing candidate JSON")?;
+    let val: serde_json::Value = serde_json::from_str(trimmed).context("parsing candidate JSON")?;
 
     let candidates_arr = if val.is_array() {
         val.as_array().cloned()
@@ -935,7 +946,7 @@ pub fn parse_candidate_json(
             .iter()
             .filter(|candidate| {
                 let dur = candidate.end - candidate.start;
-                dur >= 5.0 && dur <= 60.0
+                (5.0..=60.0).contains(&dur)
             })
             .cloned()
             .collect::<Vec<_>>();
@@ -1103,7 +1114,12 @@ pub async fn generate_social_kit_openai_compat(
         fn name(&self) -> &str {
             "openai-compat"
         }
-        async fn complete(&self, prompt: &str, json_mode: bool, temperature: f64) -> Result<String> {
+        async fn complete(
+            &self,
+            prompt: &str,
+            json_mode: bool,
+            temperature: f64,
+        ) -> Result<String> {
             call_openai_compatible_api(
                 "OpenAI-Compat",
                 self.endpoint,
@@ -1163,21 +1179,34 @@ pub async fn generate_social_kit(
         "claude" => {
             if let Ok(Some(key)) = crate::credentials::get(crate::credentials::ANTHROPIC) {
                 if !key.trim().is_empty() {
-                    generate_social_kit_with_claude(candidate_id, hook, transcript_text, &key).await.ok()
-                } else { None }
-            } else { None }
+                    generate_social_kit_with_claude(candidate_id, hook, transcript_text, &key)
+                        .await
+                        .ok()
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
         }
         "gemini" => {
             if let Ok(Some(key)) = crate::credentials::get(crate::credentials::GEMINI) {
                 if !key.trim().is_empty() {
-                    generate_social_kit_with_gemini(candidate_id, hook, transcript_text, &key).await.ok()
-                } else { None }
-            } else { None }
+                    generate_social_kit_with_gemini(candidate_id, hook, transcript_text, &key)
+                        .await
+                        .ok()
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
         }
         "openai" => {
             if let Ok(Some(key)) = crate::credentials::get(crate::credentials::OPENAI) {
                 if !key.trim().is_empty() {
-                    let model = std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4o-mini".to_string());
+                    let model =
+                        std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4o-mini".to_string());
                     generate_social_kit_openai_compat(
                         candidate_id,
                         hook,
@@ -1186,14 +1215,21 @@ pub async fn generate_social_kit(
                         &key,
                         &model,
                         &[],
-                    ).await.ok()
-                } else { None }
-            } else { None }
+                    )
+                    .await
+                    .ok()
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
         }
         "groq" => {
             if let Ok(Some(key)) = crate::credentials::get(crate::credentials::GROQ) {
                 if !key.trim().is_empty() {
-                    let model = std::env::var("GROQ_MODEL").unwrap_or_else(|_| "llama-3.3-70b-versatile".to_string());
+                    let model = std::env::var("GROQ_MODEL")
+                        .unwrap_or_else(|_| "llama-3.3-70b-versatile".to_string());
                     generate_social_kit_openai_compat(
                         candidate_id,
                         hook,
@@ -1202,9 +1238,15 @@ pub async fn generate_social_kit(
                         &key,
                         &model,
                         &[],
-                    ).await.ok()
-                } else { None }
-            } else { None }
+                    )
+                    .await
+                    .ok()
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
         }
         "openrouter" => {
             if let Ok(Some(key)) = crate::credentials::get(crate::credentials::OPENROUTER) {
@@ -1222,10 +1264,19 @@ pub async fn generate_social_kit(
                         "https://openrouter.ai/api/v1/chat/completions",
                         &key,
                         &model,
-                        &[("HTTP-Referer", "https://github.com/subha-3128/ClipOn"), ("X-Title", "ClipOn")],
-                    ).await.ok()
-                } else { None }
-            } else { None }
+                        &[
+                            ("HTTP-Referer", "https://github.com/subha-3128/ClipOn"),
+                            ("X-Title", "ClipOn"),
+                        ],
+                    )
+                    .await
+                    .ok()
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
         }
         "local" | "ollama" => {
             let env_model = std::env::var("OLLAMA_MODEL").ok();
@@ -1233,14 +1284,22 @@ pub async fn generate_social_kit(
                 .filter(|m| !m.trim().is_empty())
                 .or(env_model.as_deref())
                 .unwrap_or("llama3.2");
-            generate_social_kit_with_local(candidate_id, hook, transcript_text, model).await.ok()
+            generate_social_kit_with_local(candidate_id, hook, transcript_text, model)
+                .await
+                .ok()
         }
         _ => {
             if let Ok(Some(key)) = crate::credentials::get(crate::credentials::DEEPSEEK) {
                 if !key.trim().is_empty() {
-                    generate_social_kit_with_deepseek(candidate_id, hook, transcript_text, &key).await.ok()
-                } else { None }
-            } else { None }
+                    generate_social_kit_with_deepseek(candidate_id, hook, transcript_text, &key)
+                        .await
+                        .ok()
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
         }
     };
 
@@ -1344,7 +1403,10 @@ mod tests {
                 }
             }
         }
-        assert!(covered.iter().all(|&c| c), "Every sentence in the transcript must be preserved without dropping");
+        assert!(
+            covered.iter().all(|&c| c),
+            "Every sentence in the transcript must be preserved without dropping"
+        );
     }
 
     #[test]
@@ -1447,4 +1509,3 @@ mod tests {
         assert_eq!(drafts[0].score, 0.88);
     }
 }
-

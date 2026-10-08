@@ -104,7 +104,7 @@ pub fn build_segments(words: &[TranscriptWord]) -> Vec<TranscriptSegment> {
     let mut current: Option<TranscriptSegment> = None;
 
     for word in words {
-        let should_break = current.as_ref().map_or(false, |segment| {
+        let should_break = current.as_ref().is_some_and(|segment| {
             let pause = word.start - segment.end;
             let speaker_changed = segment.speaker != word.speaker;
             let sentence_end = segment.text.ends_with(['.', '!', '?']);

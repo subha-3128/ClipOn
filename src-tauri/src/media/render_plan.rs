@@ -19,18 +19,13 @@ impl TimelineSegment {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum ReframePlan {
     Original,
+    #[default]
     VerticalCrop,
     SmartFaceTrack,
     SplitScreen,
-}
-
-impl Default for ReframePlan {
-    fn default() -> Self {
-        Self::VerticalCrop
-    }
 }
 
 impl ReframePlan {
@@ -43,7 +38,11 @@ impl ReframePlan {
         }
     }
 
-    pub fn validate(&self, _source_aspect_ratio: f64, has_face_data: bool) -> Result<(), &'static str> {
+    pub fn validate(
+        &self,
+        _source_aspect_ratio: f64,
+        has_face_data: bool,
+    ) -> Result<(), &'static str> {
         match self {
             Self::Original | Self::VerticalCrop => Ok(()),
             Self::SmartFaceTrack | Self::SplitScreen => {
@@ -136,14 +135,23 @@ mod tests {
 
     #[test]
     fn test_timeline_segment_duration_and_validity() {
-        let seg = TimelineSegment { start_sec: 1.0, end_sec: 5.5 };
+        let seg = TimelineSegment {
+            start_sec: 1.0,
+            end_sec: 5.5,
+        };
         assert!(seg.is_valid());
         assert_eq!(seg.duration(), 4.5);
 
-        let invalid_neg = TimelineSegment { start_sec: -1.0, end_sec: 5.0 };
+        let invalid_neg = TimelineSegment {
+            start_sec: -1.0,
+            end_sec: 5.0,
+        };
         assert!(!invalid_neg.is_valid());
 
-        let invalid_inverted = TimelineSegment { start_sec: 5.0, end_sec: 2.0 };
+        let invalid_inverted = TimelineSegment {
+            start_sec: 5.0,
+            end_sec: 2.0,
+        };
         assert!(!invalid_inverted.is_valid());
         assert_eq!(invalid_inverted.duration(), 0.0);
     }
@@ -164,8 +172,14 @@ mod tests {
         assert_eq!(plan.total_duration(), 10.0);
 
         plan.timeline = vec![
-            TimelineSegment { start_sec: 0.0, end_sec: 4.0 },
-            TimelineSegment { start_sec: 10.0, end_sec: 15.0 },
+            TimelineSegment {
+                start_sec: 0.0,
+                end_sec: 4.0,
+            },
+            TimelineSegment {
+                start_sec: 10.0,
+                end_sec: 15.0,
+            },
         ];
         assert_eq!(plan.total_duration(), 9.0);
 
@@ -191,22 +205,46 @@ mod tests {
         plan.timeline.clear();
         assert_eq!(plan.validate(), Err("Timeline cannot be empty"));
 
-        plan.timeline = vec![TimelineSegment { start_sec: 5.0, end_sec: 3.0 }];
-        assert_eq!(plan.validate(), Err("Timeline segment duration must be positive and non-negative"));
+        plan.timeline = vec![TimelineSegment {
+            start_sec: 5.0,
+            end_sec: 3.0,
+        }];
+        assert_eq!(
+            plan.validate(),
+            Err("Timeline segment duration must be positive and non-negative")
+        );
 
         plan.timeline = vec![
-            TimelineSegment { start_sec: 0.0, end_sec: 10.0 },
-            TimelineSegment { start_sec: 8.0, end_sec: 15.0 },
+            TimelineSegment {
+                start_sec: 0.0,
+                end_sec: 10.0,
+            },
+            TimelineSegment {
+                start_sec: 8.0,
+                end_sec: 15.0,
+            },
         ];
         assert_eq!(plan.validate(), Err("Timeline segments cannot overlap"));
     }
 
     #[test]
     fn test_reframe_plan_from_mode_str() {
-        assert_eq!(ReframePlan::from_mode_str(Some("original")), ReframePlan::Original);
-        assert_eq!(ReframePlan::from_mode_str(Some("smart_face_track")), ReframePlan::SmartFaceTrack);
-        assert_eq!(ReframePlan::from_mode_str(Some("vertical_crop")), ReframePlan::VerticalCrop);
-        assert_eq!(ReframePlan::from_mode_str(Some("unknown_gibberish")), ReframePlan::VerticalCrop);
+        assert_eq!(
+            ReframePlan::from_mode_str(Some("original")),
+            ReframePlan::Original
+        );
+        assert_eq!(
+            ReframePlan::from_mode_str(Some("smart_face_track")),
+            ReframePlan::SmartFaceTrack
+        );
+        assert_eq!(
+            ReframePlan::from_mode_str(Some("vertical_crop")),
+            ReframePlan::VerticalCrop
+        );
+        assert_eq!(
+            ReframePlan::from_mode_str(Some("unknown_gibberish")),
+            ReframePlan::VerticalCrop
+        );
         assert_eq!(ReframePlan::from_mode_str(None), ReframePlan::VerticalCrop);
     }
 
@@ -228,7 +266,10 @@ mod tests {
             PathBuf::from("/out/test.mp4"),
             ReframePlan::SmartFaceTrack,
             None,
-            AudioPlan { studio_audio: true, remove_silence: true },
+            AudioPlan {
+                studio_audio: true,
+                remove_silence: true,
+            },
             true,
             OutputPreset::youtube_shorts(),
         );

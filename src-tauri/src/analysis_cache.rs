@@ -62,11 +62,9 @@ impl AnalysisCache {
             if let Ok(n) = file.read(&mut buf) {
                 content_hasher.update(&buf[..n]);
             }
-            if size > 65536 * 2 {
-                if file.seek(SeekFrom::End(-65536)).is_ok() {
-                    if let Ok(n) = file.read(&mut buf) {
-                        content_hasher.update(&buf[..n]);
-                    }
+            if size > 65536 * 2 && file.seek(SeekFrom::End(-65536)).is_ok() {
+                if let Ok(n) = file.read(&mut buf) {
+                    content_hasher.update(&buf[..n]);
                 }
             }
         }
@@ -191,7 +189,10 @@ mod tests {
             "model_a",
             "param=1",
         );
-        assert_ne!(base, diff_analyzer, "changing analyzer version must invalidate cache key");
+        assert_ne!(
+            base, diff_analyzer,
+            "changing analyzer version must invalidate cache key"
+        );
 
         let diff_model = AnalysisCache::compute_source_key_with_params(
             "/path/to/video.mp4",
@@ -201,7 +202,10 @@ mod tests {
             "model_b",
             "param=1",
         );
-        assert_ne!(base, diff_model, "changing model version must invalidate cache key");
+        assert_ne!(
+            base, diff_model,
+            "changing model version must invalidate cache key"
+        );
 
         let diff_params = AnalysisCache::compute_source_key_with_params(
             "/path/to/video.mp4",
@@ -211,12 +215,16 @@ mod tests {
             "model_a",
             "param=2",
         );
-        assert_ne!(base, diff_params, "changing parameters must invalidate cache key");
+        assert_ne!(
+            base, diff_params,
+            "changing parameters must invalidate cache key"
+        );
     }
 
     #[test]
     fn test_cache_put_get_invalidate() {
-        let temp_dir = std::env::temp_dir().join(format!("clipon_cache_test_{}", uuid::Uuid::new_v4()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("clipon_cache_test_{}", uuid::Uuid::new_v4()));
         let cache = AnalysisCache::new(&temp_dir);
         let key = "test_key_123";
 
@@ -234,7 +242,9 @@ mod tests {
         assert!(cache.get::<SampleData>(key, "analysis").is_none());
         cache.put(key, "analysis", &sample).expect("put succeeds");
 
-        let retrieved = cache.get::<SampleData>(key, "analysis").expect("get succeeds");
+        let retrieved = cache
+            .get::<SampleData>(key, "analysis")
+            .expect("get succeeds");
         assert_eq!(retrieved, sample);
 
         cache.invalidate(key).expect("invalidate succeeds");

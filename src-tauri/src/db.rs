@@ -8,12 +8,12 @@ use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
-use crate::models::{
-    Candidate, CandidateDraft, CandidateFeedback, Clip, ClipCopy,
-    InstagramPost, Project, ProjectDetail, Transcript, YouTubePost,
-};
 #[cfg(test)]
 use crate::models::ClipQualityScore;
+use crate::models::{
+    Candidate, CandidateDraft, CandidateFeedback, Clip, ClipCopy, InstagramPost, Project,
+    ProjectDetail, Transcript, YouTubePost,
+};
 
 #[derive(Clone)]
 pub struct Database {
@@ -199,9 +199,18 @@ impl Database {
         // Backward compatibility for pre-existing installations
         execute_migration_alter(&conn, "ALTER TABLE projects ADD COLUMN name TEXT")?;
         execute_migration_alter(&conn, "ALTER TABLE projects ADD COLUMN caption_style TEXT")?;
-        execute_migration_alter(&conn, "ALTER TABLE candidates ADD COLUMN layout_override TEXT")?;
-        execute_migration_alter(&conn, "ALTER TABLE candidates ADD COLUMN social_kit_json TEXT")?;
-        execute_migration_alter(&conn, "ALTER TABLE candidates ADD COLUMN quality_score_json TEXT")?;
+        execute_migration_alter(
+            &conn,
+            "ALTER TABLE candidates ADD COLUMN layout_override TEXT",
+        )?;
+        execute_migration_alter(
+            &conn,
+            "ALTER TABLE candidates ADD COLUMN social_kit_json TEXT",
+        )?;
+        execute_migration_alter(
+            &conn,
+            "ALTER TABLE candidates ADD COLUMN quality_score_json TEXT",
+        )?;
         execute_migration_alter(&conn, "CREATE TABLE IF NOT EXISTS youtube_posts (id TEXT PRIMARY KEY, candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE, clip_id TEXT REFERENCES clips(id) ON DELETE SET NULL, status TEXT NOT NULL, title TEXT, description TEXT, video_id TEXT, video_url TEXT, error_message TEXT, created_at TEXT NOT NULL, published_at TEXT)")?;
         execute_migration_alter(&conn, "CREATE TABLE IF NOT EXISTS candidate_feedback (id TEXT PRIMARY KEY, candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, action TEXT NOT NULL, rating INTEGER, details_json TEXT, created_at TEXT NOT NULL)")?;
         Ok(())
@@ -393,14 +402,15 @@ impl Database {
                 "SELECT id, project_id, start_sec, end_sec, score, hook, rationale, rank, selected, layout_override, social_kit_json, quality_score_json
                  FROM candidates WHERE project_id = ?1 ORDER BY rank ASC",
             )?;
-            let preserved_rows = preserved_stmt.query_map(params![project_id], candidate_from_row)?;
+            let preserved_rows =
+                preserved_stmt.query_map(params![project_id], candidate_from_row)?;
             for row in preserved_rows {
                 preserved.push(row?);
             }
         }
 
         let max_rank = preserved.iter().map(|c| c.rank).max().unwrap_or(0);
-        let selected_cutoff = drafts.len().min(6).max(3).min(drafts.len());
+        let selected_cutoff = drafts.len().clamp(3.min(drafts.len()), 6);
 
         let mut next_rank = max_rank;
         for (index, draft) in drafts.iter().enumerate() {
@@ -469,7 +479,8 @@ impl Database {
         start_sec: f64,
         end_sec: f64,
     ) -> Result<()> {
-        if !start_sec.is_finite() || !end_sec.is_finite() || start_sec < 0.0 || end_sec <= start_sec {
+        if !start_sec.is_finite() || !end_sec.is_finite() || start_sec < 0.0 || end_sec <= start_sec
+        {
             return Err(anyhow::anyhow!("Invalid candidate timing: start and end must be finite numbers, start >= 0.0, and end > start"));
         }
         let conn = self.conn.lock().expect("database mutex poisoned");
@@ -533,7 +544,10 @@ impl Database {
         })
     }
 
-    pub fn list_candidate_feedback(&self, project_id: Option<&str>) -> Result<Vec<CandidateFeedback>> {
+    pub fn list_candidate_feedback(
+        &self,
+        project_id: Option<&str>,
+    ) -> Result<Vec<CandidateFeedback>> {
         let conn = self.conn.lock().expect("database mutex poisoned");
         let mut stmt = if project_id.is_some() {
             conn.prepare(
@@ -553,14 +567,18 @@ impl Database {
             stmt.query_map([], feedback_from_row)?
         };
 
-        rows.collect::<rusqlite::Result<Vec<_>>>().map_err(Into::into)
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Into::into)
     }
 
     pub fn clear_candidate_feedback(&self, project_id: Option<&str>) -> Result<()> {
         let conn = self.conn.lock().expect("database mutex poisoned");
         match project_id {
             Some(pid) => {
-                conn.execute("DELETE FROM candidate_feedback WHERE project_id = ?1", params![pid])?;
+                conn.execute(
+                    "DELETE FROM candidate_feedback WHERE project_id = ?1",
+                    params![pid],
+                )?;
             }
             None => {
                 conn.execute("DELETE FROM candidate_feedback", [])?;
@@ -1006,7 +1024,8 @@ mod tests {
     use super::*;
 
     fn temp_db() -> Database {
-        let temp_file = std::env::temp_dir().join(format!("clipon_test_db_{}.sqlite", Uuid::new_v4()));
+        let temp_file =
+            std::env::temp_dir().join(format!("clipon_test_db_{}.sqlite", Uuid::new_v4()));
         Database::open(&temp_file).expect("open temp db")
     }
 
@@ -1016,7 +1035,9 @@ mod tests {
         let conn = db.conn.lock().unwrap();
 
         let count: i64 = conn
-            .query_row("SELECT COUNT(1) FROM schema_migrations", [], |row| row.get(0))
+            .query_row("SELECT COUNT(1) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
             .expect("query migrations");
         assert!(count >= 2, "must have at least 2 migrations applied");
     }
@@ -1045,7 +1066,9 @@ mod tests {
             quality_score: None,
         }];
 
-        let candidates = db.replace_candidates(&proj.id, &drafts).expect("replace candidates");
+        let candidates = db
+            .replace_candidates(&proj.id, &drafts)
+            .expect("replace candidates");
         assert_eq!(candidates.len(), 1);
 
         // Delete project
@@ -1053,7 +1076,10 @@ mod tests {
 
         // Candidates must be automatically deleted via foreign key cascade
         let remaining = db.list_candidates(&proj.id).expect("list candidates");
-        assert!(remaining.is_empty(), "cascading delete should clean up candidates");
+        assert!(
+            remaining.is_empty(),
+            "cascading delete should clean up candidates"
+        );
     }
 
     #[test]
@@ -1067,7 +1093,10 @@ mod tests {
              VALUES (?1, ?2, 0.0, 10.0, 8.0, 'Hook', 'Rat', 1, 0)",
             params!["cand_orphan", "non_existent_project_id"],
         );
-        assert!(res.is_err(), "foreign key constraint must reject orphan candidate");
+        assert!(
+            res.is_err(),
+            "foreign key constraint must reject orphan candidate"
+        );
     }
 
     #[test]
@@ -1086,18 +1115,24 @@ mod tests {
             quality_score: None,
         }];
 
-        let candidates = db.replace_candidates(&proj.id, &drafts).expect("replace candidates");
+        let candidates = db
+            .replace_candidates(&proj.id, &drafts)
+            .expect("replace candidates");
         let cand_id = &candidates[0].id;
         assert_eq!(candidates[0].layout_override, None);
 
         db.update_candidate_layout_override(cand_id, Some("split_two"))
             .expect("update override");
-        let (updated, _) = db.get_candidate_with_project(cand_id).expect("get candidate");
+        let (updated, _) = db
+            .get_candidate_with_project(cand_id)
+            .expect("get candidate");
         assert_eq!(updated.layout_override.as_deref(), Some("split_two"));
 
         db.update_candidate_layout_override(cand_id, None)
             .expect("clear override");
-        let (cleared, _) = db.get_candidate_with_project(cand_id).expect("get candidate");
+        let (cleared, _) = db
+            .get_candidate_with_project(cand_id)
+            .expect("get candidate");
         assert_eq!(cleared.layout_override, None);
     }
 
@@ -1127,7 +1162,9 @@ mod tests {
             },
         ];
 
-        let cands_v1 = db.replace_candidates(&proj.id, &drafts_v1).expect("replace 1");
+        let cands_v1 = db
+            .replace_candidates(&proj.id, &drafts_v1)
+            .expect("replace 1");
         assert_eq!(cands_v1.len(), 2);
         let cand1_id = cands_v1[0].id.clone();
         let cand2_id = cands_v1[1].id.clone();
@@ -1137,19 +1174,19 @@ mod tests {
             .expect("mark done");
 
         // Rerun candidate generation with new drafts
-        let drafts_v2 = vec![
-            CandidateDraft {
-                start: 40.0,
-                end: 55.0,
-                score: 8.5,
-                hook: "New Discovery Hook".into(),
-                rationale: "Rationale 3".into(),
-                quality_score: None,
-            },
-        ];
+        let drafts_v2 = vec![CandidateDraft {
+            start: 40.0,
+            end: 55.0,
+            score: 8.5,
+            hook: "New Discovery Hook".into(),
+            rationale: "Rationale 3".into(),
+            quality_score: None,
+        }];
 
-        let cands_v2 = db.replace_candidates(&proj.id, &drafts_v2).expect("replace 2");
-        
+        let cands_v2 = db
+            .replace_candidates(&proj.id, &drafts_v2)
+            .expect("replace 2");
+
         // Candidate 1 must STILL EXIST because it has a finished rendered clip!
         assert!(cands_v2.iter().any(|c| c.id == cand1_id));
 
@@ -1189,10 +1226,16 @@ mod tests {
 
         // 1. Adding an already existing column must succeed (duplicate column is accepted as harmless)
         let dup_res = execute_migration_alter(&conn, "ALTER TABLE projects ADD COLUMN name TEXT");
-        assert!(dup_res.is_ok(), "duplicate column error must be accepted as harmless");
+        assert!(
+            dup_res.is_ok(),
+            "duplicate column error must be accepted as harmless"
+        );
 
         // 2. Syntax errors or invalid table references must return an Err, not be swallowed
-        let err_res = execute_migration_alter(&conn, "ALTER TABLE non_existent_table ADD COLUMN test_col TEXT");
+        let err_res = execute_migration_alter(
+            &conn,
+            "ALTER TABLE non_existent_table ADD COLUMN test_col TEXT",
+        );
         assert!(err_res.is_err(), "non-duplicate errors must be propagated");
     }
 
@@ -1204,20 +1247,36 @@ mod tests {
             .expect("create project");
 
         let t1 = db
-            .save_transcript(&proj.id, "deepgram", "{\"words\":[{\"text\":\"first\"}]}", Some("en"))
+            .save_transcript(
+                &proj.id,
+                "deepgram",
+                "{\"words\":[{\"text\":\"first\"}]}",
+                Some("en"),
+            )
             .expect("save transcript 1");
         assert_eq!(t1.engine, "deepgram");
 
-        let latest1 = db.latest_transcript(&proj.id).expect("latest transcript").unwrap();
+        let latest1 = db
+            .latest_transcript(&proj.id)
+            .expect("latest transcript")
+            .unwrap();
         assert_eq!(latest1.engine, "deepgram");
         assert!(latest1.raw_json.contains("first"));
 
         let t2 = db
-            .save_transcript(&proj.id, "whisper", "{\"words\":[{\"text\":\"second\"}]}", Some("en"))
+            .save_transcript(
+                &proj.id,
+                "whisper",
+                "{\"words\":[{\"text\":\"second\"}]}",
+                Some("en"),
+            )
             .expect("save transcript 2");
         assert_eq!(t2.engine, "whisper");
 
-        let latest2 = db.latest_transcript(&proj.id).expect("latest transcript").unwrap();
+        let latest2 = db
+            .latest_transcript(&proj.id)
+            .expect("latest transcript")
+            .unwrap();
         assert_eq!(latest2.engine, "whisper");
         assert!(latest2.raw_json.contains("second"));
     }
@@ -1238,7 +1297,9 @@ mod tests {
             quality_score: None,
         }];
 
-        let candidates = db.replace_candidates(&proj.id, &drafts).expect("replace candidates");
+        let candidates = db
+            .replace_candidates(&proj.id, &drafts)
+            .expect("replace candidates");
         let cand_id = &candidates[0].id;
         assert!(candidates[0].social_kit.is_none());
 
@@ -1255,7 +1316,9 @@ mod tests {
         assert_eq!(kit.hashtags, vec!["#viral", "#clip"]);
         assert_eq!(kit.call_to_action, "Subscribe now");
 
-        let (from_get, _) = db.get_candidate_with_project(cand_id).expect("get candidate with project");
+        let (from_get, _) = db
+            .get_candidate_with_project(cand_id)
+            .expect("get candidate with project");
         assert!(from_get.social_kit.is_some());
         assert_eq!(from_get.social_kit.unwrap().call_to_action, "Subscribe now");
     }
@@ -1276,7 +1339,9 @@ mod tests {
             quality_score: None,
         }];
 
-        let candidates = db.replace_candidates(&proj.id, &drafts).expect("replace candidates");
+        let candidates = db
+            .replace_candidates(&proj.id, &drafts)
+            .expect("replace candidates");
         let cand_id = &candidates[0].id;
 
         // Valid timing
@@ -1291,7 +1356,9 @@ mod tests {
 
         // Invalid: NaN
         assert!(db.update_candidate_timing(cand_id, f64::NAN, 20.0).is_err());
-        assert!(db.update_candidate_timing(cand_id, 0.0, f64::INFINITY).is_err());
+        assert!(db
+            .update_candidate_timing(cand_id, 0.0, f64::INFINITY)
+            .is_err());
     }
 
     #[test]
@@ -1311,17 +1378,24 @@ mod tests {
             quality_score: Some(qs.clone()),
         }];
 
-        let candidates = db.replace_candidates(&proj.id, &drafts).expect("replace candidates");
+        let candidates = db
+            .replace_candidates(&proj.id, &drafts)
+            .expect("replace candidates");
         let cand_id = &candidates[0].id;
         assert!(candidates[0].quality_score.is_some());
-        assert_eq!(candidates[0].quality_score.as_ref().unwrap().total, qs.total);
+        assert_eq!(
+            candidates[0].quality_score.as_ref().unwrap().total,
+            qs.total
+        );
 
         // Verify retrieval via list_candidates
         let list = db.list_candidates(&proj.id).expect("list candidates");
         assert_eq!(list[0].quality_score.as_ref().unwrap().total, qs.total);
 
         // Verify retrieval via get_candidate_with_project
-        let (from_get, _) = db.get_candidate_with_project(cand_id).expect("get candidate");
+        let (from_get, _) = db
+            .get_candidate_with_project(cand_id)
+            .expect("get candidate");
         assert_eq!(from_get.quality_score.as_ref().unwrap().total, qs.total);
     }
 
@@ -1340,7 +1414,9 @@ mod tests {
             rationale: "Rationale".into(),
             quality_score: None,
         }];
-        let candidates = db.replace_candidates(&proj.id, &drafts).expect("replace candidates");
+        let candidates = db
+            .replace_candidates(&proj.id, &drafts)
+            .expect("replace candidates");
         let cand_id = &candidates[0].id;
 
         // Record feedback: user rated 5 stars and edited crop

@@ -28,7 +28,11 @@ pub fn check_binary_available(name: &str) -> anyhow::Result<String> {
             "yt-dlp" => "Install via Homebrew: 'brew install yt-dlp'",
             _ => "Please ensure it is installed and accessible on PATH.",
         };
-        return Err(anyhow::anyhow!("Required media tool '{}' is missing. {}", name, hint));
+        return Err(anyhow::anyhow!(
+            "Required media tool '{}' is missing. {}",
+            name,
+            hint
+        ));
     }
     Ok(resolve_binary(name))
 }

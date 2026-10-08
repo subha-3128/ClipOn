@@ -225,9 +225,12 @@ pub async fn upload_shorts(
         .to_string();
 
     // Step 2: Stream Video File Directly from Disk (zero buffering into memory)
-    let file = tokio::fs::File::open(video_path)
-        .await
-        .with_context(|| format!("Opening video file for upload stream at {}", video_path.display()))?;
+    let file = tokio::fs::File::open(video_path).await.with_context(|| {
+        format!(
+            "Opening video file for upload stream at {}",
+            video_path.display()
+        )
+    })?;
     let stream = tokio_util::io::ReaderStream::new(file);
     let body = reqwest::Body::wrap_stream(stream);
 
@@ -284,8 +287,14 @@ mod tests {
 
     #[test]
     fn test_format_youtube_title_basic() {
-        assert_eq!(format_youtube_title("My Great Clip"), "My Great Clip #Shorts");
-        assert_eq!(format_youtube_title("Already has #shorts"), "Already has #shorts");
+        assert_eq!(
+            format_youtube_title("My Great Clip"),
+            "My Great Clip #Shorts"
+        );
+        assert_eq!(
+            format_youtube_title("Already has #shorts"),
+            "Already has #shorts"
+        );
         assert_eq!(format_youtube_title(""), "ClipOn Viral Short #Shorts");
     }
 

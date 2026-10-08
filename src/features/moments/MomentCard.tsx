@@ -9,12 +9,7 @@ import {
   Scissors,
   FolderOpen,
 } from "lucide-react";
-import {
-  Candidate,
-  Clip,
-  InstagramPost,
-  YouTubePost,
-} from "../../types";
+import { Candidate, Clip, InstagramPost, YouTubePost } from "../../types";
 
 interface MomentCardProps {
   candidate: Candidate;

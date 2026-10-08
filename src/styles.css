@@ -2007,7 +2007,11 @@ button:disabled {
   width: 36px;
   height: 36px;
   border-radius: var(--radius-md);
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.02) 100%);
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.08) 0%,
+    rgba(255, 255, 255, 0.02) 100%
+  );
   border: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
@@ -2121,7 +2125,9 @@ button:disabled {
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.14);
   font-weight: 600;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 .settings-nav-btn.active svg,
 .settings-tab-btn.active svg {
@@ -2181,7 +2187,10 @@ button:disabled {
   font-family: inherit;
   box-sizing: border-box;
   width: 100%;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease;
   outline: none;
 }
 .settings-field-group input:hover,
@@ -3234,8 +3243,6 @@ button:disabled {
   box-shadow: 0 0 12px rgba(250, 204, 21, 0.18);
 }
 
-
-
 /* ==========================================================================
    Component Token Styles (Issue #46: Eliminate Inline Styling)
    ========================================================================== */
@@ -3292,8 +3299,6 @@ button:disabled {
   font-size: 10px;
   color: var(--muted);
 }
-
-
 
 /* 3. Instagram Publish Modal */
 .instagram-banner-box {

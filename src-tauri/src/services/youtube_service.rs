@@ -10,15 +10,21 @@ pub async fn test_youtube_connection(
     client_secret: Option<String>,
     refresh_token: Option<String>,
 ) -> Result<String, String> {
-    let cid = client_id
-        .filter(|s| !s.trim().is_empty())
-        .or_else(|| credentials::get(credentials::YOUTUBE_CLIENT_ID).ok().flatten());
-    let sec = client_secret
-        .filter(|s| !s.trim().is_empty())
-        .or_else(|| credentials::get(credentials::YOUTUBE_CLIENT_SECRET).ok().flatten());
-    let tok = refresh_token
-        .filter(|s| !s.trim().is_empty())
-        .or_else(|| credentials::get(credentials::YOUTUBE_REFRESH_TOKEN).ok().flatten());
+    let cid = client_id.filter(|s| !s.trim().is_empty()).or_else(|| {
+        credentials::get(credentials::YOUTUBE_CLIENT_ID)
+            .ok()
+            .flatten()
+    });
+    let sec = client_secret.filter(|s| !s.trim().is_empty()).or_else(|| {
+        credentials::get(credentials::YOUTUBE_CLIENT_SECRET)
+            .ok()
+            .flatten()
+    });
+    let tok = refresh_token.filter(|s| !s.trim().is_empty()).or_else(|| {
+        credentials::get(credentials::YOUTUBE_REFRESH_TOKEN)
+            .ok()
+            .flatten()
+    });
 
     youtube_uploader::test_connection(cid.as_deref(), sec.as_deref(), tok.as_deref())
         .await
@@ -78,16 +84,32 @@ pub async fn publish_candidate_to_youtube(
 
     let client_id = client_id
         .filter(|s| !s.trim().is_empty())
-        .or_else(|| credentials::get(credentials::YOUTUBE_CLIENT_ID).ok().flatten())
+        .or_else(|| {
+            credentials::get(credentials::YOUTUBE_CLIENT_ID)
+                .ok()
+                .flatten()
+        })
         .ok_or_else(|| "YouTube Client ID not configured. Set in Settings or .env.".to_string())?;
     let client_secret = client_secret
         .filter(|s| !s.trim().is_empty())
-        .or_else(|| credentials::get(credentials::YOUTUBE_CLIENT_SECRET).ok().flatten())
-        .ok_or_else(|| "YouTube Client Secret not configured. Set in Settings or .env.".to_string())?;
+        .or_else(|| {
+            credentials::get(credentials::YOUTUBE_CLIENT_SECRET)
+                .ok()
+                .flatten()
+        })
+        .ok_or_else(|| {
+            "YouTube Client Secret not configured. Set in Settings or .env.".to_string()
+        })?;
     let refresh_token = refresh_token
         .filter(|s| !s.trim().is_empty())
-        .or_else(|| credentials::get(credentials::YOUTUBE_REFRESH_TOKEN).ok().flatten())
-        .ok_or_else(|| "YouTube Refresh Token not configured. Set in Settings or .env.".to_string())?;
+        .or_else(|| {
+            credentials::get(credentials::YOUTUBE_REFRESH_TOKEN)
+                .ok()
+                .flatten()
+        })
+        .ok_or_else(|| {
+            "YouTube Refresh Token not configured. Set in Settings or .env.".to_string()
+        })?;
 
     let title = if let Some(t) = title_override.filter(|s| !s.trim().is_empty()) {
         t

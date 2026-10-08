@@ -1,6 +1,6 @@
 import React from "react";
 import { AlertCircle, AlertTriangle, Info, X } from "lucide-react";
-import type { AppError } from "../types/error";
+import type { AppError } from "../types";
 
 export interface AccessibleNotificationProps {
   errors: AppError[];

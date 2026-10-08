@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 pub mod analysis_cache;
 pub mod commands;
 pub mod credentials;
@@ -13,8 +15,8 @@ pub mod services;
 pub mod transcription;
 pub mod youtube_uploader;
 
-use std::path::PathBuf;
 use anyhow::Context;
+use std::path::PathBuf;
 use tauri::Manager;
 
 use db::Database;
@@ -113,17 +115,6 @@ pub fn run() {
             commands::save_youtube_credentials,
             commands::save_credential,
             commands::delete_credential,
-            commands::credential_status,
-            commands::is_deepgram_configured,
-            commands::is_gemini_configured,
-            commands::is_openai_configured,
-            commands::is_anthropic_configured,
-            commands::is_deepseek_configured,
-            commands::is_groq_configured,
-            commands::is_openrouter_configured,
-            commands::is_nvidia_configured,
-            commands::is_instagram_configured,
-            commands::is_youtube_configured,
             commands::update_candidate_timing,
             commands::clear_all_storage,
             commands::cancel_job,
@@ -135,7 +126,6 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running ClipOn");
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -254,6 +244,9 @@ mod tests {
 
         assert_eq!(slug1, "interview-proj1_uu");
         assert_eq!(slug2, "interview-proj2_uu");
-        assert_ne!(slug1, slug2, "Projects with same source filename must have distinct output slugs");
+        assert_ne!(
+            slug1, slug2,
+            "Projects with same source filename must have distinct output slugs"
+        );
     }
 }

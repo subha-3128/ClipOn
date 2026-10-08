@@ -17,7 +17,12 @@ import {
   ShieldAlert,
   Zap,
 } from "lucide-react";
-import { EnvironmentStatus, ReframeMode, SettingsTab } from "../../types";
+import {
+  EnvironmentStatus,
+  ReframeMode,
+  SettingsTab,
+  LlmEngine,
+} from "../../types";
 import { AccessibleModal } from "../../components/AccessibleModal";
 
 export interface SettingsModalProps {
@@ -29,7 +34,7 @@ export interface SettingsModalProps {
   deepgramKey: string;
   setDeepgramKey: (k: string) => void;
   llmEngine: string;
-  setLlmEngine: (e: any) => void;
+  setLlmEngine: (e: LlmEngine) => void;
   localLlmModel: string;
   setLocalLlmModel: (m: string) => void;
   anthropicKey: string;
@@ -204,7 +209,11 @@ export function SettingsModal({
         </button>
       </div>
 
-      <div className="settings-tab-nav" role="tablist" aria-label="Settings categories">
+      <div
+        className="settings-tab-nav"
+        role="tablist"
+        aria-label="Settings categories"
+      >
         <button
           type="button"
           role="tab"
@@ -254,7 +263,9 @@ export function SettingsModal({
               <label>Transcription Provider</label>
               <select
                 value={transcriptionEngine}
-                onChange={(e) => setTranscriptionEngine(e.target.value as any)}
+                onChange={(e) =>
+                  setTranscriptionEngine(e.target.value as "deepgram" | "local")
+                }
               >
                 <option value="local">
                   Local Whisper (Offline &amp; Free)
@@ -267,10 +278,25 @@ export function SettingsModal({
 
             {transcriptionEngine === "deepgram" && (
               <div className="settings-field-group">
-                <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
                   <span>Deepgram API Key</span>
                   {environment?.hasDeepgramKey && (
-                    <span style={{ fontSize: "11px", color: "#10b981", display: "inline-flex", alignItems: "center", gap: "4px", fontWeight: 500 }}>
+                    <span
+                      style={{
+                        fontSize: "11px",
+                        color: "#10b981",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        fontWeight: 500,
+                      }}
+                    >
                       <BadgeCheck size={13} /> Active
                     </span>
                   )}
@@ -292,7 +318,7 @@ export function SettingsModal({
               <label>Viral Moment LLM Provider</label>
               <select
                 value={llmEngine}
-                onChange={(e) => setLlmEngine(e.target.value as any)}
+                onChange={(e) => setLlmEngine(e.target.value as LlmEngine)}
               >
                 <option value="local">Ollama (Offline Local)</option>
                 <option value="claude">Anthropic Claude</option>
@@ -328,10 +354,25 @@ export function SettingsModal({
 
             {llmEngine === "claude" && (
               <div className="settings-field-group">
-                <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
                   <span>Anthropic API Key</span>
                   {environment?.hasAnthropicKey && (
-                    <span style={{ fontSize: "11px", color: "#10b981", display: "inline-flex", alignItems: "center", gap: "4px", fontWeight: 500 }}>
+                    <span
+                      style={{
+                        fontSize: "11px",
+                        color: "#10b981",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        fontWeight: 500,
+                      }}
+                    >
                       <BadgeCheck size={13} /> Active
                     </span>
                   )}
@@ -352,10 +393,25 @@ export function SettingsModal({
             {llmEngine === "deepseek" && (
               <>
                 <div className="settings-field-group">
-                  <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}
+                  >
                     <span>DeepSeek API Key</span>
                     {environment?.hasDeepseekKey && (
-                      <span style={{ fontSize: "11px", color: "#10b981", display: "inline-flex", alignItems: "center", gap: "4px", fontWeight: 500 }}>
+                      <span
+                        style={{
+                          fontSize: "11px",
+                          color: "#10b981",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
+                          fontWeight: 500,
+                        }}
+                      >
                         <BadgeCheck size={13} /> Active
                       </span>
                     )}
@@ -385,10 +441,25 @@ export function SettingsModal({
 
             {llmEngine === "gemini" && (
               <div className="settings-field-group">
-                <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
                   <span>Google Gemini API Key</span>
                   {environment?.hasGeminiKey && (
-                    <span style={{ fontSize: "11px", color: "#10b981", display: "inline-flex", alignItems: "center", gap: "4px", fontWeight: 500 }}>
+                    <span
+                      style={{
+                        fontSize: "11px",
+                        color: "#10b981",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        fontWeight: 500,
+                      }}
+                    >
                       <BadgeCheck size={13} /> Active
                     </span>
                   )}
@@ -408,10 +479,25 @@ export function SettingsModal({
 
             {llmEngine === "openai" && (
               <div className="settings-field-group">
-                <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
                   <span>OpenAI API Key</span>
                   {environment?.hasOpenaiKey && (
-                    <span style={{ fontSize: "11px", color: "#10b981", display: "inline-flex", alignItems: "center", gap: "4px", fontWeight: 500 }}>
+                    <span
+                      style={{
+                        fontSize: "11px",
+                        color: "#10b981",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        fontWeight: 500,
+                      }}
+                    >
                       <BadgeCheck size={13} /> Active
                     </span>
                   )}
@@ -431,10 +517,25 @@ export function SettingsModal({
 
             {llmEngine === "groq" && (
               <div className="settings-field-group">
-                <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
                   <span>Groq API Key</span>
                   {environment?.hasGroqKey && (
-                    <span style={{ fontSize: "11px", color: "#10b981", display: "inline-flex", alignItems: "center", gap: "4px", fontWeight: 500 }}>
+                    <span
+                      style={{
+                        fontSize: "11px",
+                        color: "#10b981",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        fontWeight: 500,
+                      }}
+                    >
                       <BadgeCheck size={13} /> Active
                     </span>
                   )}
@@ -459,10 +560,25 @@ export function SettingsModal({
             </div>
 
             <div className="settings-field-group">
-              <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
                 <span>NVIDIA API Key</span>
                 {environment?.hasNvidiaKey && (
-                  <span style={{ fontSize: "11px", color: "#10b981", display: "inline-flex", alignItems: "center", gap: "4px", fontWeight: 500 }}>
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      color: "#10b981",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      fontWeight: 500,
+                    }}
+                  >
                     <BadgeCheck size={13} /> Active
                   </span>
                 )}
@@ -478,15 +594,31 @@ export function SettingsModal({
                 }
               />
               <span className="folder-hint">
-                Primary engine for Active Speaker Detection &amp; speaker-person fusion. Stored securely.
+                Primary engine for Active Speaker Detection &amp; speaker-person
+                fusion. Stored securely.
               </span>
             </div>
 
             <div className="settings-field-group">
-              <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
                 <span>NVIDIA ASD Function ID (Optional Preview UUID)</span>
                 {environment?.hasNvidiaFunctionId && (
-                  <span style={{ fontSize: "11px", color: "#10b981", display: "inline-flex", alignItems: "center", gap: "4px", fontWeight: 500 }}>
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      color: "#10b981",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      fontWeight: 500,
+                    }}
+                  >
                     <BadgeCheck size={13} /> Configured
                   </span>
                 )}
@@ -502,7 +634,8 @@ export function SettingsModal({
                 }
               />
               <span className="folder-hint">
-                NVCF Function ID for NVIDIA Active Speaker Detection preview endpoint. Defaults to multimodal local fusion if omitted.
+                NVCF Function ID for NVIDIA Active Speaker Detection preview
+                endpoint. Defaults to multimodal local fusion if omitted.
               </span>
             </div>
 
@@ -559,7 +692,11 @@ export function SettingsModal({
               <label>Instagram Publishing Method</label>
               <select
                 value={instagramProvider}
-                onChange={(e) => setInstagramProvider(e.target.value as any)}
+                onChange={(e) =>
+                  setInstagramProvider(
+                    e.target.value as "graph_api" | "webhook"
+                  )
+                }
               >
                 <option value="graph_api">
                   Official Meta Graph API (Direct Instagram Reels)
@@ -586,10 +723,25 @@ export function SettingsModal({
                 </div>
 
                 <div className="settings-field-group">
-                  <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}
+                  >
                     <span>Meta Long-Lived Access Token</span>
                     {environment?.hasInstagramToken && (
-                      <span style={{ fontSize: "11px", color: "#10b981", display: "inline-flex", alignItems: "center", gap: "4px", fontWeight: 500 }}>
+                      <span
+                        style={{
+                          fontSize: "11px",
+                          color: "#10b981",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
+                          fontWeight: 500,
+                        }}
+                      >
                         <BadgeCheck size={13} /> Active
                       </span>
                     )}
@@ -605,8 +757,8 @@ export function SettingsModal({
                     }
                   />
                   <span className="folder-hint">
-                    Stored securely. Requires 'instagram_basic'
-                    and 'instagram_content_publish' scopes
+                    Stored securely. Requires 'instagram_basic' and
+                    'instagram_content_publish' scopes
                   </span>
                 </div>
               </>
@@ -688,7 +840,8 @@ export function SettingsModal({
                 placeholder="e.g. 1234567890-xxx.apps.googleusercontent.com"
               />
               <span className="folder-hint">
-                Found in Google Cloud Console &gt; APIs &amp; Services &gt; Credentials
+                Found in Google Cloud Console &gt; APIs &amp; Services &gt;
+                Credentials
               </span>
             </div>
 
@@ -722,7 +875,8 @@ export function SettingsModal({
                 }
               />
               <span className="folder-hint">
-                Stored securely in keystore. Scope: https://www.googleapis.com/auth/youtube.upload
+                Stored securely in keystore. Scope:
+                https://www.googleapis.com/auth/youtube.upload
               </span>
             </div>
 
@@ -741,8 +895,10 @@ export function SettingsModal({
                 disabled={
                   youtubeTesting ||
                   (!youtubeClientId.trim() && !environment?.hasYoutubeConfig) ||
-                  (!youtubeClientSecret.trim() && !environment?.hasYoutubeConfig) ||
-                  (!youtubeRefreshToken.trim() && !environment?.hasYoutubeConfig)
+                  (!youtubeClientSecret.trim() &&
+                    !environment?.hasYoutubeConfig) ||
+                  (!youtubeRefreshToken.trim() &&
+                    !environment?.hasYoutubeConfig)
                 }
               >
                 {youtubeTesting ? (
@@ -1188,7 +1344,9 @@ export function SettingsModal({
                 <select
                   aria-label="Credential to delete"
                   value={credentialToDelete}
-                  onChange={(event) => setCredentialToDelete(event.target.value)}
+                  onChange={(event) =>
+                    setCredentialToDelete(event.target.value)
+                  }
                 >
                   <option value="deepgram">Deepgram API Key</option>
                   <option value="gemini">Google Gemini API Key</option>
@@ -1198,7 +1356,9 @@ export function SettingsModal({
                   <option value="groq">Groq API Key</option>
                   <option value="openrouter">OpenRouter API Key</option>
                   <option value="nvidia">NVIDIA API Key</option>
-                  <option value="nvidia_function_id">NVIDIA ASD Function ID</option>
+                  <option value="nvidia_function_id">
+                    NVIDIA ASD Function ID
+                  </option>
                   <option value="instagram">Instagram Access Token</option>
                 </select>
                 <button
@@ -1211,7 +1371,8 @@ export function SettingsModal({
                 </button>
               </div>
               <span className="folder-hint">
-                Permanently removes the selected API key from the local keystore.
+                Permanently removes the selected API key from the local
+                keystore.
               </span>
             </div>
 

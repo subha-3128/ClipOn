@@ -10,8 +10,8 @@
 //! - Video stream aspect ratio matches expected geometry (1080x1920 for 9:16 vertical modes)
 //! - Audio stream is preserved
 
-use std::path::PathBuf;
 use clipon_lib::media::{probe_media, render_flat_clip};
+use std::path::PathBuf;
 
 fn repo_root() -> PathBuf {
     let mut dir = std::env::current_dir().expect("current dir");
@@ -38,7 +38,9 @@ fn test_video() -> Option<PathBuf> {
     // Attempt to generate synthetic test fixture if ffmpeg is available
     let synthetic_path = out_dir().join("synthetic_golden_fixture.mp4");
     if synthetic_path.exists()
-        && std::fs::metadata(&synthetic_path).map(|m| m.len() > 1000).unwrap_or(false)
+        && std::fs::metadata(&synthetic_path)
+            .map(|m| m.len() > 1000)
+            .unwrap_or(false)
     {
         return Some(synthetic_path);
     }
@@ -48,13 +50,20 @@ fn test_video() -> Option<PathBuf> {
         let gen_status = std::process::Command::new(ffmpeg)
             .args(&[
                 "-y",
-                "-f", "lavfi",
-                "-i", "testsrc=duration=5:size=1920x1080:rate=30",
-                "-f", "lavfi",
-                "-i", "sine=frequency=1000:duration=5",
-                "-c:v", "libx264",
-                "-pix_fmt", "yuv420p",
-                "-c:a", "aac",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=duration=5:size=1920x1080:rate=30",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=1000:duration=5",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
                 "-shortest",
                 synthetic_path.to_str().unwrap(),
             ])
@@ -105,10 +114,16 @@ fn test_reframe_golden_original() {
     );
     assert!(res.is_ok(), "render failed: {:?}", res.err());
     assert!(out.exists(), "output file must exist");
-    assert!(std::fs::metadata(&out).unwrap().len() > 1000, "output file must not be empty");
+    assert!(
+        std::fs::metadata(&out).unwrap().len() > 1000,
+        "output file must not be empty"
+    );
 
     let probe = probe_media(out.to_str().unwrap()).expect("probe output");
-    assert!(probe.width.is_some() && probe.height.is_some(), "must have video stream");
+    assert!(
+        probe.width.is_some() && probe.height.is_some(),
+        "must have video stream"
+    );
     assert!(probe.audio_codec.is_some(), "audio must be preserved");
 }
 
@@ -136,12 +151,22 @@ fn test_reframe_golden_vertical_crop() {
     );
     assert!(res.is_ok(), "render failed: {:?}", res.err());
     assert!(out.exists(), "output file must exist");
-    assert!(std::fs::metadata(&out).unwrap().len() > 1000, "output file must not be empty");
+    assert!(
+        std::fs::metadata(&out).unwrap().len() > 1000,
+        "output file must not be empty"
+    );
 
     let probe = probe_media(out.to_str().unwrap()).expect("probe output");
     assert_eq!(probe.width, Some(1080), "vertical crop width must be 1080");
-    assert_eq!(probe.height, Some(1920), "vertical crop height must be 1920");
-    assert!(probe.audio_codec.is_some(), "audio must be preserved in VerticalCrop mode");
+    assert_eq!(
+        probe.height,
+        Some(1920),
+        "vertical crop height must be 1920"
+    );
+    assert!(
+        probe.audio_codec.is_some(),
+        "audio must be preserved in VerticalCrop mode"
+    );
 }
 
 #[test]
@@ -168,10 +193,24 @@ fn test_reframe_golden_smart_face_track() {
     );
     assert!(res.is_ok(), "render failed: {:?}", res.err());
     assert!(out.exists(), "output file must exist");
-    assert!(std::fs::metadata(&out).unwrap().len() > 1000, "output file must not be empty");
+    assert!(
+        std::fs::metadata(&out).unwrap().len() > 1000,
+        "output file must not be empty"
+    );
 
     let probe = probe_media(out.to_str().unwrap()).expect("probe output");
-    assert_eq!(probe.width, Some(1080), "smart face track width must be 1080");
-    assert_eq!(probe.height, Some(1920), "smart face track height must be 1920");
-    assert!(probe.audio_codec.is_some(), "audio must be preserved in SmartFaceTrack mode");
+    assert_eq!(
+        probe.width,
+        Some(1080),
+        "smart face track width must be 1080"
+    );
+    assert_eq!(
+        probe.height,
+        Some(1920),
+        "smart face track height must be 1920"
+    );
+    assert!(
+        probe.audio_codec.is_some(),
+        "audio must be preserved in SmartFaceTrack mode"
+    );
 }

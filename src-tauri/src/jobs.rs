@@ -255,7 +255,9 @@ impl JobManager {
             #[cfg(unix)]
             {
                 // Send SIGTERM (15) first to allow graceful cleanup
-                let _ = Command::new("kill").args(["-15", &pid.to_string()]).output();
+                let _ = Command::new("kill")
+                    .args(["-15", &pid.to_string()])
+                    .output();
                 // Spawn a quick asynchronous thread to verify exit before escalating to SIGKILL (9)
                 std::thread::spawn(move || {
                     std::thread::sleep(std::time::Duration::from_millis(300));
@@ -271,7 +273,9 @@ impl JobManager {
             }
             #[cfg(windows)]
             {
-                let _ = Command::new("taskkill").args(["/PID", &pid.to_string(), "/F"]).output();
+                let _ = Command::new("taskkill")
+                    .args(["/PID", &pid.to_string(), "/F"])
+                    .output();
             }
         }
 
@@ -323,7 +327,12 @@ mod tests {
     #[test]
     fn test_job_lifecycle() {
         let mgr = JobManager::new();
-        let job_id = mgr.create_job_with_details("proj_1", Some("cand_1"), Some("/out/clip.mp4"), "Starting");
+        let job_id = mgr.create_job_with_details(
+            "proj_1",
+            Some("cand_1"),
+            Some("/out/clip.mp4"),
+            "Starting",
+        );
 
         let job = mgr.get_job(&job_id).expect("job exists");
         assert_eq!(job.state, JobState::Queued);
@@ -349,7 +358,8 @@ mod tests {
         let job_id = mgr.create_job("proj_1", "Starting");
 
         assert!(!mgr.is_cancelled(&job_id));
-        mgr.cancel_job(&job_id, None).expect("cancellation succeeds");
+        mgr.cancel_job(&job_id, None)
+            .expect("cancellation succeeds");
 
         assert!(mgr.is_cancelled(&job_id));
         let job = mgr.get_job(&job_id).unwrap();
@@ -374,7 +384,10 @@ mod tests {
 
         drop(p1);
         assert_eq!(sem.available_permits(), 1);
-        let _p3 = sem.clone().try_acquire_owned().expect("slot 3 available after drop");
+        let _p3 = sem
+            .clone()
+            .try_acquire_owned()
+            .expect("slot 3 available after drop");
 
         drop(p2);
         drop(_p3);
@@ -393,6 +406,9 @@ mod tests {
 
         // Must be pruned to at most 50 completed jobs
         let all_jobs_count = mgr.jobs.lock().unwrap().len();
-        assert_eq!(all_jobs_count, 50, "Completed jobs should be pruned to at most 50");
+        assert_eq!(
+            all_jobs_count, 50,
+            "Completed jobs should be pruned to at most 50"
+        );
     }
 }

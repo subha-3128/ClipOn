@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use anyhow::{anyhow, Result};
+use std::path::PathBuf;
 
 use crate::analysis_cache;
 use crate::media;
@@ -18,35 +18,30 @@ pub struct CopyrightCheckResult {
     pub license: Option<String>,
 }
 
+pub fn expand_tilde(path_str: &str) -> PathBuf {
+    let trimmed = path_str.trim();
+    if let Some(stripped) = trimmed.strip_prefix("~/") {
+        if let Some(home) = dirs::home_dir() {
+            return home.join(stripped);
+        }
+    }
+    PathBuf::from(trimmed)
+}
+
 pub fn project_dir(state: &AppState, project_id: &str) -> PathBuf {
     state.data_dir.join("projects").join(project_id)
 }
 
-pub fn documents_project_dir(project: &Project, custom_dir: Option<&str>) -> Result<PathBuf, String> {
+pub fn documents_project_dir(
+    project: &Project,
+    custom_dir: Option<&str>,
+) -> Result<PathBuf, String> {
     let base_dir = if let Some(dir) = custom_dir.filter(|d| !d.trim().is_empty()) {
-        let trimmed = dir.trim();
-        if trimmed.starts_with("~/") {
-            if let Some(home) = dirs::home_dir() {
-                home.join(&trimmed[2..])
-            } else {
-                PathBuf::from(trimmed)
-            }
-        } else {
-            PathBuf::from(trimmed)
-        }
+        expand_tilde(dir)
     } else if let Ok(env_dir) =
         std::env::var("CLIPON_CLIPS_DIR").or_else(|_| std::env::var("AUTOSHORTS_CLIPS_DIR"))
     {
-        let trimmed = env_dir.trim().to_string();
-        if trimmed.starts_with("~/") {
-            if let Some(home) = dirs::home_dir() {
-                home.join(&trimmed[2..])
-            } else {
-                PathBuf::from(trimmed)
-            }
-        } else {
-            PathBuf::from(trimmed)
-        }
+        expand_tilde(&env_dir)
     } else {
         dirs::document_dir()
             .ok_or_else(|| "Could not find your Documents folder for clip output.".to_string())?
@@ -111,7 +106,9 @@ pub fn extract_youtube_video_id(raw_input: &str) -> Result<String, String> {
     }
 
     let is_valid_id = |s: &str| -> bool {
-        s.len() == 11 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        s.len() == 11
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
     };
 
     if is_valid_id(trimmed) {
@@ -124,8 +121,7 @@ pub fn extract_youtube_video_id(raw_input: &str) -> Result<String, String> {
         format!("https://{}", trimmed)
     };
 
-    let parsed = url::Url::parse(&url_str)
-        .map_err(|_| "Invalid YouTube URL format".to_string())?;
+    let parsed = url::Url::parse(&url_str).map_err(|_| "Invalid YouTube URL format".to_string())?;
 
     let host = parsed.host_str().unwrap_or("").to_lowercase();
     let is_valid_host = host == "youtube.com"
@@ -172,7 +168,9 @@ pub fn extract_youtube_video_id(raw_input: &str) -> Result<String, String> {
         }
     };
 
-    id.ok_or_else(|| "Could not extract a valid 11-character YouTube video ID from the provided URL.".to_string())
+    id.ok_or_else(|| {
+        "Could not extract a valid 11-character YouTube video ID from the provided URL.".to_string()
+    })
 }
 
 pub fn canonicalize_youtube_url(raw_input: &str) -> Result<String, String> {
@@ -205,11 +203,17 @@ pub fn list_projects(state: &AppState) -> Result<Vec<Project>, String> {
 }
 
 pub fn get_project_detail(state: &AppState, project_id: &str) -> Result<ProjectDetail, String> {
-    state.db.project_detail(project_id).map_err(|e| e.to_string())
+    state
+        .db
+        .project_detail(project_id)
+        .map_err(|e| e.to_string())
 }
 
 pub fn probe_project(state: &AppState, project_id: &str) -> Result<MediaProbe, String> {
-    let project = state.db.get_project(project_id).map_err(|e| e.to_string())?;
+    let project = state
+        .db
+        .get_project(project_id)
+        .map_err(|e| e.to_string())?;
     let probe = media::probe_media(&project.source_path).map_err(|e| e.to_string())?;
     state
         .db
@@ -233,13 +237,19 @@ pub fn delete_project(state: &AppState, project_id: &str) -> Result<(), String> 
     }
 
     // 2. Now safely delete project and cascaded records from database
-    state.db.delete_project(project_id).map_err(|e| e.to_string())?;
+    state
+        .db
+        .delete_project(project_id)
+        .map_err(|e| e.to_string())?;
 
     Ok(())
 }
 
 pub fn rename_project(state: &AppState, project_id: &str, name: &str) -> Result<(), String> {
-    state.db.rename_project(project_id, name).map_err(|e| e.to_string())
+    state
+        .db
+        .rename_project(project_id, name)
+        .map_err(|e| e.to_string())
 }
 
 pub fn open_folder(path: &str) -> Result<(), String> {
@@ -267,28 +277,21 @@ pub fn open_folder(path: &str) -> Result<(), String> {
         return Ok(());
     }
 
-    let resolved_path = if trimmed.starts_with("~/") {
-        if let Some(home) = dirs::home_dir() {
-            home.join(&trimmed[2..]).to_string_lossy().to_string()
-        } else {
-            trimmed.to_string()
-        }
-    } else {
-        trimmed.to_string()
-    };
-
-    let p = std::path::Path::new(&resolved_path);
+    let resolved_path = expand_tilde(trimmed);
+    let p = resolved_path.as_path();
 
     // If it is a file, reveal it in Finder or Explorer!
     if p.is_file() {
         #[cfg(target_os = "macos")]
         std::process::Command::new("open")
-            .args(["-R", &resolved_path])
+            .arg("-R")
+            .arg(&resolved_path)
             .spawn()
             .map_err(|e| format!("Failed to reveal file in Finder: {}", e))?;
         #[cfg(target_os = "windows")]
         std::process::Command::new("explorer")
-            .args(["/select,", &resolved_path])
+            .arg("/select,")
+            .arg(&resolved_path)
             .spawn()
             .map_err(|e| format!("Failed to reveal file in Explorer: {}", e))?;
         #[cfg(target_os = "linux")]
@@ -355,7 +358,7 @@ pub async fn check_youtube_copyright(url: &str) -> Result<CopyrightCheckResult, 
         }
 
         let output = std::process::Command::new(media::resolve_binary("yt-dlp"))
-            .args(&["--dump-json", &canonical_url])
+            .args(["--dump-json", &canonical_url])
             .output()
             .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
 
@@ -403,7 +406,7 @@ pub async fn download_youtube_video(
         }
 
         let meta_output = std::process::Command::new(media::resolve_binary("yt-dlp"))
-            .args(&["--dump-json", &canonical_url])
+            .args(["--dump-json", &canonical_url])
             .output()
             .map_err(|e| format!("Failed to run yt-dlp metadata check: {}", e))?;
 
@@ -429,7 +432,7 @@ pub async fn download_youtube_video(
         let output_template_str = output_template.to_string_lossy().to_string();
 
         let output = std::process::Command::new(media::resolve_binary("yt-dlp"))
-            .args(&[
+            .args([
                 "--format",
                 "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
                 "--merge-output-format",
@@ -479,9 +482,10 @@ pub fn clear_all_storage(state: &AppState) -> Result<String, String> {
                     let path = entry.path();
                     if path.is_dir() {
                         let is_clipon_generated = path.join("clips").exists()
-                            || path.file_name().and_then(|n| n.to_str()).map_or(false, |name| {
-                                name == "Clips" || name == "Youtube Video"
-                            });
+                            || path
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .is_some_and(|name| name == "Clips" || name == "Youtube Video");
                         if is_clipon_generated {
                             let _ = std::fs::remove_dir_all(&path);
                         }
@@ -497,9 +501,15 @@ pub fn clear_all_storage(state: &AppState) -> Result<String, String> {
             if let Ok(entries) = std::fs::read_dir(&dl_clipon) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    let is_media = path.extension().and_then(|e| e.to_str()).map_or(false, |ext| {
-                        matches!(ext.to_ascii_lowercase().as_str(), "mp4" | "mkv" | "webm" | "part" | "ytdl")
-                    });
+                    let is_media = path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .is_some_and(|ext| {
+                            matches!(
+                                ext.to_ascii_lowercase().as_str(),
+                                "mp4" | "mkv" | "webm" | "part" | "ytdl"
+                            )
+                        });
                     if is_media {
                         let _ = std::fs::remove_file(&path);
                     }
@@ -511,7 +521,10 @@ pub fn clear_all_storage(state: &AppState) -> Result<String, String> {
     let cache = analysis_cache::AnalysisCache::global();
     let _ = cache.clear_all();
 
-    Ok("All project storage, clips, analysis cache, and database records cleared successfully.".to_string())
+    Ok(
+        "All project storage, clips, analysis cache, and database records cleared successfully."
+            .to_string(),
+    )
 }
 
 #[cfg(test)]
@@ -521,7 +534,8 @@ mod tests {
     use crate::jobs::JobManager;
 
     fn test_app_state() -> AppState {
-        let temp_dir = std::env::temp_dir().join(format!("clipon_proj_test_{}", uuid::Uuid::new_v4()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("clipon_proj_test_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();
         let db_file = temp_dir.join("test.sqlite");
         let db = Database::open(&db_file).unwrap();
@@ -554,6 +568,9 @@ mod tests {
         assert!(!p_dir.exists(), "project directory must be deleted");
 
         // Database record must be deleted
-        assert!(state.db.get_project(&proj.id).is_err(), "project should not exist in DB");
+        assert!(
+            state.db.get_project(&proj.id).is_err(),
+            "project should not exist in DB"
+        );
     }
 }

@@ -1,11 +1,28 @@
 import React, { createContext, useContext, useState, useCallback } from "react";
-import {
-  AppError,
-  createAppError,
-  ErrorSeverity,
-  ErrorAction,
-} from "../../types/error";
+import type { AppError, ErrorSeverity, ErrorAction } from "../../types";
 import { AccessibleNotification } from "../../components/AccessibleNotification";
+
+function createAppError(
+  message: string,
+  options: {
+    code?: string;
+    details?: string;
+    severity?: ErrorSeverity;
+    recoverable?: boolean;
+    action?: ErrorAction;
+  } = {}
+): AppError {
+  return {
+    id: `err_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    code: options.code || "APP_ERROR",
+    message,
+    details: options.details,
+    severity: options.severity || "error",
+    recoverable: options.recoverable ?? true,
+    action: options.action,
+    timestamp: Date.now(),
+  };
+}
 
 interface ErrorContextValue {
   errors: AppError[];

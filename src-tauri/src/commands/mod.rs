@@ -94,7 +94,8 @@ pub async fn generate_candidates(
     model_name: Option<String>,
     allow_demo: bool,
 ) -> Result<Vec<Candidate>, String> {
-    candidate_service::generate_candidates(&state, &project_id, provider, model_name, allow_demo).await
+    candidate_service::generate_candidates(&state, &project_id, provider, model_name, allow_demo)
+        .await
 }
 
 #[tauri::command]
@@ -115,7 +116,6 @@ pub async fn update_candidate_timing(
 ) -> Result<Candidate, String> {
     candidate_service::update_candidate_timing(&state, &candidate_id, start_sec, end_sec).await
 }
-
 
 #[tauri::command]
 pub async fn render_flat_clip_for_candidate(
@@ -204,13 +204,8 @@ pub async fn test_instagram_connection(
     access_token: Option<String>,
     webhook_url: Option<String>,
 ) -> Result<String, String> {
-    instagram_service::test_instagram_connection(
-        &provider,
-        account_id,
-        access_token,
-        webhook_url,
-    )
-    .await
+    instagram_service::test_instagram_connection(&provider, account_id, access_token, webhook_url)
+        .await
 }
 
 #[tauri::command]
@@ -305,26 +300,6 @@ pub async fn delete_credential(name: String) -> Result<(), String> {
 pub async fn credential_status(name: String) -> Result<bool, String> {
     credential_service::credential_status(&name)
 }
-
-macro_rules! credential_status_command {
-    ($name:ident) => {
-        #[tauri::command]
-        pub async fn $name() -> Result<bool, String> {
-            credential_service::$name()
-        }
-    };
-}
-
-credential_status_command!(is_deepgram_configured);
-credential_status_command!(is_gemini_configured);
-credential_status_command!(is_openai_configured);
-credential_status_command!(is_anthropic_configured);
-credential_status_command!(is_deepseek_configured);
-credential_status_command!(is_groq_configured);
-credential_status_command!(is_openrouter_configured);
-credential_status_command!(is_nvidia_configured);
-credential_status_command!(is_instagram_configured);
-credential_status_command!(is_youtube_configured);
 
 #[tauri::command]
 pub async fn clear_all_storage(state: tauri::State<'_, AppState>) -> Result<String, String> {

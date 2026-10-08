@@ -109,7 +109,9 @@ pub async fn generate_candidates(
     let project_opt = db.get_project(project_id).ok();
     let asd_timeline = if let Some(ref proj) = project_opt {
         let probe = crate::media::probe_media(&proj.source_path).ok();
-        let total_dur = probe.and_then(|p| p.duration_sec).unwrap_or(normalized.duration);
+        let total_dur = probe
+            .and_then(|p| p.duration_sec)
+            .unwrap_or(normalized.duration);
         Some(
             crate::media::get_or_compute_active_speaker_timeline(
                 &proj.source_path,
@@ -218,7 +220,6 @@ pub async fn update_candidate_timing(
     Ok(candidate)
 }
 
-
 pub async fn generate_social_kit_for_candidate(
     state: &AppState,
     candidate_id: &str,
@@ -270,7 +271,8 @@ mod tests {
     use crate::models::CandidateDraft;
 
     fn test_app_state() -> AppState {
-        let temp_dir = std::env::temp_dir().join(format!("clipon_cand_test_{}", uuid::Uuid::new_v4()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("clipon_cand_test_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();
         let db_file = temp_dir.join("test.sqlite");
         let db = Database::open(&db_file).unwrap();
@@ -330,7 +332,9 @@ mod tests {
         // Minimum duration (< 3.0s)
         let short_res = update_candidate_timing(&state, cand_id, 10.0, 12.0).await;
         assert!(short_res.is_err());
-        assert!(short_res.unwrap_err().contains("Minimum duration is 3.0 seconds"));
+        assert!(short_res
+            .unwrap_err()
+            .contains("Minimum duration is 3.0 seconds"));
 
         // Maximum duration (> 60.0s)
         let long_res = update_candidate_timing(&state, cand_id, 5.0, 70.0).await;
@@ -340,10 +344,14 @@ mod tests {
         // Exceeds video duration (source_duration is 50.0s)
         let exceed_start = update_candidate_timing(&state, cand_id, 55.0, 59.0).await;
         assert!(exceed_start.is_err());
-        assert!(exceed_start.unwrap_err().contains("exceeds source video duration"));
+        assert!(exceed_start
+            .unwrap_err()
+            .contains("exceeds source video duration"));
 
         let exceed_end = update_candidate_timing(&state, cand_id, 40.0, 52.0).await;
         assert!(exceed_end.is_err());
-        assert!(exceed_end.unwrap_err().contains("exceeds source video duration"));
+        assert!(exceed_end
+            .unwrap_err()
+            .contains("exceeds source video duration"));
     }
 }

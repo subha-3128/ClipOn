@@ -50,7 +50,7 @@ export function YoutubeImportModal({
         return;
       }
       await executeDownload();
-    } catch (err: any) {
+    } catch (err) {
       showError("YouTube metadata check failed", { details: String(err) });
       setYoutubeStatus("idle");
     }
@@ -69,7 +69,7 @@ export function YoutubeImportModal({
       setYoutubeStatus("idle");
       onClose();
       onSuccess(downloadedPath);
-    } catch (err: any) {
+    } catch (err) {
       showError("Failed to download YouTube video", { details: String(err) });
       setYoutubeStatus("idle");
     }

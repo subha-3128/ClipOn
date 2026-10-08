@@ -100,8 +100,7 @@ pub async fn render_flat_clip_for_candidate(
             if let Ok(normalized) =
                 serde_json::from_str::<NormalizedTranscript>(&transcript_record.raw_json)
             {
-                let srt_content =
-                    generate_srt(&normalized.words, render_start, render_end);
+                let srt_content = generate_srt(&normalized.words, render_start, render_end);
                 let clip_srt_path = data_dir
                     .join("projects")
                     .join(&project.id)
@@ -180,7 +179,10 @@ pub async fn render_flat_clip_for_candidate(
                 );
 
                 let expected_dur = (render_end - render_start).max(1.0);
-                let source_has_audio = probe.as_ref().map(|p| p.audio_codec.is_some()).unwrap_or(true);
+                let source_has_audio = probe
+                    .as_ref()
+                    .map(|p| p.audio_codec.is_some())
+                    .unwrap_or(true);
                 if let Err(val_err) = media::validate_rendered_output(
                     &path,
                     (expected_dur * 0.4).max(0.5),
@@ -248,12 +250,7 @@ pub async fn render_flat_clip_for_candidate(
     .map_err(|e| e.to_string())?
 }
 
-
-pub fn cancel_job(
-    app: &tauri::AppHandle,
-    state: &AppState,
-    job_id: &str,
-) -> Result<(), String> {
+pub fn cancel_job(app: &tauri::AppHandle, state: &AppState, job_id: &str) -> Result<(), String> {
     // 1. Get job snapshot to extract candidate_id and output path
     let maybe_job = state.jobs.get_job(job_id);
 

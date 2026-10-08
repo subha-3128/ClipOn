@@ -104,7 +104,6 @@ export function MomentsPanel({
 }: MomentsPanelProps) {
   return (
     <section className="studio-panel moments-studio">
-
       <div className="panel-header">
         <div>
           <h3>Viral Moment Candidates</h3>

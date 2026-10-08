@@ -89,7 +89,8 @@ pub async fn test_connection(
 
             let is_ig_platform = token.trim().starts_with("IGA") || token.trim().starts_with("IGQ");
             let url = if is_ig_platform {
-                "https://graph.instagram.com/v20.0/me?fields=id,username,name,account_type".to_string()
+                "https://graph.instagram.com/v20.0/me?fields=id,username,name,account_type"
+                    .to_string()
             } else {
                 let user_id = account_id
                     .filter(|id| !id.trim().is_empty())
@@ -204,7 +205,10 @@ pub async fn publish_reel_graph_api(
 
         let container_id = init_data.id;
         let upload_uri = init_data.uri.unwrap_or_else(|| {
-            format!("https://rupload.facebook.com/ig-reels-upload/{}", container_id)
+            format!(
+                "https://rupload.facebook.com/ig-reels-upload/{}",
+                container_id
+            )
         });
 
         // 2. Direct binary upload to Meta's rupload endpoint
@@ -364,7 +368,10 @@ pub async fn publish_reel_graph_api(
 
         let container_id = init_data.id;
         let upload_uri = init_data.uri.unwrap_or_else(|| {
-            format!("https://rupload.facebook.com/ig-reels-upload/{}", container_id)
+            format!(
+                "https://rupload.facebook.com/ig-reels-upload/{}",
+                container_id
+            )
         });
 
         let upload_res = client

@@ -141,19 +141,45 @@ where
             }
         }
         serde_json::Value::Object(map) => {
-            let x = map.get("x").or_else(|| map.get("left")).and_then(|v| v.as_f64());
-            let y = map.get("y").or_else(|| map.get("top")).and_then(|v| v.as_f64());
-            let w = map.get("width").or_else(|| map.get("w")).and_then(|v| v.as_f64());
-            let h = map.get("height").or_else(|| map.get("h")).and_then(|v| v.as_f64());
+            let x = map
+                .get("x")
+                .or_else(|| map.get("left"))
+                .and_then(|v| v.as_f64());
+            let y = map
+                .get("y")
+                .or_else(|| map.get("top"))
+                .and_then(|v| v.as_f64());
+            let w = map
+                .get("width")
+                .or_else(|| map.get("w"))
+                .and_then(|v| v.as_f64());
+            let h = map
+                .get("height")
+                .or_else(|| map.get("h"))
+                .and_then(|v| v.as_f64());
 
             if let (Some(x), Some(y), Some(w), Some(h)) = (x, y, w, h) {
                 return Ok(Some(vec![x, y, w, h]));
             }
 
-            let xmin = map.get("xmin").or_else(|| map.get("x1")).and_then(|v| v.as_f64());
-            let ymin = map.get("ymin").or_else(|| map.get("y1")).and_then(|v| v.as_f64());
-            let xmax = map.get("xmax").or_else(|| map.get("x2")).or_else(|| map.get("right")).and_then(|v| v.as_f64());
-            let ymax = map.get("ymax").or_else(|| map.get("y2")).or_else(|| map.get("bottom")).and_then(|v| v.as_f64());
+            let xmin = map
+                .get("xmin")
+                .or_else(|| map.get("x1"))
+                .and_then(|v| v.as_f64());
+            let ymin = map
+                .get("ymin")
+                .or_else(|| map.get("y1"))
+                .and_then(|v| v.as_f64());
+            let xmax = map
+                .get("xmax")
+                .or_else(|| map.get("x2"))
+                .or_else(|| map.get("right"))
+                .and_then(|v| v.as_f64());
+            let ymax = map
+                .get("ymax")
+                .or_else(|| map.get("y2"))
+                .or_else(|| map.get("bottom"))
+                .and_then(|v| v.as_f64());
 
             if let (Some(x1), Some(y1), Some(x2), Some(y2)) = (xmin, ymin, xmax, ymax) {
                 return Ok(Some(vec![x1, y1, x2 - x1, y2 - y1]));
@@ -288,9 +314,9 @@ impl From<NvidiaPerFrameSpeaker> for NvidiaRawFrame {
 /// Normalized per-frame speaker detection (Conversion Layer Step 1 output)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NormalizedFrameDetection {
-    pub timestamp_sec: f64,          // Relative to slice [0.0, duration_sec]
-    pub absolute_timestamp_sec: f64, // Absolute video time (start_sec + timestamp_sec)
-    pub speaker_bbox: Option<[f64; 4]>, // [x, y, w, h] normalized in [0.0, 1.0]
+    pub timestamp_sec: f64,              // Relative to slice [0.0, duration_sec]
+    pub absolute_timestamp_sec: f64,     // Absolute video time (start_sec + timestamp_sec)
+    pub speaker_bbox: Option<[f64; 4]>,  // [x, y, w, h] normalized in [0.0, 1.0]
     pub bbox_center: Option<(f64, f64)>, // (cx, cy)
     pub raw_face_id: Option<usize>,
     pub diarized_speaker_id: Option<String>,
@@ -440,7 +466,12 @@ pub fn extract_asd_video_slice(
     cmd.args(["-y", "-ss", &format!("{start_sec:.3}"), "-i", source_path]);
 
     if !has_audio {
-        cmd.args(["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"]);
+        cmd.args([
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=channel_layout=stereo:sample_rate=44100",
+        ]);
     }
 
     cmd.args([
@@ -468,7 +499,9 @@ pub fn extract_asd_video_slice(
 
     cmd.arg(output_path);
 
-    let output = cmd.output().context("Executing FFmpeg for ASD video slice")?;
+    let output = cmd
+        .output()
+        .context("Executing FFmpeg for ASD video slice")?;
     if !output.status.success() {
         return Err(anyhow!(
             "FFmpeg failed to extract ASD slice: {}",
@@ -496,7 +529,12 @@ pub fn extract_asd_audio_slice(
     cmd.args(["-y", "-ss", &format!("{start_sec:.3}"), "-i", source_path]);
 
     if !has_audio {
-        cmd.args(["-f", "lavfi", "-i", "anullsrc=channel_layout=mono:sample_rate=16000"]);
+        cmd.args([
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=channel_layout=mono:sample_rate=16000",
+        ]);
     }
 
     cmd.args([
@@ -517,7 +555,9 @@ pub fn extract_asd_audio_slice(
 
     cmd.arg(output_path);
 
-    let output = cmd.output().context("Executing FFmpeg for ASD audio slice")?;
+    let output = cmd
+        .output()
+        .context("Executing FFmpeg for ASD audio slice")?;
     if !output.status.success() {
         return Err(anyhow!(
             "FFmpeg failed to extract ASD audio slice: {}",
@@ -546,8 +586,20 @@ pub fn normalize_bounding_box(raw_box: &[f64]) -> (Option<[f64; 4]>, Option<(f64
 
     // If raw coordinates appear in pixel units (e.g. 1920x1080 or 1280x720)
     if b0 > 1.5 || b1 > 1.5 || b2 > 1.5 || b3 > 1.5 {
-        let norm_w = if b2 > 1280.0 { 1920.0 } else if b2 > 960.0 { 1280.0 } else { 960.0 };
-        let norm_h = if b3 > 720.0 { 1080.0 } else if b3 > 540.0 { 720.0 } else { 540.0 };
+        let norm_w = if b2 > 1280.0 {
+            1920.0
+        } else if b2 > 960.0 {
+            1280.0
+        } else {
+            960.0
+        };
+        let norm_h = if b3 > 720.0 {
+            1080.0
+        } else if b3 > 540.0 {
+            720.0
+        } else {
+            540.0
+        };
         b0 = (b0 / norm_w).clamp(0.0, 1.0);
         b1 = (b1 / norm_h).clamp(0.0, 1.0);
         b2 = (b2 / norm_w).clamp(0.0, 1.0);
@@ -673,10 +725,10 @@ pub fn compute_bounding_box_iou(box1: &[f64; 4], box2: &[f64; 4]) -> f64 {
 }
 
 /// Finds the nearest keyframe for a visual PersonTrack at timestamp t
-pub fn get_person_keyframe_at<'a>(
-    person: &'a crate::media::face_tracker::VisionPersonTrack,
+pub fn get_person_keyframe_at(
+    person: &crate::media::face_tracker::VisionPersonTrack,
     t: f64,
-) -> Option<&'a crate::media::face_tracker::VisionKeyframe> {
+) -> Option<&crate::media::face_tracker::VisionKeyframe> {
     person
         .keyframes
         .iter()
@@ -688,14 +740,16 @@ pub fn get_person_keyframe_for_det<'a>(
     person: &'a crate::media::face_tracker::VisionPersonTrack,
     det: &NormalizedFrameDetection,
 ) -> Option<&'a crate::media::face_tracker::VisionKeyframe> {
-    let best_rel = person
-        .keyframes
-        .iter()
-        .min_by(|a, b| (a.t - det.timestamp_sec).abs().total_cmp(&(b.t - det.timestamp_sec).abs()));
-    let best_abs = person
-        .keyframes
-        .iter()
-        .min_by(|a, b| (a.t - det.absolute_timestamp_sec).abs().total_cmp(&(b.t - det.absolute_timestamp_sec).abs()));
+    let best_rel = person.keyframes.iter().min_by(|a, b| {
+        (a.t - det.timestamp_sec)
+            .abs()
+            .total_cmp(&(b.t - det.timestamp_sec).abs())
+    });
+    let best_abs = person.keyframes.iter().min_by(|a, b| {
+        (a.t - det.absolute_timestamp_sec)
+            .abs()
+            .total_cmp(&(b.t - det.absolute_timestamp_sec).abs())
+    });
 
     match (best_rel, best_abs) {
         (Some(kr), Some(ka)) => {
@@ -719,7 +773,13 @@ pub fn compute_detection_person_affinity(
     person: &crate::media::face_tracker::VisionPersonTrack,
 ) -> f64 {
     let kf = match get_person_keyframe_for_det(person, det) {
-        Some(k) if k.visible && ((k.t - det.timestamp_sec).abs() <= 1.2 || (k.t - det.absolute_timestamp_sec).abs() <= 1.2) => k,
+        Some(k)
+            if k.visible
+                && ((k.t - det.timestamp_sec).abs() <= 1.2
+                    || (k.t - det.absolute_timestamp_sec).abs() <= 1.2) =>
+        {
+            k
+        }
         _ => return 0.0,
     };
 
@@ -849,7 +909,10 @@ pub fn associate_nvidia_faces_with_clipon_tracks(
         let mut candidates: Vec<(usize, usize, f64)> = Vec::new();
         for &nv_id in &unique_nv_ids {
             for person in tracked_people {
-                let score = affinity_matrix.get(&(nv_id, person.id)).copied().unwrap_or(0.0);
+                let score = affinity_matrix
+                    .get(&(nv_id, person.id))
+                    .copied()
+                    .unwrap_or(0.0);
                 if score > 0.0 {
                     candidates.push((nv_id, person.id, score));
                 }
@@ -858,7 +921,8 @@ pub fn associate_nvidia_faces_with_clipon_tracks(
         candidates.sort_by(|a, b| b.2.total_cmp(&a.2));
 
         let mut assigned_nv: std::collections::HashSet<usize> = std::collections::HashSet::new();
-        let mut assigned_clipon: std::collections::HashSet<usize> = std::collections::HashSet::new();
+        let mut assigned_clipon: std::collections::HashSet<usize> =
+            std::collections::HashSet::new();
 
         for (nv_id, person_id, _) in candidates {
             if !assigned_nv.contains(&nv_id) && !assigned_clipon.contains(&person_id) {
@@ -870,7 +934,7 @@ pub fn associate_nvidia_faces_with_clipon_tracks(
 
         // For any remaining unassigned NVIDIA face IDs, fallback to spatial proximity
         for &nv_id in &unique_nv_ids {
-            if !nvidia_to_clipon.contains_key(&nv_id) {
+            nvidia_to_clipon.entry(nv_id).or_insert_with(|| {
                 let centers: Vec<f64> = normalized_detections
                     .iter()
                     .filter(|d| d.raw_face_id == Some(nv_id))
@@ -885,25 +949,17 @@ pub fn associate_nvidia_faces_with_clipon_tracks(
                 let best_person = tracked_people
                     .iter()
                     .min_by(|a, b| {
-                        let avg_a = a
-                            .keyframes
-                            .iter()
-                            .map(|k| k.x)
-                            .sum::<f64>()
+                        let avg_a = a.keyframes.iter().map(|k| k.x).sum::<f64>()
                             / a.keyframes.len().max(1) as f64;
-                        let avg_b = b
-                            .keyframes
-                            .iter()
-                            .map(|k| k.x)
-                            .sum::<f64>()
+                        let avg_b = b.keyframes.iter().map(|k| k.x).sum::<f64>()
                             / b.keyframes.len().max(1) as f64;
                         (avg_a - avg_cx).abs().total_cmp(&(avg_b - avg_cx).abs())
                     })
                     .map(|p| p.id)
                     .unwrap_or(tracked_people[0].id);
 
-                nvidia_to_clipon.insert(nv_id, best_person);
-            }
+                best_person
+            });
         }
     }
 
@@ -936,10 +992,10 @@ fn match_detection_to_clipon_person(
         // Horizontal center fallback
         if let Some((cx, _)) = det.bbox_center {
             let closest = tracked_people.iter().min_by(|a, b| {
-                let avg_a = a.keyframes.iter().map(|k| k.x).sum::<f64>()
-                    / a.keyframes.len().max(1) as f64;
-                let avg_b = b.keyframes.iter().map(|k| k.x).sum::<f64>()
-                    / b.keyframes.len().max(1) as f64;
+                let avg_a =
+                    a.keyframes.iter().map(|k| k.x).sum::<f64>() / a.keyframes.len().max(1) as f64;
+                let avg_b =
+                    b.keyframes.iter().map(|k| k.x).sum::<f64>() / b.keyframes.len().max(1) as f64;
                 (avg_a - cx).abs().total_cmp(&(avg_b - cx).abs())
             });
             if let Some(p) = closest {
@@ -951,7 +1007,11 @@ fn match_detection_to_clipon_person(
     } else {
         // Fallback when no visual tracks exist
         if let Some((cx, _)) = det.bbox_center {
-            if cx < 0.50 { 1 } else { 2 }
+            if cx < 0.50 {
+                1
+            } else {
+                2
+            }
         } else {
             1
         }
@@ -971,10 +1031,8 @@ pub fn associate_faces_and_persons(
     let tracked_people = face_tracker_opt.map(|f| f.people()).unwrap_or(&[]);
 
     // 1. Build explicit Track-Level Association from NVIDIA face IDs to ClipOn PersonTracks
-    let nvidia_to_clipon = associate_nvidia_faces_with_clipon_tracks(
-        normalized_detections,
-        tracked_people,
-    );
+    let nvidia_to_clipon =
+        associate_nvidia_faces_with_clipon_tracks(normalized_detections, tracked_people);
 
     // 2. Map detections to resolved ClipOn person IDs and collect diarization co-occurrence votes
     let mut initial_associated: Vec<(usize, &NormalizedFrameDetection)> = Vec::new();
@@ -1018,10 +1076,22 @@ pub fn associate_faces_and_persons(
         let p0 = distinct_persons[0];
         let p1 = distinct_persons[1];
 
-        let score_a = co_occurrence_votes.get(&(s0.clone(), p0)).copied().unwrap_or(0.0)
-            + co_occurrence_votes.get(&(s1.clone(), p1)).copied().unwrap_or(0.0);
-        let score_b = co_occurrence_votes.get(&(s0.clone(), p1)).copied().unwrap_or(0.0)
-            + co_occurrence_votes.get(&(s1.clone(), p0)).copied().unwrap_or(0.0);
+        let score_a = co_occurrence_votes
+            .get(&(s0.clone(), p0))
+            .copied()
+            .unwrap_or(0.0)
+            + co_occurrence_votes
+                .get(&(s1.clone(), p1))
+                .copied()
+                .unwrap_or(0.0);
+        let score_b = co_occurrence_votes
+            .get(&(s0.clone(), p1))
+            .copied()
+            .unwrap_or(0.0)
+            + co_occurrence_votes
+                .get(&(s1.clone(), p0))
+                .copied()
+                .unwrap_or(0.0);
 
         if score_a >= score_b {
             speaker_person_mapping.insert(s0.clone(), p0);
@@ -1038,8 +1108,10 @@ pub fn associate_faces_and_persons(
             .collect();
         vote_candidates.sort_by(|a, b| b.2.total_cmp(&a.2));
 
-        let mut assigned_speakers: std::collections::HashSet<String> = std::collections::HashSet::new();
-        let mut assigned_persons: std::collections::HashSet<usize> = std::collections::HashSet::new();
+        let mut assigned_speakers: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+        let mut assigned_persons: std::collections::HashSet<usize> =
+            std::collections::HashSet::new();
 
         for (spk, pid, _) in vote_candidates {
             if !assigned_speakers.contains(&spk) && !assigned_persons.contains(&pid) {
@@ -1055,8 +1127,14 @@ pub fn associate_faces_and_persons(
                 let best_p = distinct_persons
                     .iter()
                     .max_by(|&&a, &&b| {
-                        let va = co_occurrence_votes.get(&(spk.clone(), a)).copied().unwrap_or(0.0);
-                        let vb = co_occurrence_votes.get(&(spk.clone(), b)).copied().unwrap_or(0.0);
+                        let va = co_occurrence_votes
+                            .get(&(spk.clone(), a))
+                            .copied()
+                            .unwrap_or(0.0);
+                        let vb = co_occurrence_votes
+                            .get(&(spk.clone(), b))
+                            .copied()
+                            .unwrap_or(0.0);
                         va.total_cmp(&vb)
                     })
                     .copied()
@@ -1098,8 +1176,7 @@ pub fn associate_faces_and_persons(
     let avg_confidence = if final_detections.is_empty() {
         0.80
     } else {
-        final_detections.iter().map(|d| d.confidence).sum::<f64>()
-            / final_detections.len() as f64
+        final_detections.iter().map(|d| d.confidence).sum::<f64>() / final_detections.len() as f64
     };
 
     AssociatedSpeakerData {
@@ -1224,17 +1301,13 @@ pub fn convert_nvidia_frames_to_timeline(
     let associated = associate_faces_and_persons(&normalized, face_tracker_opt);
 
     // Stage 3 & 4: Temporal Smoothing & ActiveSpeakerSegment Generation
-    let segments = smooth_and_build_active_speaker_segments(
-        &associated.detections,
-        start_sec,
-        duration_sec,
-    );
+    let segments =
+        smooth_and_build_active_speaker_segments(&associated.detections, start_sec, duration_sec);
 
     let avg_confidence = if segments.is_empty() {
         associated.confidence
     } else {
-        (segments.iter().map(|s| s.confidence).sum::<f64>() / segments.len() as f64)
-            .clamp(0.1, 1.0)
+        (segments.iter().map(|s| s.confidence).sum::<f64>() / segments.len() as f64).clamp(0.1, 1.0)
     };
 
     ActiveSpeakerTimeline {
@@ -1428,7 +1501,9 @@ impl ActiveSpeakerProvider for NvidiaAsdProvider {
         if !video_asset_init.status().is_success() {
             let status = video_asset_init.status();
             let body = video_asset_init.text().await.unwrap_or_default();
-            return Err(anyhow!("NVCF Video Asset initialization failed ({status}): {body}"));
+            return Err(anyhow!(
+                "NVCF Video Asset initialization failed ({status}): {body}"
+            ));
         }
 
         let video_asset_meta: NvcfAssetResponse = video_asset_init
@@ -1571,7 +1646,8 @@ impl ActiveSpeakerProvider for NvidiaAsdProvider {
 
         // 6. Parse NIM SyncDiscriminator frames and normalize into uniform timeline detections
         let raw_frames = parse_nvidia_asd_response(&response_text)?;
-        let normalized = normalize_nvidia_per_frame_detections(&raw_frames, start_sec, duration_sec);
+        let normalized =
+            normalize_nvidia_per_frame_detections(&raw_frames, start_sec, duration_sec);
 
         let avg_confidence = if normalized.is_empty() {
             0.85
@@ -1690,7 +1766,13 @@ pub fn measure_mouth_activity_motion(
     let ffmpeg_bin = resolve_binary("ffmpeg");
     let mut cmd = Command::new(&ffmpeg_bin);
     cmd.arg("-nostdin");
-    cmd.args(["-y", "-ss", &format!("{sample_start:.3}"), "-i", source_path]);
+    cmd.args([
+        "-y",
+        "-ss",
+        &format!("{sample_start:.3}"),
+        "-i",
+        source_path,
+    ]);
     cmd.args([
         "-t",
         &format!("{sample_duration:.3}"),
@@ -1789,7 +1871,10 @@ pub fn compute_temporal_speaker_person_mapping(
                 let s = seg.start.max(start_sec);
                 let e = seg.end.min(start_sec + duration_sec);
                 if e > s {
-                    speaker_intervals.entry(spk.clone()).or_default().push((s, e));
+                    speaker_intervals
+                        .entry(spk.clone())
+                        .or_default()
+                        .push((s, e));
                 }
             }
         }
@@ -1803,14 +1888,20 @@ pub fn compute_temporal_speaker_person_mapping(
         return (mapping, 0.60);
     }
 
-    fn get_person_kf_at<'a>(
-        p: &'a crate::media::face_tracker::VisionPersonTrack,
+    fn get_person_kf_at(
+        p: &crate::media::face_tracker::VisionPersonTrack,
         t_sample: f64,
         start_sec: f64,
-    ) -> Option<&'a crate::media::face_tracker::VisionKeyframe> {
+    ) -> Option<&crate::media::face_tracker::VisionKeyframe> {
         let t_rel = (t_sample - start_sec).max(0.0);
-        let best_abs = p.keyframes.iter().min_by(|a, b| (a.t - t_sample).abs().total_cmp(&(b.t - t_sample).abs()));
-        let best_rel = p.keyframes.iter().min_by(|a, b| (a.t - t_rel).abs().total_cmp(&(b.t - t_rel).abs()));
+        let best_abs = p
+            .keyframes
+            .iter()
+            .min_by(|a, b| (a.t - t_sample).abs().total_cmp(&(b.t - t_sample).abs()));
+        let best_rel = p
+            .keyframes
+            .iter()
+            .min_by(|a, b| (a.t - t_rel).abs().total_cmp(&(b.t - t_rel).abs()));
         match (best_abs, best_rel) {
             (Some(ka), Some(kr)) => {
                 if (ka.t - t_sample).abs() <= (kr.t - t_rel).abs() {
@@ -1913,20 +2004,38 @@ pub fn compute_temporal_speaker_person_mapping(
         let p0 = person_list[0];
         let p1 = person_list[1];
 
-        let score_perm_a = evidence_matrix.get(&(s0.clone(), p0)).copied().unwrap_or(0.0)
-            + evidence_matrix.get(&(s1.clone(), p1)).copied().unwrap_or(0.0);
-        let score_perm_b = evidence_matrix.get(&(s0.clone(), p1)).copied().unwrap_or(0.0)
-            + evidence_matrix.get(&(s1.clone(), p0)).copied().unwrap_or(0.0);
+        let score_perm_a = evidence_matrix
+            .get(&(s0.clone(), p0))
+            .copied()
+            .unwrap_or(0.0)
+            + evidence_matrix
+                .get(&(s1.clone(), p1))
+                .copied()
+                .unwrap_or(0.0);
+        let score_perm_b = evidence_matrix
+            .get(&(s0.clone(), p1))
+            .copied()
+            .unwrap_or(0.0)
+            + evidence_matrix
+                .get(&(s1.clone(), p0))
+                .copied()
+                .unwrap_or(0.0);
 
         let mut mapping = HashMap::new();
         let (_margin, conf) = if score_perm_a >= score_perm_b {
             mapping.insert(s0.clone(), p0);
             mapping.insert(s1.clone(), p1);
-            (score_perm_a - score_perm_b, 0.85 + (score_perm_a - score_perm_b).clamp(0.0, 10.0) * 0.012)
+            (
+                score_perm_a - score_perm_b,
+                0.85 + (score_perm_a - score_perm_b).clamp(0.0, 10.0) * 0.012,
+            )
         } else {
             mapping.insert(s0.clone(), p1);
             mapping.insert(s1.clone(), p0);
-            (score_perm_b - score_perm_a, 0.85 + (score_perm_b - score_perm_a).clamp(0.0, 10.0) * 0.012)
+            (
+                score_perm_b - score_perm_a,
+                0.85 + (score_perm_b - score_perm_a).clamp(0.0, 10.0) * 0.012,
+            )
         };
 
         (mapping, conf.clamp(0.70, 0.98))
@@ -1944,8 +2053,14 @@ pub fn compute_temporal_speaker_person_mapping(
                 .iter()
                 .cloned()
                 .max_by(|&a, &b| {
-                    let score_a = evidence_matrix.get(&(spk.clone(), a)).copied().unwrap_or(0.0);
-                    let score_b = evidence_matrix.get(&(spk.clone(), b)).copied().unwrap_or(0.0);
+                    let score_a = evidence_matrix
+                        .get(&(spk.clone(), a))
+                        .copied()
+                        .unwrap_or(0.0);
+                    let score_b = evidence_matrix
+                        .get(&(spk.clone(), b))
+                        .copied()
+                        .unwrap_or(0.0);
                     score_a.total_cmp(&score_b)
                 })
                 .unwrap_or(available_people[0]);
@@ -1991,13 +2106,7 @@ impl ActiveSpeakerProvider for LocalFallbackProvider {
         let people = vision_result.people();
 
         let (speaker_mapping, mapping_conf) = if let Some(t) = transcript {
-            compute_temporal_speaker_person_mapping(
-                source_path,
-                start_sec,
-                duration_sec,
-                t,
-                people,
-            )
+            compute_temporal_speaker_person_mapping(source_path, start_sec, duration_sec, t, people)
         } else {
             (HashMap::new(), 0.60)
         };
@@ -2080,12 +2189,8 @@ impl ActiveSpeakerProvider for LocalFallbackProvider {
                     let kf = get_person_keyframe_at(best_person, curr_t)
                         .or_else(|| get_person_keyframe_at(best_person, rel_t));
 
-                    let motion = measure_mouth_activity_motion(
-                        source_path,
-                        curr_t,
-                        step.min(0.50),
-                        kf,
-                    );
+                    let motion =
+                        measure_mouth_activity_motion(source_path, curr_t, step.min(0.50), kf);
                     let is_spk = motion > 1.2;
 
                     let (bbox, center) = if let Some(k) = kf {
@@ -2971,7 +3076,9 @@ mod tests {
 
     #[test]
     fn test_associate_faces_and_persons_with_vision_keyframes() {
-        use crate::media::face_tracker::{VisionKeyframe, VisionPersonTrack, VisionTrackingPayload};
+        use crate::media::face_tracker::{
+            VisionKeyframe, VisionPersonTrack, VisionTrackingPayload,
+        };
 
         let face_tracker_result = FaceTrackerResult {
             avg_center_x: 0.50,
@@ -3260,16 +3367,18 @@ mod tests {
         assert_eq!(compute_bounding_box_iou(&b1, &b3), 0.0);
 
         let b4 = [0.20, 0.10, 0.20, 0.20]; // 50% horizontal overlap
-        // inter_w = 0.10, inter_h = 0.20, inter = 0.02
-        // area1 = 0.04, area2 = 0.04, union = 0.08 - 0.02 = 0.06
-        // iou = 0.02 / 0.06 = 1/3
+                                           // inter_w = 0.10, inter_h = 0.20, inter = 0.02
+                                           // area1 = 0.04, area2 = 0.04, union = 0.08 - 0.02 = 0.06
+                                           // iou = 0.02 / 0.06 = 1/3
         let iou = compute_bounding_box_iou(&b1, &b4);
         assert!((iou - (1.0 / 3.0)).abs() < 1e-4);
     }
 
     #[test]
     fn test_nvidia_face_id_to_clipon_persontrack_fusion() {
-        use crate::media::face_tracker::{VisionKeyframe, VisionPersonTrack, VisionTrackingPayload};
+        use crate::media::face_tracker::{
+            VisionKeyframe, VisionPersonTrack, VisionTrackingPayload,
+        };
 
         // ClipOn internal PersonTracks:
         // Person 1 (left): x = 0.26, y = 0.35, width = 0.18, height = 0.22
@@ -3406,11 +3515,7 @@ mod tests {
         assert_eq!(associated.speaker_person_mapping.get("SPK_RIGHT"), Some(&2));
 
         // 2. Build segments and verify end-to-end timeline conversion
-        let segments = smooth_and_build_active_speaker_segments(
-            &associated.detections,
-            0.0,
-            2.0,
-        );
+        let segments = smooth_and_build_active_speaker_segments(&associated.detections, 0.0, 2.0);
         assert!(!segments.is_empty());
         assert_eq!(segments[0].person_id, 1);
 
@@ -3452,13 +3557,22 @@ mod tests {
     fn test_compute_active_speaker_cache_key_invalidation() {
         let key1 = compute_active_speaker_cache_key("video.mp4", 0.0, 10.0);
         let key2 = compute_active_speaker_cache_key("video.mp4", 0.0, 10.0);
-        assert_eq!(key1, key2, "Cache key must be deterministic for identical parameters");
+        assert_eq!(
+            key1, key2,
+            "Cache key must be deterministic for identical parameters"
+        );
 
         let key_diff_dur = compute_active_speaker_cache_key("video.mp4", 0.0, 15.0);
-        assert_ne!(key1, key_diff_dur, "Cache key must change when duration changes");
+        assert_ne!(
+            key1, key_diff_dur,
+            "Cache key must change when duration changes"
+        );
 
         let key_diff_source = compute_active_speaker_cache_key("other_video.mp4", 0.0, 10.0);
-        assert_ne!(key1, key_diff_source, "Cache key must change when source changes");
+        assert_ne!(
+            key1, key_diff_source,
+            "Cache key must change when source changes"
+        );
 
         // Verify configuration components are included in the key hash
         let analyzer_str = format!("{}_{}", ASD_ANALYSIS_VERSION, ASD_FACE_TRACKER_VERSION);
@@ -3540,9 +3654,13 @@ mod tests {
             "is_active": true,
             "prob": 0.94
         }"#;
-        let frame_arr: NvidiaRawFrame = serde_json::from_str(json_arr).expect("must parse array bbox frame");
+        let frame_arr: NvidiaRawFrame =
+            serde_json::from_str(json_arr).expect("must parse array bbox frame");
         assert_eq!(frame_arr.flat.face_id, Some(101));
-        assert_eq!(frame_arr.flat.speaker_bbox, Some(vec![0.15, 0.20, 0.25, 0.30]));
+        assert_eq!(
+            frame_arr.flat.speaker_bbox,
+            Some(vec![0.15, 0.20, 0.25, 0.30])
+        );
         assert_eq!(frame_arr.flat.is_speaking, Some(true));
         assert_eq!(frame_arr.flat.confidence, Some(0.94));
 
@@ -3559,12 +3677,19 @@ mod tests {
                 }
             ]
         }"#;
-        let frame_map: NvidiaRawFrame = serde_json::from_str(json_map_xywh).expect("must parse xywh map frame");
+        let frame_map: NvidiaRawFrame =
+            serde_json::from_str(json_map_xywh).expect("must parse xywh map frame");
         assert_eq!(frame_map.faces.len(), 1);
         assert_eq!(frame_map.faces[0].face_id, Some(202));
-        assert_eq!(frame_map.faces[0].speaker_bbox, Some(vec![0.60, 0.25, 0.20, 0.35]));
+        assert_eq!(
+            frame_map.faces[0].speaker_bbox,
+            Some(vec![0.60, 0.25, 0.20, 0.35])
+        );
         assert_eq!(frame_map.faces[0].is_speaking, Some(true));
-        assert_eq!(frame_map.faces[0].diarized_speaker_id, Some("S2".to_string()));
+        assert_eq!(
+            frame_map.faces[0].diarized_speaker_id,
+            Some("S2".to_string())
+        );
 
         // Test object bbox with { xmin, ymin, xmax, ymax }
         let json_map_corners = r#"{
@@ -3572,7 +3697,8 @@ mod tests {
             "box": { "xmin": 0.10, "ymin": 0.15, "xmax": 0.40, "ymax": 0.55 },
             "speech_detected": true
         }"#;
-        let frame_corners: NvidiaRawFrame = serde_json::from_str(json_map_corners).expect("must parse corner map frame");
+        let frame_corners: NvidiaRawFrame =
+            serde_json::from_str(json_map_corners).expect("must parse corner map frame");
         assert_eq!(frame_corners.timestamp, 3.75);
         let b = frame_corners.flat.speaker_bbox.expect("bbox parsed");
         assert!((b[0] - 0.10).abs() < 1e-4);
@@ -3583,7 +3709,9 @@ mod tests {
 
     #[test]
     fn test_bipartite_mapping_prevents_multiple_speakers_collapsing() {
-        use crate::media::face_tracker::{VisionKeyframe, VisionPersonTrack, VisionTrackingPayload};
+        use crate::media::face_tracker::{
+            VisionKeyframe, VisionPersonTrack, VisionTrackingPayload,
+        };
 
         // Create 2 people
         let face_result = FaceTrackerResult {
@@ -3720,7 +3848,11 @@ mod tests {
         assert_eq!(segments.len(), 2);
         // Both segments must have positive duration: end > start
         for s in &segments {
-            assert!(s.end > s.start, "Segment must have positive duration: {:?}", s);
+            assert!(
+                s.end > s.start,
+                "Segment must have positive duration: {:?}",
+                s
+            );
             assert!(s.end - s.start >= 0.04);
         }
         // Cut transition point must be identical: seg[0].end == seg[1].start
@@ -3763,12 +3895,18 @@ mod tests {
 
         let aff = compute_detection_person_affinity(&det, &person);
         // Affinity must be high despite absolute_timestamp_sec being 105.0 vs keyframe t=5.0
-        assert!(aff > 1.0, "Affinity must match across relative slice coordinates: aff = {}", aff);
+        assert!(
+            aff > 1.0,
+            "Affinity must match across relative slice coordinates: aff = {}",
+            aff
+        );
     }
 
     #[tokio::test]
     async fn test_active_speaker_service_local_fallback_pipeline() {
-        use crate::media::face_tracker::{FaceTrackerResult, VisionKeyframe, VisionPersonTrack, VisionTrackingPayload};
+        use crate::media::face_tracker::{
+            FaceTrackerResult, VisionKeyframe, VisionPersonTrack, VisionTrackingPayload,
+        };
         use crate::models::{NormalizedTranscript, TranscriptSegment};
 
         // Create face tracking with two people
@@ -3843,26 +3981,28 @@ mod tests {
         assert!(service.nvidia_provider().is_none());
 
         let timeline = service
-            .process(
-                "dummy.mp4",
-                0.0,
-                6.0,
-                Some(&transcript),
-                Some(&face_result),
-            )
+            .process("dummy.mp4", 0.0, 6.0, Some(&transcript), Some(&face_result))
             .await;
 
         assert_eq!(timeline.provider, "local_vision_fusion");
         assert!(timeline.fallback_reason.is_some());
-        assert!(!timeline.segments.is_empty(), "Timeline must contain generated speech segments");
+        assert!(
+            !timeline.segments.is_empty(),
+            "Timeline must contain generated speech segments"
+        );
         let has_early = timeline.segments.iter().any(|s| s.start <= 2.0);
         let has_late = timeline.segments.iter().any(|s| s.start >= 3.0);
-        assert!(has_early && has_late, "Timeline must contain both speaker intervals");
+        assert!(
+            has_early && has_late,
+            "Timeline must contain both speaker intervals"
+        );
     }
 
     #[test]
     fn test_active_speaker_service_nvidia_pipeline_with_sync_discriminator() {
-        use crate::media::face_tracker::{FaceTrackerResult, VisionKeyframe, VisionPersonTrack, VisionTrackingPayload};
+        use crate::media::face_tracker::{
+            FaceTrackerResult, VisionKeyframe, VisionPersonTrack, VisionTrackingPayload,
+        };
 
         let face_result = FaceTrackerResult {
             avg_center_x: 0.50,
@@ -3913,58 +4053,50 @@ mod tests {
         let raw_nvidia_frames = vec![
             NvidiaRawFrame {
                 timestamp: 1.0,
-                faces: vec![
-                    NvidiaRawDetection {
-                        face_id: Some(101),
-                        speaker_bbox: Some(vec![0.17, 0.24, 0.16, 0.22]),
-                        diarized_speaker_id: Some("SPK_A".to_string()),
-                        is_speaking: Some(true),
-                        confidence: Some(0.96), // SyncDiscriminator probability
-                        face_confidence: Some(0.98),
-                    },
-                ],
+                faces: vec![NvidiaRawDetection {
+                    face_id: Some(101),
+                    speaker_bbox: Some(vec![0.17, 0.24, 0.16, 0.22]),
+                    diarized_speaker_id: Some("SPK_A".to_string()),
+                    is_speaking: Some(true),
+                    confidence: Some(0.96), // SyncDiscriminator probability
+                    face_confidence: Some(0.98),
+                }],
                 flat: NvidiaRawDetection::default(),
             },
             NvidiaRawFrame {
                 timestamp: 1.2,
-                faces: vec![
-                    NvidiaRawDetection {
-                        face_id: Some(101),
-                        speaker_bbox: Some(vec![0.17, 0.24, 0.16, 0.22]),
-                        diarized_speaker_id: Some("SPK_A".to_string()),
-                        is_speaking: Some(true),
-                        confidence: Some(0.94),
-                        face_confidence: Some(0.98),
-                    },
-                ],
+                faces: vec![NvidiaRawDetection {
+                    face_id: Some(101),
+                    speaker_bbox: Some(vec![0.17, 0.24, 0.16, 0.22]),
+                    diarized_speaker_id: Some("SPK_A".to_string()),
+                    is_speaking: Some(true),
+                    confidence: Some(0.94),
+                    face_confidence: Some(0.98),
+                }],
                 flat: NvidiaRawDetection::default(),
             },
             NvidiaRawFrame {
                 timestamp: 3.0,
-                faces: vec![
-                    NvidiaRawDetection {
-                        face_id: Some(202),
-                        speaker_bbox: Some(vec![0.67, 0.24, 0.16, 0.22]),
-                        diarized_speaker_id: Some("SPK_B".to_string()),
-                        is_speaking: Some(true),
-                        confidence: Some(0.92), // SyncDiscriminator probability
-                        face_confidence: Some(0.97),
-                    },
-                ],
+                faces: vec![NvidiaRawDetection {
+                    face_id: Some(202),
+                    speaker_bbox: Some(vec![0.67, 0.24, 0.16, 0.22]),
+                    diarized_speaker_id: Some("SPK_B".to_string()),
+                    is_speaking: Some(true),
+                    confidence: Some(0.92), // SyncDiscriminator probability
+                    face_confidence: Some(0.97),
+                }],
                 flat: NvidiaRawDetection::default(),
             },
             NvidiaRawFrame {
                 timestamp: 3.2,
-                faces: vec![
-                    NvidiaRawDetection {
-                        face_id: Some(202),
-                        speaker_bbox: Some(vec![0.67, 0.24, 0.16, 0.22]),
-                        diarized_speaker_id: Some("SPK_B".to_string()),
-                        is_speaking: Some(true),
-                        confidence: Some(0.91),
-                        face_confidence: Some(0.97),
-                    },
-                ],
+                faces: vec![NvidiaRawDetection {
+                    face_id: Some(202),
+                    speaker_bbox: Some(vec![0.67, 0.24, 0.16, 0.22]),
+                    diarized_speaker_id: Some("SPK_B".to_string()),
+                    is_speaking: Some(true),
+                    confidence: Some(0.91),
+                    face_confidence: Some(0.97),
+                }],
                 flat: NvidiaRawDetection::default(),
             },
         ];
@@ -4003,6 +4135,9 @@ mod tests {
         assert_eq!(provider.audio_mode(), NvidiaAudioStreamMode::Embedded);
 
         let separate_provider = provider.with_audio_mode(NvidiaAudioStreamMode::SeparateStream);
-        assert_eq!(separate_provider.audio_mode(), NvidiaAudioStreamMode::SeparateStream);
+        assert_eq!(
+            separate_provider.audio_mode(),
+            NvidiaAudioStreamMode::SeparateStream
+        );
     }
 }

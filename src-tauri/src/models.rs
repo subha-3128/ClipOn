@@ -289,7 +289,8 @@ impl ClipQualityScore {
             + 0.12 * speech_val
             + 0.10 * visual_val
             + 0.10 * boundary_val;
-        let penalty_val = self.redundancy_penalty.clamp(0.0, 0.5) + self.risk_penalty.clamp(0.0, 0.5);
+        let penalty_val =
+            self.redundancy_penalty.clamp(0.0, 0.5) + self.risk_penalty.clamp(0.0, 0.5);
         self.total = (((positive - penalty_val) * 100.0).clamp(0.0, 100.0) * 10.0).round() / 10.0;
     }
 }

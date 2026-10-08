@@ -122,7 +122,6 @@ impl Default for FaceTrackerResult {
 
 pub struct FaceTracker;
 
-
 impl FaceTracker {
     /// Resolves the face tracker binary dynamically with zero hardcoded developer paths.
     pub fn resolve_tracker_binary() -> Result<PathBuf> {
@@ -189,11 +188,7 @@ impl FaceTracker {
     }
 
     /// Analyzes the video clip interval and detects face center positioning.
-    pub fn analyze(
-        source_path: &str,
-        start_sec: f64,
-        duration_sec: f64,
-    ) -> FaceTrackerResult {
+    pub fn analyze(source_path: &str, start_sec: f64, duration_sec: f64) -> FaceTrackerResult {
         let cache = crate::analysis_cache::AnalysisCache::global();
         let cache_key = crate::analysis_cache::AnalysisCache::compute_source_key_with_params(
             source_path,
@@ -227,8 +222,7 @@ impl FaceTracker {
         };
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let res = serde_json::from_str::<FaceTrackerResult>(stdout.trim())
-            .unwrap_or_default();
+        let res = serde_json::from_str::<FaceTrackerResult>(stdout.trim()).unwrap_or_default();
 
         if res.face_detected || res.tracking.is_some() {
             let _ = cache.put(&cache_key, "face_tracking", &res);
@@ -245,7 +239,11 @@ impl FaceTracker {
     }
 }
 
-pub fn detect_faces_full(source_path: &str, start_sec: f64, duration_sec: f64) -> FaceTrackerResult {
+pub fn detect_faces_full(
+    source_path: &str,
+    start_sec: f64,
+    duration_sec: f64,
+) -> FaceTrackerResult {
     FaceTracker::analyze(source_path, start_sec, duration_sec)
 }
 

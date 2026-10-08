@@ -5,10 +5,7 @@ use crate::services::project_service::project_dir;
 use crate::transcription;
 use crate::AppState;
 
-pub fn extract_project_audio(
-    state: &AppState,
-    project_id: &str,
-) -> Result<String, String> {
+pub fn extract_project_audio(state: &AppState, project_id: &str) -> Result<String, String> {
     let project = state
         .db
         .get_project(project_id)
@@ -75,22 +72,14 @@ pub async fn transcribe_project(
 
     let raw_json = serde_json::to_string_pretty(&transcript).map_err(|e| e.to_string())?;
     let saved = db
-        .save_transcript(
-            project_id,
-            provider,
-            &raw_json,
-            Some(&transcript.language),
-        )
+        .save_transcript(project_id, provider, &raw_json, Some(&transcript.language))
         .map_err(|e| e.to_string())?;
     db.update_project_status(project_id, "analyzing", Some(transcript.duration))
         .map_err(|e| e.to_string())?;
     Ok(saved)
 }
 
-pub fn save_demo_transcript(
-    state: &AppState,
-    project_id: &str,
-) -> Result<Transcript, String> {
+pub fn save_demo_transcript(state: &AppState, project_id: &str) -> Result<Transcript, String> {
     let transcript = demo_transcript();
     let raw_json = serde_json::to_string_pretty(&transcript).map_err(|e| e.to_string())?;
     let saved = state

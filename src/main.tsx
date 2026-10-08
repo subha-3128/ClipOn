@@ -34,6 +34,7 @@ import type {
   BusyState,
   ReframeMode,
   ExportPresetPlatform,
+  LlmEngine,
 } from "./types";
 
 // Utility Helpers
@@ -124,19 +125,10 @@ function AppContent() {
         "deepgram" | "local") || "local"
     );
   });
-  const [llmEngine, setLlmEngine] = useState<
-    | "claude"
-    | "deepseek"
-    | "local"
-    | "gemini"
-    | "openai"
-    | "openrouter"
-    | "groq"
-  >(() => {
-    return (
-      ((localStorage.getItem("clipon_llm_engine") ||
-        localStorage.getItem("autoshorts_llm_engine")) as any) || "local"
-    );
+  const [llmEngine, setLlmEngine] = useState<LlmEngine>(() => {
+    const saved = (localStorage.getItem("clipon_llm_engine") ||
+      localStorage.getItem("autoshorts_llm_engine")) as LlmEngine | null;
+    return saved || "local";
   });
   const [localLlmModel, setLocalLlmModel] = useState(() => {
     return (
@@ -195,14 +187,15 @@ function AppContent() {
   });
 
   const [reframeMode, setReframeMode] = useState<ReframeMode>(() => {
-    const saved = (localStorage.getItem("clipon_reframe_mode") ||
-      localStorage.getItem("autoshorts_reframe_mode")) as any;
+    const saved =
+      localStorage.getItem("clipon_reframe_mode") ||
+      localStorage.getItem("autoshorts_reframe_mode");
     if (
       saved === "smart_face_track" ||
       saved === "original" ||
       saved === "vertical_crop"
     ) {
-      return saved as ReframeMode;
+      return saved;
     }
     return "vertical_crop";
   });
@@ -221,9 +214,8 @@ function AppContent() {
   const [instagramProvider, setInstagramProvider] = useState<
     "graph_api" | "webhook"
   >(() => {
-    return (
-      (localStorage.getItem("clipon_instagram_provider") as any) || "graph_api"
-    );
+    const saved = localStorage.getItem("clipon_instagram_provider");
+    return saved === "webhook" ? "webhook" : "graph_api";
   });
   const [instagramAccountId, setInstagramAccountId] = useState(() => {
     return localStorage.getItem("clipon_instagram_account_id") || "";
@@ -266,15 +258,13 @@ function AppContent() {
     success: boolean;
     message: string;
   } | null>(null);
-  const [publishingYouTubeCandidateId, setPublishingYouTubeCandidateId] = useState<
-    string | null
-  >(null);
+  const [publishingYouTubeCandidateId, setPublishingYouTubeCandidateId] =
+    useState<string | null>(null);
 
   // YouTube Shorts Quick Connect Modal State
   const [showYouTubeModal, setShowYouTubeModal] = useState(false);
-  const [pendingCandidateIdToPostYouTube, setPendingCandidateIdToPostYouTube] = useState<
-    string | null
-  >(null);
+  const [pendingCandidateIdToPostYouTube, setPendingCandidateIdToPostYouTube] =
+    useState<string | null>(null);
   const [ytModalClientId, setYtModalClientId] = useState(() => {
     return localStorage.getItem("clipon_youtube_client_id") || "";
   });
@@ -657,7 +647,9 @@ function AppContent() {
     if (!detail) return;
     const hasConfig = Boolean(
       environment?.hasYoutubeConfig ||
-      (youtubeClientId.trim() && youtubeClientSecret.trim() && youtubeRefreshToken.trim())
+      (youtubeClientId.trim() &&
+        youtubeClientSecret.trim() &&
+        youtubeRefreshToken.trim())
     );
 
     if (!hasConfig) {
@@ -1117,7 +1109,6 @@ function AppContent() {
       await refresh(detail.project.id);
     }
   }
-
 
   async function handleOpenSocialKit(candidate: Candidate) {
     setSocialKitModalCandidate(candidate);

@@ -83,9 +83,12 @@ export function YouTubePublishModal({
             <Youtube size={18} />
           </div>
           <div>
-            <h3 id="yt-publish-modal-title">Official YouTube Shorts Direct Upload</h3>
+            <h3 id="yt-publish-modal-title">
+              Official YouTube Shorts Direct Upload
+            </h3>
             <p>
-              Upload vertical 9:16 clips directly to YouTube Shorts with AI titles &amp; #Shorts tagging
+              Upload vertical 9:16 clips directly to YouTube Shorts with AI
+              titles &amp; #Shorts tagging
             </p>
           </div>
         </div>
@@ -103,9 +106,10 @@ export function YouTubePublishModal({
           <strong className="youtube-banner-title">
             Official Google YouTube Data API v3
           </strong>
-          Enter your Google Cloud OAuth2 Client ID, Client Secret, and Refresh Token.
-          ClipOn securely stores these in your local keystore, handles resumable video
-          transfers with automatic OAuth token refreshment, and attaches required
+          Enter your Google Cloud OAuth2 Client ID, Client Secret, and Refresh
+          Token. ClipOn securely stores these in your local keystore, handles
+          resumable video transfers with automatic OAuth token refreshment, and
+          attaches required
           <code>#Shorts</code> metadata.
         </div>
 
@@ -146,7 +150,8 @@ export function YouTubePublishModal({
               autoFocus
             />
             <span className="folder-hint">
-              Created under Google Cloud Console &gt; APIs &amp; Services &gt; Credentials
+              Created under Google Cloud Console &gt; APIs &amp; Services &gt;
+              Credentials
             </span>
           </div>
 
@@ -172,7 +177,8 @@ export function YouTubePublishModal({
               placeholder="1//04..."
             />
             <span className="folder-hint">
-              Offline refresh token generated with scope: https://www.googleapis.com/auth/youtube.upload
+              Offline refresh token generated with scope:
+              https://www.googleapis.com/auth/youtube.upload
             </span>
           </div>
 
@@ -214,7 +220,9 @@ export function YouTubePublishModal({
                   onChange={(e) => setPrivacyStatus(e.target.value)}
                 >
                   <option value="public">Public (Instant Live Short)</option>
-                  <option value="unlisted">Unlisted (Review Before Public)</option>
+                  <option value="unlisted">
+                    Unlisted (Review Before Public)
+                  </option>
                   <option value="private">Private (Only You)</option>
                 </select>
               </div>

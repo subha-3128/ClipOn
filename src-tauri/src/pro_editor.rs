@@ -21,13 +21,46 @@ fn clean_leading_filler_and_greetings(
 
     let filler_words = [
         // Conjunctions & discourse markers
-        "and", "so", "but", "because", "like", "well", "then", "or", "now", "plus",
-        "also", "anyway", "actually", "basically", "honestly", "literally",
+        "and",
+        "so",
+        "but",
+        "because",
+        "like",
+        "well",
+        "then",
+        "or",
+        "now",
+        "plus",
+        "also",
+        "anyway",
+        "actually",
+        "basically",
+        "honestly",
+        "literally",
         // Conversational softeners & agreement
-        "right", "yeah", "yes", "yep", "sure", "definitely", "absolutely", "exactly",
-        "okay", "ok", "alright", "uh", "um", "ah",
+        "right",
+        "yeah",
+        "yes",
+        "yep",
+        "sure",
+        "definitely",
+        "absolutely",
+        "exactly",
+        "okay",
+        "ok",
+        "alright",
+        "uh",
+        "um",
+        "ah",
         // Greetings (dead air on short-form reels)
-        "hey", "hi", "hello", "welcome", "yo", "everyone", "guys", "folks",
+        "hey",
+        "hi",
+        "hello",
+        "welcome",
+        "yo",
+        "everyone",
+        "guys",
+        "folks",
     ];
 
     let stop_idx = (start_idx + max_advance).min(words.len() - 1);
@@ -72,15 +105,22 @@ fn clean_leading_discourse_marker(words: &[TranscriptWord], start_idx: usize) ->
 
 /// Evaluates whether the candidate clip is contextually self-contained or suffers
 /// from dangling pronouns or missing setup from prior discourse.
-pub fn evaluate_context_independence(clip_words: &[&TranscriptWord]) -> (f64, Option<&'static str>) {
+pub fn evaluate_context_independence(
+    clip_words: &[&TranscriptWord],
+) -> (f64, Option<&'static str>) {
     if clip_words.is_empty() {
         return (0.70, None);
     }
     let first_text = clip_words[0].text.trim().to_lowercase();
     let cleaned = first_text.trim_matches(|c: char| !c.is_alphabetic());
 
-    let dangling_pronouns = ["he", "she", "it", "they", "them", "him", "her", "that", "those", "these"];
-    let strong_openers = ["why", "how", "what", "when", "who", "if", "never", "always", "here", "stop", "i", "you", "we"];
+    let dangling_pronouns = [
+        "he", "she", "it", "they", "them", "him", "her", "that", "those", "these",
+    ];
+    let strong_openers = [
+        "why", "how", "what", "when", "who", "if", "never", "always", "here", "stop", "i", "you",
+        "we",
+    ];
 
     if dangling_pronouns.contains(&cleaned) {
         (0.60, Some("⚠️ Requires Prior Context"))
@@ -258,7 +298,7 @@ pub fn snap_candidates_to_boundaries(
                         if text.ends_with('.') || text.ends_with('?') || text.ends_with('!') {
                             candidate_end = Some(i);
                             let dur = words[i].end - final_start;
-                            if dur >= 30.0 && dur <= 45.0 {
+                            if (30.0..=45.0).contains(&dur) {
                                 break;
                             }
                         }
@@ -275,14 +315,14 @@ pub fn snap_candidates_to_boundaries(
                 // If duration is too short (< 25s) and more transcript is available, look forward
                 let current_dur = words[end_idx].end - final_start;
                 if current_dur < 25.0 && end_idx + 1 < words.len() {
-                    for i in end_idx..words.len() {
-                        if words[i].end > max_allowed_end {
+                    for (i, word) in words.iter().enumerate().skip(end_idx) {
+                        if word.end > max_allowed_end {
                             break;
                         }
-                        let text = &words[i].text;
+                        let text = &word.text;
                         if text.ends_with('.') || text.ends_with('?') || text.ends_with('!') {
                             best_end_idx = i;
-                            let new_dur = words[i].end - final_start;
+                            let new_dur = word.end - final_start;
                             if new_dur >= 30.0 {
                                 break;
                             }
@@ -503,8 +543,23 @@ pub fn evaluate_hook_components(hook_text: &str) -> (f64, f64, Vec<&'static str>
 
     // High-Stakes Metric
     let quantitative_patterns = [
-        "99%", "90%", "80%", "50%", "million", "billion", "dollars", "0 to", "10x", "top 3",
-        "3 things", "5 ways", "number one", "first time", "every single", "rules", "formula",
+        "99%",
+        "90%",
+        "80%",
+        "50%",
+        "million",
+        "billion",
+        "dollars",
+        "0 to",
+        "10x",
+        "top 3",
+        "3 things",
+        "5 ways",
+        "number one",
+        "first time",
+        "every single",
+        "rules",
+        "formula",
     ];
     if quantitative_patterns.iter().any(|p| lower.contains(p))
         || words.iter().any(|w| w.chars().any(|c| c.is_ascii_digit()))
@@ -515,8 +570,17 @@ pub fn evaluate_hook_components(hook_text: &str) -> (f64, f64, Vec<&'static str>
 
     // High-Value Promise / Breakthrough Formula
     let value_keywords = [
-        "how to", "secret to", "the real reason", "this one thing", "the formula",
-        "blueprint", "unlock", "double your", "10x your", "fastest way", "hack",
+        "how to",
+        "secret to",
+        "the real reason",
+        "this one thing",
+        "the formula",
+        "blueprint",
+        "unlock",
+        "double your",
+        "10x your",
+        "fastest way",
+        "hack",
     ];
     if value_keywords.iter().any(|k| lower.contains(k)) {
         hook_score += 0.12;
@@ -532,8 +596,14 @@ pub fn evaluate_hook_components(hook_text: &str) -> (f64, f64, Vec<&'static str>
 
     // Penalty for Conversational Weak Intros & Greetings
     let weak_intro_patterns = [
-        "hey guys", "welcome back", "hello everyone", "so basically", "i wanted to share",
-        "in this video", "today i'm going to", "what's up guys",
+        "hey guys",
+        "welcome back",
+        "hello everyone",
+        "so basically",
+        "i wanted to share",
+        "in this video",
+        "today i'm going to",
+        "what's up guys",
     ];
     if weak_intro_patterns.iter().any(|p| lower.contains(p)) {
         hook_score -= 0.20;
@@ -570,8 +640,19 @@ pub fn evaluate_hook_components(hook_text: &str) -> (f64, f64, Vec<&'static str>
 
     // Emotional / Storytelling Setup
     let narrative_keywords = [
-        "crazy", "insane", "shocking", "changed my life", "i lost", "couldn't believe",
-        "hardest thing", "story", "terrifying", "huge", "unexpected", "secret", "revealed",
+        "crazy",
+        "insane",
+        "shocking",
+        "changed my life",
+        "i lost",
+        "couldn't believe",
+        "hardest thing",
+        "story",
+        "terrifying",
+        "huge",
+        "unexpected",
+        "secret",
+        "revealed",
     ];
     if narrative_keywords.iter().any(|k| lower.contains(k)) {
         emotion_curiosity_score += 0.15;
@@ -592,7 +673,6 @@ pub fn evaluate_hook_linguistics(hook_text: &str) -> (f64, Vec<&'static str>) {
     let composite = (0.55 * hook_norm + 0.45 * emotion_curiosity_norm) * 100.0;
     (composite.clamp(45.0, 99.0), badges)
 }
-
 
 /// Evaluates retention and pacing components:
 /// Returns `(retention_norm, pacing_norm, duration_badge)` with scores strictly in 0.0..=1.0.
@@ -942,23 +1022,16 @@ pub fn generate_kinetic_ass(
     let is_neon = style == "neon-glow";
     let is_submagic = style == "submagic-viral";
 
-    let (
-        font_name,
-        font_size,
-        primary_color,
-        highlight_color,
-        border_color,
-        border_w,
-        shadow_w,
-    ) = if is_hormozi {
-        ("Arial", 84, "&H00FFFFFF", "&H0000E6FF", "&H00000000", 6, 3)
-    } else if is_neon {
-        ("Arial", 80, "&H00FFFFFF", "&H00FFFF00", "&H00330000", 5, 4)
-    } else if is_submagic {
-        ("Arial", 82, "&H00FFFFFF", "&H0000E6FF", "&H00000000", 7, 2)
-    } else {
-        ("Arial", 78, "&H00FFFFFF", "&H0000E6FF", "&H00000000", 5, 2)
-    };
+    let (font_name, font_size, primary_color, highlight_color, border_color, border_w, shadow_w) =
+        if is_hormozi {
+            ("Arial", 84, "&H00FFFFFF", "&H0000E6FF", "&H00000000", 6, 3)
+        } else if is_neon {
+            ("Arial", 80, "&H00FFFFFF", "&H00FFFF00", "&H00330000", 5, 4)
+        } else if is_submagic {
+            ("Arial", 82, "&H00FFFFFF", "&H0000E6FF", "&H00000000", 7, 2)
+        } else {
+            ("Arial", 78, "&H00FFFFFF", "&H0000E6FF", "&H00000000", 5, 2)
+        };
 
     let (alignment, margin_v) = (2, 380); // Standard lower third
 
@@ -1425,8 +1498,7 @@ mod tests {
 
     #[test]
     fn test_evaluate_hook_linguistics_scores_questions_and_contrarian() {
-        let (q_score, q_badges) =
-            evaluate_hook_linguistics("Why does 99% of people fail with AI?");
+        let (q_score, q_badges) = evaluate_hook_linguistics("Why does 99% of people fail with AI?");
         assert!(q_score >= 85.0);
         assert!(q_badges.iter().any(|b| b.contains("Curiosity Question")));
 
@@ -1459,7 +1531,10 @@ mod tests {
         // [48.0s] "Because consistency without strategy is loud noise." (Punchline / Payoff)
         // [48.5s - 90.0s] Next topic
         let mut words = Vec::new();
-        let intro_words = ["Hey", "guys,", "welcome", "back", "to", "the", "show.", "Yeah,", "so", "glad", "to", "be", "here."];
+        let intro_words = [
+            "Hey", "guys,", "welcome", "back", "to", "the", "show.", "Yeah,", "so", "glad", "to",
+            "be", "here.",
+        ];
         for (i, w) in intro_words.iter().enumerate() {
             words.push(TranscriptWord {
                 text: w.to_string(),
@@ -1469,7 +1544,10 @@ mod tests {
             });
         }
 
-        let hook_words = ["Why", "do", "99%", "of", "creators", "fail", "before", "making", "a", "single", "dollar?"];
+        let hook_words = [
+            "Why", "do", "99%", "of", "creators", "fail", "before", "making", "a", "single",
+            "dollar?",
+        ];
         let hook_start_base = 12.4;
         for (i, w) in hook_words.iter().enumerate() {
             words.push(TranscriptWord {
@@ -1521,11 +1599,19 @@ mod tests {
 
         let candidate = &snapped[0];
         // 1. Reel MUST start directly on the hook, skipping intro/greetings!
-        assert!((candidate.start - 12.4).abs() < 0.1, "Start was {} instead of 12.4s", candidate.start);
+        assert!(
+            (candidate.start - 12.4).abs() < 0.1,
+            "Start was {} instead of 12.4s",
+            candidate.start
+        );
 
         // 2. Reel MUST be within the 30-45s sweet spot (never > 60s)
         let dur = candidate.end - candidate.start;
-        assert!(dur >= 30.0 && dur <= 45.0, "Duration was {}s, expected 30-45s", dur);
+        assert!(
+            dur >= 30.0 && dur <= 45.0,
+            "Duration was {}s, expected 30-45s",
+            dur
+        );
         assert!(dur <= 60.0, "Duration exceeded 60s max: {}s", dur);
 
         // Step 2: Multi-Modal Hook Quality & Retention Potential Scoring
@@ -1534,7 +1620,11 @@ mod tests {
         let final_candidate = &scored[0];
 
         // 3. Score must be high due to curiosity question + quantitative metric + 30-45s sweet spot
-        assert!(final_candidate.score >= 88.0, "Score was only {}", final_candidate.score);
+        assert!(
+            final_candidate.score >= 88.0,
+            "Score was only {}",
+            final_candidate.score
+        );
         assert!(final_candidate.rationale.contains("30–45s Sweet Spot"));
         assert!(final_candidate.rationale.contains("Curiosity Question"));
     }
@@ -1580,8 +1670,11 @@ mod tests {
             confidence: 0.98,
             fallback_reason: None,
         };
-        let nvidia_scored = calculate_composite_reel_scores(None, &drafts, &transcript, Some(&nvidia_timeline));
-        assert!(nvidia_scored[0].rationale.contains("Active Speaker: NVIDIA ASD"));
+        let nvidia_scored =
+            calculate_composite_reel_scores(None, &drafts, &transcript, Some(&nvidia_timeline));
+        assert!(nvidia_scored[0]
+            .rationale
+            .contains("Active Speaker: NVIDIA ASD"));
 
         // Test Local Fallback timeline
         let fallback_timeline = ActiveSpeakerTimeline {
@@ -1598,8 +1691,11 @@ mod tests {
             confidence: 0.75,
             fallback_reason: Some("No API key configured".to_string()),
         };
-        let fallback_scored = calculate_composite_reel_scores(None, &drafts, &transcript, Some(&fallback_timeline));
-        assert!(fallback_scored[0].rationale.contains("Active Speaker: Local Fallback"));
+        let fallback_scored =
+            calculate_composite_reel_scores(None, &drafts, &transcript, Some(&fallback_timeline));
+        assert!(fallback_scored[0]
+            .rationale
+            .contains("Active Speaker: Local Fallback"));
         assert!(fallback_scored[0].rationale.contains("No API key"));
     }
 
@@ -1607,15 +1703,33 @@ mod tests {
     fn test_scoring_components_normalization_bounds() {
         // 1. Hook and Emotion/Curiosity bounds
         let (hook_norm, emotion_norm, _) = evaluate_hook_components("Why did 99% fail?");
-        assert!((0.0..=1.0).contains(&hook_norm), "hook_norm {} out of bounds", hook_norm);
-        assert!((0.0..=1.0).contains(&emotion_norm), "emotion_norm {} out of bounds", emotion_norm);
+        assert!(
+            (0.0..=1.0).contains(&hook_norm),
+            "hook_norm {} out of bounds",
+            hook_norm
+        );
+        assert!(
+            (0.0..=1.0).contains(&emotion_norm),
+            "emotion_norm {} out of bounds",
+            emotion_norm
+        );
 
         // 2. Retention and Pacing bounds across extreme durations and speech rates
         for dur in [0.5, 10.0, 35.0, 42.0, 58.0, 90.0, 1000.0] {
             for wpm in [0.0, 50.0, 175.0, 250.0, 600.0] {
                 let (ret_norm, pace_norm, _) = calculate_retention_components(dur, wpm);
-                assert!((0.0..=1.0).contains(&ret_norm), "ret_norm {} out of bounds for dur {}", ret_norm, dur);
-                assert!((0.0..=1.0).contains(&pace_norm), "pace_norm {} out of bounds for wpm {}", pace_norm, wpm);
+                assert!(
+                    (0.0..=1.0).contains(&ret_norm),
+                    "ret_norm {} out of bounds for dur {}",
+                    ret_norm,
+                    dur
+                );
+                assert!(
+                    (0.0..=1.0).contains(&pace_norm),
+                    "pace_norm {} out of bounds for wpm {}",
+                    pace_norm,
+                    wpm
+                );
             }
         }
 
@@ -1676,7 +1790,10 @@ mod tests {
         let scored_unit = calculate_composite_reel_scores(None, &draft_unit, &transcript, None);
         let scored_pct = calculate_composite_reel_scores(None, &draft_pct, &transcript, None);
 
-        assert_eq!(scored_unit[0].score, scored_pct[0].score, "Scores must be identical regardless of whether draft.score was 0.85 or 85.0");
+        assert_eq!(
+            scored_unit[0].score, scored_pct[0].score,
+            "Scores must be identical regardless of whether draft.score was 0.85 or 85.0"
+        );
         assert!(scored_unit[0].score >= 0.0 && scored_unit[0].score <= 100.0);
     }
 

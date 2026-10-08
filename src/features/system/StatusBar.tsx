@@ -56,7 +56,8 @@ export function StatusBar({ environment, canUseCloudKey }: StatusBarProps) {
             `Active Speaker Provider: ${environment?.activeSpeakerProvider || "Local fallback"}`
           }
         >
-          ASD: {environment?.activeSpeakerProvider === "NVIDIA" ? "NVIDIA" : "Local"}
+          ASD:{" "}
+          {environment?.activeSpeakerProvider === "NVIDIA" ? "NVIDIA" : "Local"}
         </span>
       </div>
     </footer>

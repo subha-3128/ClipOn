@@ -1,5 +1,5 @@
-use serde::Deserialize;
 use crate::media::face_tracker::VisionPersonTrack;
+use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct TrackingKeyframe {
@@ -9,7 +9,6 @@ pub struct TrackingKeyframe {
 }
 
 pub type PersonKeyframe = TrackingKeyframe;
-
 
 pub fn build_dynamic_crop_expr(
     keyframes: Option<&[TrackingKeyframe]>,
@@ -55,7 +54,10 @@ pub fn build_dynamic_crop_expr(
     let dead_zone_x = (iw * 0.012).max(12.0) as i64;
     let dead_zone_y = (ih * 0.012).max(12.0) as i64;
 
-    let smooth_and_simplify = |extract_val: fn(&(f64, i64, i64)) -> i64, dead_zone: i64, max_vel_px: f64| -> Vec<(f64, i64)> {
+    let smooth_and_simplify = |extract_val: fn(&(f64, i64, i64)) -> i64,
+                               dead_zone: i64,
+                               max_vel_px: f64|
+     -> Vec<(f64, i64)> {
         let raw: Vec<(f64, i64)> = points.iter().map(|p| (p.0, extract_val(p))).collect();
         if raw.len() <= 2 {
             return raw;
@@ -63,9 +65,8 @@ pub fn build_dynamic_crop_expr(
 
         // Pass 1: Dead-zone hysteresis against micro-head movements and sensor wobble
         let mut steady = vec![raw[0]];
-        for i in 1..raw.len() {
+        for &curr in raw.iter().skip(1) {
             let prev_v = steady.last().unwrap().1;
-            let curr = raw[i];
             if (curr.1 - prev_v).abs() <= dead_zone {
                 steady.push((curr.0, prev_v));
             } else {
@@ -246,7 +247,11 @@ pub fn build_multi_speaker_layout_filter_graph(
             let p3_kfs = get_person_kfs(p3_id);
 
             let (p1_x, p1_y) = build_dynamic_crop_expr(
-                if p1_kfs.is_empty() { None } else { Some(&p1_kfs) },
+                if p1_kfs.is_empty() {
+                    None
+                } else {
+                    Some(&p1_kfs)
+                },
                 iw_f,
                 ih_f,
                 cw_top,
@@ -255,7 +260,11 @@ pub fn build_multi_speaker_layout_filter_graph(
                 fallback_p1_y,
             );
             let (p2_x, p2_y) = build_dynamic_crop_expr(
-                if p2_kfs.is_empty() { None } else { Some(&p2_kfs) },
+                if p2_kfs.is_empty() {
+                    None
+                } else {
+                    Some(&p2_kfs)
+                },
                 iw_f,
                 ih_f,
                 cw_top,
@@ -264,7 +273,11 @@ pub fn build_multi_speaker_layout_filter_graph(
                 fallback_p2_y,
             );
             let (p3_x, p3_y) = build_dynamic_crop_expr(
-                if p3_kfs.is_empty() { None } else { Some(&p3_kfs) },
+                if p3_kfs.is_empty() {
+                    None
+                } else {
+                    Some(&p3_kfs)
+                },
                 iw_f,
                 ih_f,
                 cw_bot,
@@ -283,9 +296,18 @@ pub fn build_multi_speaker_layout_filter_graph(
                           drawbox=x=0:y=958:w=1080:h=3:color=0x38bdf8@0.9:t=fill,\
                           drawbox=x=537:y=0:w=6:h=960:color=0x0a0d14@0.95:t=fill,\
                           drawbox=x=539:y=0:w=2:h=960:color=0x38bdf8@0.9:t=fill",
-                cw_top as i64, ch_top as i64, p1_x, p1_y,
-                cw_top as i64, ch_top as i64, p2_x, p2_y,
-                cw_bot as i64, ch_bot as i64, p3_x, p3_y,
+                cw_top as i64,
+                ch_top as i64,
+                p1_x,
+                p1_y,
+                cw_top as i64,
+                ch_top as i64,
+                p2_x,
+                p2_y,
+                cw_bot as i64,
+                ch_bot as i64,
+                p3_x,
+                p3_y,
             )
         }
         _ => {
@@ -300,7 +322,11 @@ pub fn build_multi_speaker_layout_filter_graph(
             let p2_kfs = get_person_kfs(p2_id);
 
             let (top_x, top_y) = build_dynamic_crop_expr(
-                if p1_kfs.is_empty() { None } else { Some(&p1_kfs) },
+                if p1_kfs.is_empty() {
+                    None
+                } else {
+                    Some(&p1_kfs)
+                },
                 iw_f,
                 ih_f,
                 cw,
@@ -309,7 +335,11 @@ pub fn build_multi_speaker_layout_filter_graph(
                 fallback_p1_y,
             );
             let (bot_x, bot_y) = build_dynamic_crop_expr(
-                if p2_kfs.is_empty() { None } else { Some(&p2_kfs) },
+                if p2_kfs.is_empty() {
+                    None
+                } else {
+                    Some(&p2_kfs)
+                },
                 iw_f,
                 ih_f,
                 cw,
@@ -324,8 +354,7 @@ pub fn build_multi_speaker_layout_filter_graph(
                  [top][bot]vstack[stacked];\
                  [stacked]drawbox=x=0:y=956:w=1080:h=8:color=0x0a0d14@0.95:t=fill,\
                           drawbox=x=0:y=958:w=1080:h=3:color=0x38bdf8@0.9:t=fill",
-                cw as i64, ch as i64, top_x, top_y,
-                cw as i64, ch as i64, bot_x, bot_y,
+                cw as i64, ch as i64, top_x, top_y, cw as i64, ch as i64, bot_x, bot_y,
             )
         }
     }
@@ -449,4 +478,3 @@ mod tests {
         assert!(split_three_graph.contains("[top_row][bot]vstack[stacked]"));
     }
 }
-
