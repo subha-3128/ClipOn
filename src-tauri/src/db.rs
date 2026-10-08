@@ -9,9 +9,11 @@ use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
 use crate::models::{
-    Candidate, CandidateDraft, Clip, ClipCopy, InstagramPost, Project, ProjectDetail, Transcript,
-    YouTubePost,
+    Candidate, CandidateDraft, CandidateFeedback, Clip, ClipCopy,
+    InstagramPost, Project, ProjectDetail, Transcript, YouTubePost,
 };
+#[cfg(test)]
+use crate::models::ClipQualityScore;
 
 #[derive(Clone)]
 pub struct Database {
@@ -151,6 +153,28 @@ impl Database {
                 );
                 CREATE INDEX IF NOT EXISTS idx_youtube_candidate_id ON youtube_posts(candidate_id);",
             ),
+            (
+                5,
+                "ALTER TABLE candidates ADD COLUMN social_kit_json TEXT;",
+            ),
+            (
+                6,
+                "ALTER TABLE candidates ADD COLUMN quality_score_json TEXT;",
+            ),
+            (
+                7,
+                "CREATE TABLE IF NOT EXISTS candidate_feedback (
+                    id TEXT PRIMARY KEY,
+                    candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    action TEXT NOT NULL,
+                    rating INTEGER,
+                    details_json TEXT,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_feedback_candidate_id ON candidate_feedback(candidate_id);
+                CREATE INDEX IF NOT EXISTS idx_feedback_project_id ON candidate_feedback(project_id);",
+            ),
         ];
 
         for (ver, sql) in migrations {
@@ -176,7 +200,10 @@ impl Database {
         execute_migration_alter(&conn, "ALTER TABLE projects ADD COLUMN name TEXT")?;
         execute_migration_alter(&conn, "ALTER TABLE projects ADD COLUMN caption_style TEXT")?;
         execute_migration_alter(&conn, "ALTER TABLE candidates ADD COLUMN layout_override TEXT")?;
+        execute_migration_alter(&conn, "ALTER TABLE candidates ADD COLUMN social_kit_json TEXT")?;
+        execute_migration_alter(&conn, "ALTER TABLE candidates ADD COLUMN quality_score_json TEXT")?;
         execute_migration_alter(&conn, "CREATE TABLE IF NOT EXISTS youtube_posts (id TEXT PRIMARY KEY, candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE, clip_id TEXT REFERENCES clips(id) ON DELETE SET NULL, status TEXT NOT NULL, title TEXT, description TEXT, video_id TEXT, video_url TEXT, error_message TEXT, created_at TEXT NOT NULL, published_at TEXT)")?;
+        execute_migration_alter(&conn, "CREATE TABLE IF NOT EXISTS candidate_feedback (id TEXT PRIMARY KEY, candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, action TEXT NOT NULL, rating INTEGER, details_json TEXT, created_at TEXT NOT NULL)")?;
         Ok(())
     }
 
@@ -363,7 +390,7 @@ impl Database {
         let mut preserved = Vec::new();
         {
             let mut preserved_stmt = tx.prepare(
-                "SELECT id, project_id, start_sec, end_sec, score, hook, rationale, rank, selected, layout_override
+                "SELECT id, project_id, start_sec, end_sec, score, hook, rationale, rank, selected, layout_override, social_kit_json, quality_score_json
                  FROM candidates WHERE project_id = ?1 ORDER BY rank ASC",
             )?;
             let preserved_rows = preserved_stmt.query_map(params![project_id], candidate_from_row)?;
@@ -397,11 +424,18 @@ impl Database {
                 rank: next_rank,
                 selected: index < selected_cutoff,
                 layout_override: None,
+                social_kit: None,
+                quality_score: draft.quality_score.clone(),
             };
 
+            let quality_score_json = draft
+                .quality_score
+                .as_ref()
+                .and_then(|qs| serde_json::to_string(qs).ok());
+
             tx.execute(
-                "INSERT INTO candidates (id, project_id, start_sec, end_sec, score, hook, rationale, rank, selected, layout_override)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                "INSERT INTO candidates (id, project_id, start_sec, end_sec, score, hook, rationale, rank, selected, layout_override, social_kit_json, quality_score_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     &candidate.id,
                     &candidate.project_id,
@@ -412,7 +446,9 @@ impl Database {
                     &candidate.rationale,
                     candidate.rank,
                     if candidate.selected { 1 } else { 0 },
-                    &candidate.layout_override
+                    &candidate.layout_override,
+                    Option::<String>::None,
+                    quality_score_json,
                 ],
             )?;
 
@@ -433,6 +469,9 @@ impl Database {
         start_sec: f64,
         end_sec: f64,
     ) -> Result<()> {
+        if !start_sec.is_finite() || !end_sec.is_finite() || start_sec < 0.0 || end_sec <= start_sec {
+            return Err(anyhow::anyhow!("Invalid candidate timing: start and end must be finite numbers, start >= 0.0, and end > start"));
+        }
         let conn = self.conn.lock().expect("database mutex poisoned");
         conn.execute(
             "UPDATE candidates SET start_sec = ?1, end_sec = ?2 WHERE id = ?3",
@@ -454,10 +493,86 @@ impl Database {
         Ok(())
     }
 
+    pub fn update_candidate_social_kit(
+        &self,
+        candidate_id: &str,
+        social_kit_json: &str,
+    ) -> Result<()> {
+        let conn = self.conn.lock().expect("database mutex poisoned");
+        conn.execute(
+            "UPDATE candidates SET social_kit_json = ?1 WHERE id = ?2",
+            params![social_kit_json, candidate_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn record_candidate_feedback(
+        &self,
+        candidate_id: &str,
+        project_id: &str,
+        action: &str,
+        rating: Option<i64>,
+        details_json: Option<&str>,
+    ) -> Result<CandidateFeedback> {
+        let conn = self.conn.lock().expect("database mutex poisoned");
+        let id = Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO candidate_feedback (id, candidate_id, project_id, action, rating, details_json, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![&id, candidate_id, project_id, action, rating, details_json, &now],
+        )?;
+        Ok(CandidateFeedback {
+            id,
+            candidate_id: candidate_id.to_string(),
+            project_id: project_id.to_string(),
+            action: action.to_string(),
+            rating,
+            details_json: details_json.map(|s| s.to_string()),
+            created_at: now,
+        })
+    }
+
+    pub fn list_candidate_feedback(&self, project_id: Option<&str>) -> Result<Vec<CandidateFeedback>> {
+        let conn = self.conn.lock().expect("database mutex poisoned");
+        let mut stmt = if project_id.is_some() {
+            conn.prepare(
+                "SELECT id, candidate_id, project_id, action, rating, details_json, created_at
+                 FROM candidate_feedback WHERE project_id = ?1 ORDER BY created_at DESC",
+            )?
+        } else {
+            conn.prepare(
+                "SELECT id, candidate_id, project_id, action, rating, details_json, created_at
+                 FROM candidate_feedback ORDER BY created_at DESC",
+            )?
+        };
+
+        let rows = if let Some(pid) = project_id {
+            stmt.query_map(params![pid], feedback_from_row)?
+        } else {
+            stmt.query_map([], feedback_from_row)?
+        };
+
+        rows.collect::<rusqlite::Result<Vec<_>>>().map_err(Into::into)
+    }
+
+    pub fn clear_candidate_feedback(&self, project_id: Option<&str>) -> Result<()> {
+        let conn = self.conn.lock().expect("database mutex poisoned");
+        match project_id {
+            Some(pid) => {
+                conn.execute("DELETE FROM candidate_feedback WHERE project_id = ?1", params![pid])?;
+            }
+            None => {
+                conn.execute("DELETE FROM candidate_feedback", [])?;
+            }
+        };
+        Ok(())
+    }
+
     pub fn list_candidates(&self, project_id: &str) -> Result<Vec<Candidate>> {
         let conn = self.conn.lock().expect("database mutex poisoned");
         let mut stmt = conn.prepare(
-            "SELECT id, project_id, start_sec, end_sec, score, hook, rationale, rank, selected, layout_override
+            "SELECT id, project_id, start_sec, end_sec, score, hook, rationale, rank, selected, layout_override, social_kit_json, quality_score_json
              FROM candidates WHERE project_id = ?1 ORDER BY rank ASC",
         )?;
         let rows = stmt.query_map(params![project_id], candidate_from_row)?;
@@ -471,7 +586,7 @@ impl Database {
             "SELECT
                 candidates.id, candidates.project_id, candidates.start_sec, candidates.end_sec,
                 candidates.score, candidates.hook, candidates.rationale, candidates.rank, candidates.selected,
-                candidates.layout_override,
+                candidates.layout_override, candidates.social_kit_json, candidates.quality_score_json,
                 projects.id, projects.name, projects.source_path, projects.source_duration, projects.status,
                 projects.transcription_mode, projects.created_at, projects.updated_at, projects.caption_style
              FROM candidates
@@ -480,6 +595,10 @@ impl Database {
             params![candidate_id],
             |row| {
                 let selected: i64 = row.get(8)?;
+                let social_kit_json: Option<String> = row.get(10).ok();
+                let social_kit = social_kit_json.and_then(|s| serde_json::from_str(&s).ok());
+                let quality_score_json: Option<String> = row.get(11).ok();
+                let quality_score = quality_score_json.and_then(|s| serde_json::from_str(&s).ok());
                 let candidate = Candidate {
                     id: row.get(0)?,
                     project_id: row.get(1)?,
@@ -491,17 +610,19 @@ impl Database {
                     rank: row.get(7)?,
                     selected: selected == 1,
                     layout_override: row.get(9).ok(),
+                    social_kit,
+                    quality_score,
                 };
                 let project = Project {
-                    id: row.get(10)?,
-                    name: row.get(11)?,
-                    source_path: row.get(12)?,
-                    source_duration: row.get(13)?,
-                    status: row.get(14)?,
-                    transcription_mode: row.get(15)?,
-                    created_at: row.get(16)?,
-                    updated_at: row.get(17)?,
-                    caption_style: row.get(18)?,
+                    id: row.get(12)?,
+                    name: row.get(13)?,
+                    source_path: row.get(14)?,
+                    source_duration: row.get(15)?,
+                    status: row.get(16)?,
+                    transcription_mode: row.get(17)?,
+                    created_at: row.get(18)?,
+                    updated_at: row.get(19)?,
+                    caption_style: row.get(20)?,
                 };
                 Ok((candidate, project))
             },
@@ -848,6 +969,10 @@ fn project_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
 fn candidate_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Candidate> {
     let selected: i64 = row.get(8)?;
     let layout_override: Option<String> = row.get(9).ok();
+    let social_kit_json: Option<String> = row.get(10).ok();
+    let social_kit = social_kit_json.and_then(|s| serde_json::from_str(&s).ok());
+    let quality_score_json: Option<String> = row.get(11).ok();
+    let quality_score = quality_score_json.and_then(|s| serde_json::from_str(&s).ok());
     Ok(Candidate {
         id: row.get(0)?,
         project_id: row.get(1)?,
@@ -859,6 +984,20 @@ fn candidate_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Candidate> {
         rank: row.get(7)?,
         selected: selected == 1,
         layout_override,
+        social_kit,
+        quality_score,
+    })
+}
+
+fn feedback_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CandidateFeedback> {
+    Ok(CandidateFeedback {
+        id: row.get(0)?,
+        candidate_id: row.get(1)?,
+        project_id: row.get(2)?,
+        action: row.get(3)?,
+        rating: row.get(4)?,
+        details_json: row.get(5)?,
+        created_at: row.get(6)?,
     })
 }
 
@@ -903,6 +1042,7 @@ mod tests {
             score: 9.0,
             hook: "Test hook".into(),
             rationale: "Rationale".into(),
+            quality_score: None,
         }];
 
         let candidates = db.replace_candidates(&proj.id, &drafts).expect("replace candidates");
@@ -943,6 +1083,7 @@ mod tests {
             score: 9.0,
             hook: "Test hook".into(),
             rationale: "Rationale".into(),
+            quality_score: None,
         }];
 
         let candidates = db.replace_candidates(&proj.id, &drafts).expect("replace candidates");
@@ -974,6 +1115,7 @@ mod tests {
                 score: 9.0,
                 hook: "Rendered Clip Hook".into(),
                 rationale: "Rationale 1".into(),
+                quality_score: None,
             },
             CandidateDraft {
                 start: 20.0,
@@ -981,6 +1123,7 @@ mod tests {
                 score: 8.0,
                 hook: "Pending Clip Hook".into(),
                 rationale: "Rationale 2".into(),
+                quality_score: None,
             },
         ];
 
@@ -1001,6 +1144,7 @@ mod tests {
                 score: 8.5,
                 hook: "New Discovery Hook".into(),
                 rationale: "Rationale 3".into(),
+                quality_score: None,
             },
         ];
 
@@ -1076,5 +1220,169 @@ mod tests {
         let latest2 = db.latest_transcript(&proj.id).expect("latest transcript").unwrap();
         assert_eq!(latest2.engine, "whisper");
         assert!(latest2.raw_json.contains("second"));
+    }
+
+    #[test]
+    fn test_candidate_social_kit_persistence() {
+        let db = temp_db();
+        let proj = db
+            .create_project("/dummy/path.mp4", "local", "modern-box", Some(60.0))
+            .expect("create project");
+
+        let drafts = vec![CandidateDraft {
+            start: 0.0,
+            end: 15.0,
+            score: 9.0,
+            hook: "Social kit hook".into(),
+            rationale: "Rationale".into(),
+            quality_score: None,
+        }];
+
+        let candidates = db.replace_candidates(&proj.id, &drafts).expect("replace candidates");
+        let cand_id = &candidates[0].id;
+        assert!(candidates[0].social_kit.is_none());
+
+        let social_kit_json = r##"{"candidateId":"test","titles":["Viral Title 1","Viral Title 2"],"description":"Great clip","hashtags":["#viral","#clip"],"callToAction":"Subscribe now"}"##;
+        db.update_candidate_social_kit(cand_id, social_kit_json)
+            .expect("update social kit");
+
+        let list = db.list_candidates(&proj.id).expect("list candidates");
+        assert_eq!(list.len(), 1);
+        let kit = list[0].social_kit.as_ref().expect("social kit exists");
+        assert_eq!(kit.titles.len(), 2);
+        assert_eq!(kit.titles[0], "Viral Title 1");
+        assert_eq!(kit.description, "Great clip");
+        assert_eq!(kit.hashtags, vec!["#viral", "#clip"]);
+        assert_eq!(kit.call_to_action, "Subscribe now");
+
+        let (from_get, _) = db.get_candidate_with_project(cand_id).expect("get candidate with project");
+        assert!(from_get.social_kit.is_some());
+        assert_eq!(from_get.social_kit.unwrap().call_to_action, "Subscribe now");
+    }
+
+    #[test]
+    fn test_update_candidate_timing_validation() {
+        let db = temp_db();
+        let proj = db
+            .create_project("/dummy/path.mp4", "local", "modern-box", Some(60.0))
+            .expect("create project");
+
+        let drafts = vec![CandidateDraft {
+            start: 0.0,
+            end: 15.0,
+            score: 9.0,
+            hook: "Timing test hook".into(),
+            rationale: "Rationale".into(),
+            quality_score: None,
+        }];
+
+        let candidates = db.replace_candidates(&proj.id, &drafts).expect("replace candidates");
+        let cand_id = &candidates[0].id;
+
+        // Valid timing
+        assert!(db.update_candidate_timing(cand_id, 5.0, 20.0).is_ok());
+
+        // Invalid: negative start
+        assert!(db.update_candidate_timing(cand_id, -1.0, 20.0).is_err());
+
+        // Invalid: end <= start
+        assert!(db.update_candidate_timing(cand_id, 10.0, 10.0).is_err());
+        assert!(db.update_candidate_timing(cand_id, 15.0, 10.0).is_err());
+
+        // Invalid: NaN
+        assert!(db.update_candidate_timing(cand_id, f64::NAN, 20.0).is_err());
+        assert!(db.update_candidate_timing(cand_id, 0.0, f64::INFINITY).is_err());
+    }
+
+    #[test]
+    fn test_candidate_quality_score_persistence() {
+        let db = temp_db();
+        let proj = db
+            .create_project("/dummy/sample.mp4", "local", "modern-box", Some(60.0))
+            .expect("create project");
+
+        let qs = ClipQualityScore::compute(0.9, 0.85, 0.8, 0.9, 0.75, 0.8, 0.9, 0.0, 0.0);
+        let drafts = vec![CandidateDraft {
+            start: 0.0,
+            end: 15.0,
+            score: qs.total,
+            hook: "Quality scored clip".into(),
+            rationale: "Comprehensive score breakdown".into(),
+            quality_score: Some(qs.clone()),
+        }];
+
+        let candidates = db.replace_candidates(&proj.id, &drafts).expect("replace candidates");
+        let cand_id = &candidates[0].id;
+        assert!(candidates[0].quality_score.is_some());
+        assert_eq!(candidates[0].quality_score.as_ref().unwrap().total, qs.total);
+
+        // Verify retrieval via list_candidates
+        let list = db.list_candidates(&proj.id).expect("list candidates");
+        assert_eq!(list[0].quality_score.as_ref().unwrap().total, qs.total);
+
+        // Verify retrieval via get_candidate_with_project
+        let (from_get, _) = db.get_candidate_with_project(cand_id).expect("get candidate");
+        assert_eq!(from_get.quality_score.as_ref().unwrap().total, qs.total);
+    }
+
+    #[test]
+    fn test_candidate_feedback_recording_and_clearing() {
+        let db = temp_db();
+        let proj = db
+            .create_project("/dummy/sample.mp4", "local", "modern-box", Some(60.0))
+            .expect("create project");
+
+        let drafts = vec![CandidateDraft {
+            start: 0.0,
+            end: 15.0,
+            score: 9.0,
+            hook: "Test hook".into(),
+            rationale: "Rationale".into(),
+            quality_score: None,
+        }];
+        let candidates = db.replace_candidates(&proj.id, &drafts).expect("replace candidates");
+        let cand_id = &candidates[0].id;
+
+        // Record feedback: user rated 5 stars and edited crop
+        let fb1 = db
+            .record_candidate_feedback(
+                cand_id,
+                &proj.id,
+                "rating",
+                Some(5),
+                Some(r#"{"comment":"Great hook!"}"#),
+            )
+            .expect("record feedback 1");
+        assert_eq!(fb1.rating, Some(5));
+        assert_eq!(fb1.action, "rating");
+
+        let fb2 = db
+            .record_candidate_feedback(
+                cand_id,
+                &proj.id,
+                "crop_edit",
+                None,
+                Some(r#"{"mode":"split_two"}"#),
+            )
+            .expect("record feedback 2");
+        assert_eq!(fb2.action, "crop_edit");
+
+        // List feedback for project
+        let list = db
+            .list_candidate_feedback(Some(&proj.id))
+            .expect("list feedback");
+        assert_eq!(list.len(), 2);
+
+        // List global feedback
+        let all = db.list_candidate_feedback(None).expect("list all feedback");
+        assert_eq!(all.len(), 2);
+
+        // Clear feedback (opt-out / privacy reset)
+        db.clear_candidate_feedback(Some(&proj.id))
+            .expect("clear feedback");
+        let remaining = db
+            .list_candidate_feedback(Some(&proj.id))
+            .expect("list empty feedback");
+        assert!(remaining.is_empty());
     }
 }

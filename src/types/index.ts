@@ -60,6 +60,20 @@ export type SocialKit = {
   callToAction: string;
 };
 
+export type ClipQualityScore = {
+  hook: number | null;
+  coherence: number | null;
+  contextIndependence: number | null;
+  payoff: number | null;
+  speechQuality: number | null;
+  visualQuality: number | null;
+  boundaryQuality: number | null;
+  redundancyPenalty: number;
+  riskPenalty: number;
+  total: number;
+  version: number;
+};
+
 export type Candidate = {
   id: string;
   projectId: string;
@@ -71,6 +85,18 @@ export type Candidate = {
   rank: number;
   selected: boolean;
   layoutOverride?: string | null;
+  socialKit?: SocialKit | null;
+  qualityScore?: ClipQualityScore | null;
+};
+
+export type CandidateFeedback = {
+  id: string;
+  candidateId: string;
+  projectId: string;
+  action: 'kept' | 'rejected' | 'boundary_edit' | 'crop_edit' | 'caption_edit' | 'rating' | 'published' | string;
+  rating?: number | null;
+  detailsJson?: string | null;
+  createdAt: string;
 };
 
 export type Clip = {

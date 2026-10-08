@@ -344,3 +344,46 @@ pub async fn cancel_job(
 pub async fn get_active_jobs(state: tauri::State<'_, AppState>) -> Result<Vec<JobInfo>, String> {
     render_service::get_active_jobs(&state)
 }
+
+#[tauri::command]
+pub async fn record_candidate_feedback(
+    state: tauri::State<'_, AppState>,
+    candidate_id: String,
+    project_id: String,
+    action: String,
+    rating: Option<i64>,
+    details_json: Option<String>,
+) -> Result<crate::models::CandidateFeedback, String> {
+    state
+        .db
+        .record_candidate_feedback(
+            &candidate_id,
+            &project_id,
+            &action,
+            rating,
+            details_json.as_deref(),
+        )
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_candidate_feedback(
+    state: tauri::State<'_, AppState>,
+    project_id: Option<String>,
+) -> Result<Vec<crate::models::CandidateFeedback>, String> {
+    state
+        .db
+        .list_candidate_feedback(project_id.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn clear_candidate_feedback(
+    state: tauri::State<'_, AppState>,
+    project_id: Option<String>,
+) -> Result<(), String> {
+    state
+        .db
+        .clear_candidate_feedback(project_id.as_deref())
+        .map_err(|e| e.to_string())
+}

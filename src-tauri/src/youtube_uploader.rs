@@ -158,29 +158,17 @@ pub async fn upload_shorts(
         return Err(anyhow!("Video file not found at: {}", video_path.display()));
     }
 
-    let file_bytes = tokio::fs::read(video_path)
+    let file_meta = tokio::fs::metadata(video_path)
         .await
-        .with_context(|| format!("Reading video file at {}", video_path.display()))?;
+        .with_context(|| format!("Reading video metadata at {}", video_path.display()))?;
 
-    let file_size = file_bytes.len();
+    let file_size = file_meta.len();
     if file_size == 0 {
         return Err(anyhow!("Video file is empty (0 bytes)"));
     }
 
     let access_token = refresh_access_token(client_id, client_secret, refresh_token).await?;
-
-    // Format title: guarantee #Shorts tag and stay within YouTube's 100 char limit
-    let mut clean_title = title.trim().to_string();
-    if clean_title.is_empty() {
-        clean_title = "ClipOn Viral Short".to_string();
-    }
-    if !clean_title.to_lowercase().contains("#shorts") {
-        clean_title = format!("{clean_title} #Shorts");
-    }
-    if clean_title.len() > 100 {
-        clean_title.truncate(92);
-        clean_title = format!("{} #Shorts", clean_title.trim_end());
-    }
+    let clean_title = format_youtube_title(title);
 
     // Format description: append #Shorts tag
     let mut clean_desc = description.trim().to_string();
@@ -236,12 +224,18 @@ pub async fn upload_shorts(
         .ok_or_else(|| anyhow!("YouTube did not return a resumable upload location URL"))?
         .to_string();
 
-    // Step 2: Upload Video Bytes
+    // Step 2: Stream Video File Directly from Disk (zero buffering into memory)
+    let file = tokio::fs::File::open(video_path)
+        .await
+        .with_context(|| format!("Opening video file for upload stream at {}", video_path.display()))?;
+    let stream = tokio_util::io::ReaderStream::new(file);
+    let body = reqwest::Body::wrap_stream(stream);
+
     let upload_res = client
         .put(&upload_url)
         .header("Content-Type", "video/mp4")
         .header("Content-Length", file_size.to_string())
-        .body(file_bytes)
+        .body(body)
         .send()
         .await
         .map_err(|e| anyhow!("Network error uploading video stream to YouTube: {e}"))?;
@@ -264,4 +258,49 @@ pub async fn upload_shorts(
         video_url,
         title: clean_title,
     })
+}
+
+/// Formats YouTube title safely, ensuring #Shorts tag and adhering to 100 char limit
+/// without panicking on multi-byte UTF-8 character boundaries (emojis, CJK, non-English).
+pub fn format_youtube_title(title: &str) -> String {
+    let mut clean_title = title.trim().to_string();
+    if clean_title.is_empty() {
+        clean_title = "ClipOn Viral Short".to_string();
+    }
+    if !clean_title.to_lowercase().contains("#shorts") {
+        clean_title = format!("{clean_title} #Shorts");
+    }
+    // YouTube's title limit is 100 characters. Slicing by chars prevents panics on multi-byte UTF-8 boundaries.
+    if clean_title.chars().count() > 100 {
+        let prefix: String = clean_title.chars().take(92).collect();
+        clean_title = format!("{} #Shorts", prefix.trim_end());
+    }
+    clean_title
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_youtube_title_basic() {
+        assert_eq!(format_youtube_title("My Great Clip"), "My Great Clip #Shorts");
+        assert_eq!(format_youtube_title("Already has #shorts"), "Already has #shorts");
+        assert_eq!(format_youtube_title(""), "ClipOn Viral Short #Shorts");
+    }
+
+    #[test]
+    fn test_format_youtube_title_unicode_and_emojis_no_panic() {
+        // Multi-byte Unicode characters right at the boundary
+        let long_emoji_title = "🚀🔥✨ 10 Best Places in Tokyo! 🇯🇵🎌 ".repeat(5);
+        let result = format_youtube_title(&long_emoji_title);
+        assert!(result.chars().count() <= 100);
+        assert!(result.ends_with("#Shorts"));
+
+        // Japanese CJK characters
+        let japanese_title = "これは非常に長いタイトルのテストです。美しい日本の風景と文化について詳しく説明します。".repeat(3);
+        let jp_result = format_youtube_title(&japanese_title);
+        assert!(jp_result.chars().count() <= 100);
+        assert!(jp_result.ends_with("#Shorts"));
+    }
 }

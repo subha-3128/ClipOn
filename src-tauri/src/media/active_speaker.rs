@@ -2264,6 +2264,7 @@ pub fn compute_active_speaker_cache_key(
 /// Active Speaker Service
 /// Coordinates active speaker detection across providers and executes the unified downstream pipeline:
 ///
+/// ```text
 ///                 Active Speaker Service
 ///                          │
 ///               ┌──────────┴──────────┐
@@ -2277,6 +2278,7 @@ pub fn compute_active_speaker_cache_key(
 ///                 Person Association
 ///                          ↓
 ///               Active Speaker Timeline
+/// ```
 #[derive(Clone)]
 pub struct ActiveSpeakerService {
     nvidia_provider: Option<NvidiaAsdProvider>,

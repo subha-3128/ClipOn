@@ -52,27 +52,64 @@ pub fn build_dynamic_crop_expr(
         })
         .collect();
 
-    let simplify = |extract_val: fn(&(f64, i64, i64)) -> i64| -> Vec<(f64, i64)> {
+    let dead_zone_x = (iw * 0.012).max(12.0) as i64;
+    let dead_zone_y = (ih * 0.012).max(12.0) as i64;
+
+    let smooth_and_simplify = |extract_val: fn(&(f64, i64, i64)) -> i64, dead_zone: i64, max_vel_px: f64| -> Vec<(f64, i64)> {
         let raw: Vec<(f64, i64)> = points.iter().map(|p| (p.0, extract_val(p))).collect();
         if raw.len() <= 2 {
             return raw;
         }
-        let mut simplified = vec![raw[0]];
-        for i in 1..raw.len() - 1 {
-            let prev_v = simplified.last().unwrap().1;
-            let curr_v = raw[i].1;
-            let next_v = raw[i + 1].1;
-            if (curr_v - prev_v).abs() <= 3 && (next_v - curr_v).abs() <= 3 {
+
+        // Pass 1: Dead-zone hysteresis against micro-head movements and sensor wobble
+        let mut steady = vec![raw[0]];
+        for i in 1..raw.len() {
+            let prev_v = steady.last().unwrap().1;
+            let curr = raw[i];
+            if (curr.1 - prev_v).abs() <= dead_zone {
+                steady.push((curr.0, prev_v));
+            } else {
+                steady.push(curr);
+            }
+        }
+
+        // Pass 2: Velocity damping and point simplification
+        let mut simplified = vec![steady[0]];
+        for i in 1..steady.len() - 1 {
+            let prev = *simplified.last().unwrap();
+            let curr = steady[i];
+            let next = steady[i + 1];
+
+            // Drop redundant colinear / stationary intermediate points
+            if (curr.1 - prev.1).abs() <= 2 && (next.1 - curr.1).abs() <= 2 {
                 continue;
             }
-            simplified.push(raw[i]);
+
+            // Damped velocity limit to eliminate camera whipping (unless scene cut)
+            let dt = (curr.0 - prev.0).max(0.04);
+            let dv = (curr.1 - prev.1) as f64;
+            let vel = dv.abs() / dt;
+            let is_scene_cut = dv.abs() > (iw * 0.22);
+
+            let clamped_val = if !is_scene_cut && vel > max_vel_px {
+                let max_delta = (max_vel_px * dt).round() as i64;
+                if dv > 0.0 {
+                    prev.1 + max_delta
+                } else {
+                    prev.1 - max_delta
+                }
+            } else {
+                curr.1
+            };
+
+            simplified.push((curr.0, clamped_val));
         }
-        simplified.push(*raw.last().unwrap());
+        simplified.push(*steady.last().unwrap());
         simplified
     };
 
-    let pts_x = simplify(|p| p.1);
-    let pts_y = simplify(|p| p.2);
+    let pts_x = smooth_and_simplify(|p| p.1, dead_zone_x, 550.0);
+    let pts_y = smooth_and_simplify(|p| p.2, dead_zone_y, 450.0);
 
     let build_expr = |pts: &[(f64, i64)], max_limit: i64| -> String {
         if pts.is_empty() {

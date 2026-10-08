@@ -219,18 +219,21 @@ pub fn probe_project(state: &AppState, project_id: &str) -> Result<MediaProbe, S
 }
 
 pub fn delete_project(state: &AppState, project_id: &str) -> Result<(), String> {
-    state.db.delete_project(project_id).map_err(|e| e.to_string())?;
-
+    // 1. Clean up project directory on disk before removing DB records
+    // This prevents inconsistent state where DB says deleted but files remain orphaned.
     let dir = project_dir(state, project_id);
     if dir.exists() {
         if let Err(e) = std::fs::remove_dir_all(&dir) {
-            eprintln!(
-                "Warning: failed to remove project directory {}: {}",
+            return Err(format!(
+                "Failed to delete project files from disk ({}): {}. Project was not deleted from database.",
                 dir.display(),
                 e
-            );
+            ));
         }
     }
+
+    // 2. Now safely delete project and cascaded records from database
+    state.db.delete_project(project_id).map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -509,4 +512,48 @@ pub fn clear_all_storage(state: &AppState) -> Result<String, String> {
     let _ = cache.clear_all();
 
     Ok("All project storage, clips, analysis cache, and database records cleared successfully.".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::Database;
+    use crate::jobs::JobManager;
+
+    fn test_app_state() -> AppState {
+        let temp_dir = std::env::temp_dir().join(format!("clipon_proj_test_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let db_file = temp_dir.join("test.sqlite");
+        let db = Database::open(&db_file).unwrap();
+        AppState {
+            db,
+            data_dir: temp_dir,
+            jobs: JobManager::new(),
+        }
+    }
+
+    #[test]
+    fn test_delete_project_cleans_files_and_db_consistently() {
+        let state = test_app_state();
+        let proj = state
+            .db
+            .create_project("/dummy/path.mp4", "local", "modern-box", Some(60.0))
+            .expect("create project");
+
+        let p_dir = project_dir(&state, &proj.id);
+        std::fs::create_dir_all(&p_dir).unwrap();
+        let sample_wav = p_dir.join("transcription_audio.wav");
+        std::fs::write(&sample_wav, b"RIFF dummy wav").unwrap();
+        assert!(sample_wav.exists());
+
+        // Delete project
+        let del_res = delete_project(&state, &proj.id);
+        assert!(del_res.is_ok());
+
+        // File and directory must be removed from disk
+        assert!(!p_dir.exists(), "project directory must be deleted");
+
+        // Database record must be deleted
+        assert!(state.db.get_project(&proj.id).is_err(), "project should not exist in DB");
+    }
 }

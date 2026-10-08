@@ -484,6 +484,23 @@ function AppContent() {
     );
   }, [detail?.youtubePosts]);
 
+  // Automatically hydrate socialKitData from candidates persisted in SQLite
+  useEffect(() => {
+    if (detail?.candidates) {
+      setSocialKitData((prev) => {
+        let hasNew = false;
+        const updated = { ...prev };
+        for (const c of detail.candidates) {
+          if (c.socialKit && !updated[c.id]) {
+            updated[c.id] = c.socialKit;
+            hasNew = true;
+          }
+        }
+        return hasNew ? updated : prev;
+      });
+    }
+  }, [detail?.candidates]);
+
   async function testInstagramConnection() {
     setInstagramTesting(true);
     setInstagramTestResult(null);
@@ -1121,6 +1138,16 @@ function AppContent() {
           }
         );
         setSocialKitData((prev) => ({ ...prev, [candidate.id]: kit }));
+        setDetail((prev) =>
+          prev
+            ? {
+                ...prev,
+                candidates: prev.candidates.map((c) =>
+                  c.id === candidate.id ? { ...c, socialKit: kit } : c
+                ),
+              }
+            : null
+        );
       } catch (err) {
         showError("Failed to generate social kit", { details: String(err) });
       } finally {
@@ -1143,6 +1170,16 @@ function AppContent() {
               : null,
       });
       setSocialKitData((prev) => ({ ...prev, [candidateId]: kit }));
+      setDetail((prev) =>
+        prev
+          ? {
+              ...prev,
+              candidates: prev.candidates.map((c) =>
+                c.id === candidateId ? { ...c, socialKit: kit } : c
+              ),
+            }
+          : null
+      );
       showToast("Social kit regenerated");
     } catch (err) {
       showError("Failed to regenerate social kit", { details: String(err) });

@@ -214,6 +214,105 @@ export function MomentCard({
         <h4 className="moment-hook">{candidate.hook}</h4>
         <p className="moment-rationale">{candidate.rationale}</p>
 
+        {candidate.qualityScore && (
+          <div
+            className="moment-quality-breakdown"
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "6px",
+              marginTop: "6px",
+              marginBottom: "8px",
+            }}
+          >
+            {candidate.qualityScore.hook !== null && (
+              <span
+                className="quality-metric-tag"
+                title="First 2s scroll-stopping hook strength"
+                style={{
+                  fontSize: "11px",
+                  padding: "2px 6px",
+                  borderRadius: "4px",
+                  background: "rgba(255, 255, 255, 0.06)",
+                  border: "1px solid rgba(255, 255, 255, 0.1)",
+                }}
+              >
+                Hook:{" "}
+                {Math.round(
+                  candidate.qualityScore.hook <= 1
+                    ? candidate.qualityScore.hook * 100
+                    : candidate.qualityScore.hook
+                )}
+                %
+              </span>
+            )}
+            {candidate.qualityScore.contextIndependence !== null && (
+              <span
+                className="quality-metric-tag"
+                title="Standalone context clarity without full video"
+                style={{
+                  fontSize: "11px",
+                  padding: "2px 6px",
+                  borderRadius: "4px",
+                  background: "rgba(255, 255, 255, 0.06)",
+                  border: "1px solid rgba(255, 255, 255, 0.1)",
+                }}
+              >
+                Context:{" "}
+                {Math.round(
+                  candidate.qualityScore.contextIndependence <= 1
+                    ? candidate.qualityScore.contextIndependence * 100
+                    : candidate.qualityScore.contextIndependence
+                )}
+                %
+              </span>
+            )}
+            {candidate.qualityScore.payoff !== null && (
+              <span
+                className="quality-metric-tag"
+                title="Retention sweet-spot & narrative resolution"
+                style={{
+                  fontSize: "11px",
+                  padding: "2px 6px",
+                  borderRadius: "4px",
+                  background: "rgba(255, 255, 255, 0.06)",
+                  border: "1px solid rgba(255, 255, 255, 0.1)",
+                }}
+              >
+                Retention:{" "}
+                {Math.round(
+                  candidate.qualityScore.payoff <= 1
+                    ? candidate.qualityScore.payoff * 100
+                    : candidate.qualityScore.payoff
+                )}
+                %
+              </span>
+            )}
+            {candidate.qualityScore.redundancyPenalty > 0 && (
+              <span
+                className="quality-metric-tag penalty"
+                title="Duplicate window overlap penalty"
+                style={{
+                  fontSize: "11px",
+                  padding: "2px 6px",
+                  borderRadius: "4px",
+                  background: "rgba(239, 68, 68, 0.15)",
+                  border: "1px solid rgba(239, 68, 68, 0.3)",
+                  color: "#fca5a5",
+                }}
+              >
+                Overlap Penalty: -
+                {Math.round(
+                  candidate.qualityScore.redundancyPenalty <= 1
+                    ? candidate.qualityScore.redundancyPenalty * 100
+                    : candidate.qualityScore.redundancyPenalty
+                )}
+                %
+              </span>
+            )}
+          </div>
+        )}
+
         {clip?.outputPath && (
           <div className="rendered-clip-path">
             <span className="path-label">Export:</span>

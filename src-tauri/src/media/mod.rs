@@ -37,7 +37,7 @@ pub use filters::{
 #[allow(unused_imports)]
 pub use presets::{ExportPlatform, OutputPreset};
 #[allow(unused_imports)]
-pub use probe::probe_media;
+pub use probe::{probe_media, validate_rendered_output};
 #[allow(unused_imports)]
 pub use render_plan::{AudioPlan, CaptionPlan, ReframePlan, RenderPlan, TimelineSegment};
 #[allow(unused_imports)]

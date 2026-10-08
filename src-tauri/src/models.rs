@@ -108,6 +108,10 @@ pub struct Candidate {
     pub rank: i64,
     pub selected: bool,
     pub layout_override: Option<String>,
+    #[serde(default)]
+    pub social_kit: Option<SocialKit>,
+    #[serde(default)]
+    pub quality_score: Option<ClipQualityScore>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -212,6 +216,82 @@ pub struct CandidateDraft {
     pub score: f64,
     pub hook: String,
     pub rationale: String,
+    #[serde(default)]
+    pub quality_score: Option<ClipQualityScore>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipQualityScore {
+    pub hook: Option<f64>,
+    pub coherence: Option<f64>,
+    pub context_independence: Option<f64>,
+    pub payoff: Option<f64>,
+    pub speech_quality: Option<f64>,
+    pub visual_quality: Option<f64>,
+    pub boundary_quality: Option<f64>,
+    pub redundancy_penalty: f64,
+    pub risk_penalty: f64,
+    pub total: f64,
+    pub version: u32,
+}
+
+impl ClipQualityScore {
+    pub fn compute(
+        hook: f64,
+        coherence: f64,
+        context_independence: f64,
+        payoff: f64,
+        speech_quality: f64,
+        visual_quality: f64,
+        boundary_quality: f64,
+        redundancy_penalty: f64,
+        risk_penalty: f64,
+    ) -> Self {
+        let positive = 0.20 * hook.clamp(0.0, 1.0)
+            + 0.18 * coherence.clamp(0.0, 1.0)
+            + 0.15 * context_independence.clamp(0.0, 1.0)
+            + 0.15 * payoff.clamp(0.0, 1.0)
+            + 0.12 * speech_quality.clamp(0.0, 1.0)
+            + 0.10 * visual_quality.clamp(0.0, 1.0)
+            + 0.10 * boundary_quality.clamp(0.0, 1.0);
+        let penalty = redundancy_penalty.clamp(0.0, 0.5) + risk_penalty.clamp(0.0, 0.5);
+        let total = ((positive - penalty) * 100.0).clamp(0.0, 100.0);
+        Self {
+            hook: Some(hook),
+            coherence: Some(coherence),
+            context_independence: Some(context_independence),
+            payoff: Some(payoff),
+            speech_quality: Some(speech_quality),
+            visual_quality: Some(visual_quality),
+            boundary_quality: Some(boundary_quality),
+            redundancy_penalty,
+            risk_penalty,
+            total: (total * 10.0).round() / 10.0,
+            version: 1,
+        }
+    }
+
+    pub fn apply_redundancy_penalty(&mut self, penalty: f64) {
+        self.redundancy_penalty = (self.redundancy_penalty + penalty).clamp(0.0, 0.5);
+        let hook_val = self.hook.unwrap_or(0.7).clamp(0.0, 1.0);
+        let coherence_val = self.coherence.unwrap_or(0.7).clamp(0.0, 1.0);
+        let context_val = self.context_independence.unwrap_or(0.7).clamp(0.0, 1.0);
+        let payoff_val = self.payoff.unwrap_or(0.7).clamp(0.0, 1.0);
+        let speech_val = self.speech_quality.unwrap_or(0.7).clamp(0.0, 1.0);
+        let visual_val = self.visual_quality.unwrap_or(0.7).clamp(0.0, 1.0);
+        let boundary_val = self.boundary_quality.unwrap_or(0.7).clamp(0.0, 1.0);
+
+        let positive = 0.20 * hook_val
+            + 0.18 * coherence_val
+            + 0.15 * context_val
+            + 0.15 * payoff_val
+            + 0.12 * speech_val
+            + 0.10 * visual_val
+            + 0.10 * boundary_val;
+        let penalty_val = self.redundancy_penalty.clamp(0.0, 0.5) + self.risk_penalty.clamp(0.0, 0.5);
+        self.total = (((positive - penalty_val) * 100.0).clamp(0.0, 100.0) * 10.0).round() / 10.0;
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -222,4 +302,47 @@ pub struct SocialKit {
     pub description: String,
     pub hashtags: Vec<String>,
     pub call_to_action: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CandidateFeedback {
+    pub id: String,
+    pub candidate_id: String,
+    pub project_id: String,
+    pub action: String,
+    pub rating: Option<i64>,
+    pub details_json: Option<String>,
+    pub created_at: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_clip_quality_score_computation_and_penalties() {
+        let perfect = ClipQualityScore::compute(1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0);
+        assert_eq!(perfect.total, 100.0);
+        assert_eq!(perfect.version, 1);
+
+        let zero = ClipQualityScore::compute(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        assert_eq!(zero.total, 0.0);
+
+        let mut scored = ClipQualityScore::compute(0.9, 0.85, 0.8, 0.9, 0.75, 0.8, 0.9, 0.0, 0.0);
+        let initial_total = scored.total;
+        assert!(initial_total > 80.0 && initial_total < 90.0);
+
+        // Apply redundancy penalty
+        scored.apply_redundancy_penalty(0.15);
+        assert!(scored.total < initial_total);
+        assert_eq!(scored.redundancy_penalty, 0.15);
+
+        // Serde roundtrip preserves camelCase
+        let json = serde_json::to_string(&scored).expect("serialize");
+        assert!(json.contains("contextIndependence"));
+        assert!(json.contains("speechQuality"));
+        let parsed: ClipQualityScore = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(parsed, scored);
+    }
 }

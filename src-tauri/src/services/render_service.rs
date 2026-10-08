@@ -27,10 +27,20 @@ pub async fn render_flat_clip_for_candidate(
     let app_clone = app.clone();
     let preset_name = export_preset.clone();
 
+    let (candidate, project) = state
+        .db
+        .get_candidate_with_project(&candidate_id)
+        .map_err(|e| e.to_string())?;
+
+    let output_path = documents_project_dir(&project, out_dir.as_deref())?
+        .join("clips")
+        .join(format!("clip-{:02}_flat.mp4", candidate.rank));
+    let output_path_str = output_path.to_string_lossy().to_string();
+
     let job_id = job_mgr.create_job_with_details(
         &candidate_id,
         Some(&candidate_id),
-        None,
+        Some(&output_path_str),
         "Queued in render queue",
     );
     let permit = job_mgr
@@ -53,9 +63,6 @@ pub async fn render_flat_clip_for_candidate(
 
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        let (candidate, project) = db
-            .get_candidate_with_project(&candidate_id)
-            .map_err(|e| e.to_string())?;
 
         if job_mgr.is_cancelled(&job_id) {
             return Err("Cancelled by user".to_string());
@@ -63,10 +70,6 @@ pub async fn render_flat_clip_for_candidate(
 
         db.update_clip_for_candidate(&candidate_id, "cutting", None, None, None)
             .map_err(|e| e.to_string())?;
-
-        let output_path = documents_project_dir(&project, out_dir.as_deref())?
-            .join("clips")
-            .join(format!("clip-{:02}_flat.mp4", candidate.rank));
 
         let mut srt_path = None;
         let mut ass_path = None;
@@ -167,6 +170,36 @@ pub async fn render_flat_clip_for_candidate(
             preset_name.as_deref(),
         ) {
             Ok(path) => {
+                // Post-render validation (Roadmap P8)
+                job_mgr.update_progress(
+                    &job_id,
+                    jobs::JobState::Processing,
+                    95,
+                    "Validating rendered output",
+                    Some(&app_clone),
+                );
+
+                let expected_dur = (render_end - render_start).max(1.0);
+                let source_has_audio = probe.as_ref().map(|p| p.audio_codec.is_some()).unwrap_or(true);
+                if let Err(val_err) = media::validate_rendered_output(
+                    &path,
+                    (expected_dur * 0.4).max(0.5),
+                    expected_dur * 1.5 + 5.0,
+                    source_has_audio,
+                ) {
+                    let err_msg = format!("Post-render validation failed: {}", val_err);
+                    let _ = std::fs::remove_file(&output_path);
+                    let _ = db.update_clip_for_candidate(
+                        &candidate_id,
+                        "failed",
+                        None,
+                        None,
+                        Some(&err_msg),
+                    );
+                    job_mgr.fail_job(&job_id, &err_msg, Some(&app_clone));
+                    return Err(err_msg);
+                }
+
                 let path_string = path.to_string_lossy().to_string();
                 let srt_string = srt_path.map(|p| p.to_string_lossy().to_string());
                 db.update_clip_for_candidate(
@@ -182,8 +215,9 @@ pub async fn render_flat_clip_for_candidate(
             }
             Err(error) => {
                 let err_msg = error.to_string();
+                let _ = std::fs::remove_file(&output_path);
+
                 if job_mgr.is_cancelled(&job_id) || err_msg.contains("cancelled") {
-                    let _ = std::fs::remove_file(&output_path);
                     let _ = db.update_clip_for_candidate(
                         &candidate_id,
                         "failed",
@@ -195,65 +229,18 @@ pub async fn render_flat_clip_for_candidate(
                     return Err("Cancelled by user".to_string());
                 }
 
-                // Fallback retry rendering without captions overlay on any non-cancellation error
-                match media::render_flat_clip_with_job(
-                    &project.source_path,
-                    candidate.start_sec,
-                    candidate.end_sec,
-                    &output_path,
+                // Never silently drop subtitles/captions on error.
+                // Fail explicitly so the user is aware and can address font or render issues.
+                let fail_msg = format!("Render failed: {err_msg}");
+                let _ = db.update_clip_for_candidate(
+                    &candidate_id,
+                    "failed",
                     None,
                     None,
-                    mode.as_deref(),
-                    false,
-                    punch,
-                    studio,
-                    Some(job_id.clone()),
-                    preset_name.as_deref(),
-                ) {
-                    Ok(path) => {
-                        let path_string = path.to_string_lossy().to_string();
-                        let srt_string = srt_path.map(|p| p.to_string_lossy().to_string());
-                        let warning_msg = format!(
-                            "Clip rendered successfully, but captions were skipped. Error: {}",
-                            err_msg
-                        );
-                        db.update_clip_for_candidate(
-                            &candidate_id,
-                            "done",
-                            Some(&path_string),
-                            srt_string.as_deref(),
-                            Some(&warning_msg),
-                        )
-                        .map_err(|e| e.to_string())?;
-                        job_mgr.complete_job(&job_id, Some(&app_clone));
-                        Ok(path_string)
-                    }
-                    Err(retry_err) => {
-                        let message = retry_err.to_string();
-                        if job_mgr.is_cancelled(&job_id) || message.contains("cancelled") {
-                            let _ = std::fs::remove_file(&output_path);
-                            let _ = db.update_clip_for_candidate(
-                                &candidate_id,
-                                "failed",
-                                None,
-                                None,
-                                Some("Cancelled by user"),
-                            );
-                            job_mgr.fail_job(&job_id, "Cancelled by user", Some(&app_clone));
-                            return Err("Cancelled by user".to_string());
-                        }
-                        db.update_clip_for_candidate(
-                            &candidate_id,
-                            "error",
-                            None,
-                            None,
-                            Some(&message),
-                        )
-                        .map_err(|e| e.to_string())?;
-                        job_mgr.fail_job(&job_id, &message, Some(&app_clone));
-                        Err(message)
-                    }
-                }
+                    Some(&fail_msg),
+                );
+                job_mgr.fail_job(&job_id, &fail_msg, Some(&app_clone));
+                Err(fail_msg)
             }
         }
     })
@@ -267,7 +254,34 @@ pub fn cancel_job(
     state: &AppState,
     job_id: &str,
 ) -> Result<(), String> {
-    state.jobs.cancel_job(job_id, Some(app))
+    // 1. Get job snapshot to extract candidate_id and output path
+    let maybe_job = state.jobs.get_job(job_id);
+
+    // 2. Mark job as cancelled in memory and terminate child processes
+    state.jobs.cancel_job(job_id, Some(app))?;
+
+    // 3. Immediately transition DB clip state from "cutting" to "failed"
+    // This prevents inconsistent UI state where the job is cancelled but clip remains "cutting".
+    if let Some(job) = maybe_job {
+        let candidate_id = job.input.as_deref().unwrap_or(&job.project_id);
+        let _ = state.db.update_clip_for_candidate(
+            candidate_id,
+            "failed",
+            None,
+            None,
+            Some("Cancelled by user"),
+        );
+
+        // Clean up partial output file if present
+        if let Some(ref out_path) = job.output {
+            let p = std::path::Path::new(out_path);
+            if p.exists() {
+                let _ = std::fs::remove_file(p);
+            }
+        }
+    }
+
+    Ok(())
 }
 
 pub fn get_active_jobs(state: &AppState) -> Result<Vec<jobs::JobInfo>, String> {

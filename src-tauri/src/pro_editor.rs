@@ -1,4 +1,4 @@
-use crate::models::{CandidateDraft, NormalizedTranscript, TranscriptWord};
+use crate::models::{CandidateDraft, ClipQualityScore, NormalizedTranscript, TranscriptWord};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -68,6 +68,44 @@ fn clean_leading_filler_and_greetings(
 #[allow(dead_code)]
 fn clean_leading_discourse_marker(words: &[TranscriptWord], start_idx: usize) -> usize {
     clean_leading_filler_and_greetings(words, start_idx, 1)
+}
+
+/// Evaluates whether the candidate clip is contextually self-contained or suffers
+/// from dangling pronouns or missing setup from prior discourse.
+pub fn evaluate_context_independence(clip_words: &[&TranscriptWord]) -> (f64, Option<&'static str>) {
+    if clip_words.is_empty() {
+        return (0.70, None);
+    }
+    let first_text = clip_words[0].text.trim().to_lowercase();
+    let cleaned = first_text.trim_matches(|c: char| !c.is_alphabetic());
+
+    let dangling_pronouns = ["he", "she", "it", "they", "them", "him", "her", "that", "those", "these"];
+    let strong_openers = ["why", "how", "what", "when", "who", "if", "never", "always", "here", "stop", "i", "you", "we"];
+
+    if dangling_pronouns.contains(&cleaned) {
+        (0.60, Some("⚠️ Requires Prior Context"))
+    } else if strong_openers.contains(&cleaned) {
+        (0.95, Some("🎯 Standalone Topic Opener"))
+    } else {
+        (0.85, None)
+    }
+}
+
+/// Evaluates whether the candidate clip starts and ends cleanly on natural spoken boundaries.
+pub fn evaluate_boundary_quality(clip_words: &[&TranscriptWord]) -> (f64, Option<&'static str>) {
+    if clip_words.is_empty() {
+        return (0.70, None);
+    }
+    let last_word = clip_words[clip_words.len() - 1];
+    let ends_punct = last_word.text.ends_with('.')
+        || last_word.text.ends_with('?')
+        || last_word.text.ends_with('!');
+
+    if ends_punct {
+        (0.95, Some("🏁 Clean Narrative Finish"))
+    } else {
+        (0.80, None)
+    }
 }
 
 /// Matches the first 2-5 significant words of the candidate's hook in the transcript words
@@ -722,7 +760,7 @@ pub fn calculate_composite_reel_scores(
 ) -> Vec<CandidateDraft> {
     let audio_profile = wav_path.and_then(read_audio_rms_profile);
 
-    drafts
+    let mut scored_drafts: Vec<CandidateDraft> = drafts
         .iter()
         .map(|draft| {
             let mut enriched = draft.clone();
@@ -777,13 +815,45 @@ pub fn calculate_composite_reel_scores(
                 components
             );
 
-            // 7. Compute final composite score strictly in 0.0 - 100.0
-            enriched.score = components.composite_score_100();
+            // 7. Context Independence & Spoken Boundary Evaluation
+            let clip_words: Vec<&TranscriptWord> = transcript
+                .words
+                .iter()
+                .filter(|w| w.start >= draft.start && w.end <= draft.end)
+                .collect();
+
+            let (context_norm, context_badge) = evaluate_context_independence(&clip_words);
+            let (boundary_norm, boundary_badge) = evaluate_boundary_quality(&clip_words);
+
+            let speech_quality_norm = (audio_norm * 0.5 + pacing_norm * 0.5).clamp(0.0, 1.0);
+
+            let qs = ClipQualityScore::compute(
+                hook_norm,
+                story_norm,
+                context_norm,
+                retention_norm,
+                speech_quality_norm,
+                visual_norm,
+                boundary_norm,
+                0.0,
+                0.0,
+            );
+
+            enriched.score = qs.total;
+            enriched.quality_score = Some(qs);
 
             // Enrich rationale with hook badges and auditory/visual insights
             let mut prefix = String::new();
             if let Some(d_badge) = duration_badge {
                 prefix.push_str(d_badge);
+                prefix.push_str(". ");
+            }
+            if let Some(c_badge) = context_badge {
+                prefix.push_str(c_badge);
+                prefix.push_str(". ");
+            }
+            if let Some(b_badge) = boundary_badge {
+                prefix.push_str(b_badge);
                 prefix.push_str(". ");
             }
             for h_badge in &hook_badges {
@@ -807,7 +877,28 @@ pub fn calculate_composite_reel_scores(
 
             enriched
         })
-        .collect()
+        .collect();
+
+    // 8. Apply redundancy penalties for near-duplicate candidate windows (> 70% temporal overlap)
+    for i in 0..scored_drafts.len() {
+        for j in 0..i {
+            let dur_i = (scored_drafts[i].end - scored_drafts[i].start).max(1.0);
+            let dur_j = (scored_drafts[j].end - scored_drafts[j].start).max(1.0);
+            let overlap_start = scored_drafts[i].start.max(scored_drafts[j].start);
+            let overlap_end = scored_drafts[i].end.min(scored_drafts[j].end);
+            let overlap = (overlap_end - overlap_start).max(0.0);
+            let overlap_ratio = overlap / dur_i.min(dur_j);
+            if overlap_ratio >= 0.70 {
+                if let Some(ref mut qs) = scored_drafts[i].quality_score {
+                    qs.apply_redundancy_penalty(0.15);
+                    scored_drafts[i].score = qs.total;
+                }
+                break;
+            }
+        }
+    }
+
+    scored_drafts
 }
 
 pub fn calculate_audio_energy_scores(
@@ -1153,6 +1244,7 @@ mod tests {
             score: 85.0,
             hook: "Test Hook".to_string(),
             rationale: "Test".to_string(),
+            quality_score: None,
         }];
         let snapped = snap_candidates_to_boundaries(&drafts, &transcript);
         assert_eq!(snapped.len(), 1);
@@ -1320,6 +1412,7 @@ mod tests {
             score: 0.90,
             hook: "Crazy hook".to_string(),
             rationale: "Long story".to_string(),
+            quality_score: None,
         }];
 
         let snapped = snap_candidates_to_boundaries(&drafts, &transcript);
@@ -1419,6 +1512,7 @@ mod tests {
             score: 0.88,
             hook: "Why do 99% of creators fail before making a single dollar?".to_string(),
             rationale: "Compelling creator economics insight".to_string(),
+            quality_score: None,
         }];
 
         // Step 1: Algorithmic Sentence & Hook Boundary Snapping
@@ -1468,6 +1562,7 @@ mod tests {
             score: 0.90,
             hook: "Why is active speaker detection important?".to_string(),
             rationale: "Testing rationale".to_string(),
+            quality_score: None,
         }];
 
         // Test NVIDIA ASD timeline
@@ -1566,6 +1661,7 @@ mod tests {
             score: 0.85,
             hook: "Why is active speaker detection important?".to_string(),
             rationale: "Testing rationale".to_string(),
+            quality_score: None,
         }];
 
         let draft_pct = vec![CandidateDraft {
@@ -1574,6 +1670,7 @@ mod tests {
             score: 85.0,
             hook: "Why is active speaker detection important?".to_string(),
             rationale: "Testing rationale".to_string(),
+            quality_score: None,
         }];
 
         let scored_unit = calculate_composite_reel_scores(None, &draft_unit, &transcript, None);
@@ -1581,5 +1678,68 @@ mod tests {
 
         assert_eq!(scored_unit[0].score, scored_pct[0].score, "Scores must be identical regardless of whether draft.score was 0.85 or 85.0");
         assert!(scored_unit[0].score >= 0.0 && scored_unit[0].score <= 100.0);
+    }
+
+    #[test]
+    fn test_context_independence_penalizes_dangling_pronouns_and_rewards_standalone_topics() {
+        let dangling_words = vec![
+            TranscriptWord {
+                text: "He".to_string(),
+                start: 5.0,
+                end: 5.3,
+                speaker: None,
+            },
+            TranscriptWord {
+                text: "lost".to_string(),
+                start: 5.4,
+                end: 5.8,
+                speaker: None,
+            },
+            TranscriptWord {
+                text: "everything.".to_string(),
+                start: 5.9,
+                end: 6.5,
+                speaker: None,
+            },
+        ];
+        let dangling_refs: Vec<&TranscriptWord> = dangling_words.iter().collect();
+        let (dangling_score, dangling_badge) = evaluate_context_independence(&dangling_refs);
+        assert_eq!(dangling_score, 0.60);
+        assert_eq!(dangling_badge, Some("⚠️ Requires Prior Context"));
+
+        let standalone_words = vec![
+            TranscriptWord {
+                text: "Why".to_string(),
+                start: 10.0,
+                end: 10.3,
+                speaker: None,
+            },
+            TranscriptWord {
+                text: "did".to_string(),
+                start: 10.4,
+                end: 10.7,
+                speaker: None,
+            },
+            TranscriptWord {
+                text: "he".to_string(),
+                start: 10.8,
+                end: 11.0,
+                speaker: None,
+            },
+            TranscriptWord {
+                text: "quit?".to_string(),
+                start: 11.1,
+                end: 11.6,
+                speaker: None,
+            },
+        ];
+        let standalone_refs: Vec<&TranscriptWord> = standalone_words.iter().collect();
+        let (standalone_score, standalone_badge) = evaluate_context_independence(&standalone_refs);
+        assert_eq!(standalone_score, 0.95);
+        assert_eq!(standalone_badge, Some("🎯 Standalone Topic Opener"));
+
+        let (boundary_score, boundary_badge) = evaluate_boundary_quality(&standalone_refs);
+        assert_eq!(boundary_score, 0.95);
+        assert_eq!(boundary_badge, Some("🏁 Clean Narrative Finish"));
     }
 }

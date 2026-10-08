@@ -917,6 +917,7 @@ pub fn parse_candidate_json(
             score,
             hook,
             rationale,
+            quality_score: None,
         });
     }
 
@@ -1355,6 +1356,7 @@ mod tests {
                 score: 0.65,
                 hook: "Lower score overlapping clip".to_string(),
                 rationale: "Rationale 1".to_string(),
+                quality_score: None,
             },
             CandidateDraft {
                 start: 12.0,
@@ -1362,6 +1364,7 @@ mod tests {
                 score: 0.95,
                 hook: "Higher score overlapping clip".to_string(),
                 rationale: "Rationale 2".to_string(),
+                quality_score: None,
             },
             CandidateDraft {
                 start: 120.0,
@@ -1369,6 +1372,7 @@ mod tests {
                 score: 0.80,
                 hook: "Completely separate clip".to_string(),
                 rationale: "Rationale 3".to_string(),
+                quality_score: None,
             },
         ];
 

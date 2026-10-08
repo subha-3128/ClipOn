@@ -169,11 +169,48 @@ pub async fn update_candidate_timing(
     start_sec: f64,
     end_sec: f64,
 ) -> Result<Candidate, String> {
+    if !start_sec.is_finite() || !end_sec.is_finite() {
+        return Err("Start and end times must be valid finite numbers.".to_string());
+    }
+    if start_sec < 0.0 {
+        return Err("Start time cannot be negative.".to_string());
+    }
+    if end_sec <= start_sec {
+        return Err("End time must be strictly greater than start time.".to_string());
+    }
+    let duration = end_sec - start_sec;
+    if duration < 3.0 {
+        return Err(format!(
+            "Clip duration too short: {duration:.1}s. Minimum duration is 3.0 seconds."
+        ));
+    }
+    if duration > 60.0 {
+        return Err(format!(
+            "Clip duration too long: {duration:.1}s. Maximum duration for short-form clips is 60.0 seconds."
+        ));
+    }
+
     let db = state.db.clone();
-    let valid_start = start_sec.max(0.0);
-    // Strict 60.0s hard ceiling on candidate duration
-    let valid_end = end_sec.max(valid_start + 1.0).min(valid_start + 60.0);
-    db.update_candidate_timing(candidate_id, valid_start, valid_end)
+    let (_, project) = db
+        .get_candidate_with_project(candidate_id)
+        .map_err(|e| e.to_string())?;
+
+    if let Some(source_dur) = project.source_duration {
+        if source_dur > 0.0 {
+            if start_sec >= source_dur {
+                return Err(format!(
+                    "Start time ({start_sec:.1}s) exceeds source video duration ({source_dur:.1}s)."
+                ));
+            }
+            if end_sec > source_dur + 0.1 {
+                return Err(format!(
+                    "End time ({end_sec:.1}s) exceeds source video duration ({source_dur:.1}s)."
+                ));
+            }
+        }
+    }
+
+    db.update_candidate_timing(candidate_id, start_sec, end_sec)
         .map_err(|e| e.to_string())?;
     let (candidate, _) = db
         .get_candidate_with_project(candidate_id)
@@ -216,5 +253,97 @@ pub async fn generate_social_kit_for_candidate(
         model_name.as_deref(),
     )
     .await;
+
+    // Persist social kit to SQLite so it survives restarts
+    if let Ok(json_str) = serde_json::to_string(&kit) {
+        let _ = db.update_candidate_social_kit(&candidate.id, &json_str);
+    }
+
     Ok(kit)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::Database;
+    use crate::jobs::JobManager;
+    use crate::models::CandidateDraft;
+
+    fn test_app_state() -> AppState {
+        let temp_dir = std::env::temp_dir().join(format!("clipon_cand_test_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let db_file = temp_dir.join("test.sqlite");
+        let db = Database::open(&db_file).unwrap();
+        AppState {
+            db,
+            data_dir: temp_dir,
+            jobs: JobManager::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_update_candidate_timing_validation_rules() {
+        let state = test_app_state();
+        let proj = state
+            .db
+            .create_project("/dummy/sample.mp4", "local", "modern-box", Some(50.0))
+            .expect("create project");
+
+        let drafts = vec![CandidateDraft {
+            start: 10.0,
+            end: 25.0,
+            score: 9.0,
+            hook: "Test Hook".into(),
+            rationale: "Test Rationale".into(),
+            quality_score: None,
+        }];
+
+        let candidates = state.db.replace_candidates(&proj.id, &drafts).unwrap();
+        let cand_id = &candidates[0].id;
+
+        // Valid range within bounds
+        let valid_res = update_candidate_timing(&state, cand_id, 12.0, 30.0).await;
+        assert!(valid_res.is_ok());
+        let updated = valid_res.unwrap();
+        assert_eq!(updated.start_sec, 12.0);
+        assert_eq!(updated.end_sec, 30.0);
+
+        // NaN validation
+        let nan_res = update_candidate_timing(&state, cand_id, f64::NAN, 30.0).await;
+        assert!(nan_res.is_err());
+        assert!(nan_res.unwrap_err().contains("finite numbers"));
+
+        // Infinity validation
+        let inf_res = update_candidate_timing(&state, cand_id, 10.0, f64::INFINITY).await;
+        assert!(inf_res.is_err());
+
+        // Negative start
+        let neg_res = update_candidate_timing(&state, cand_id, -2.0, 20.0).await;
+        assert!(neg_res.is_err());
+        assert!(neg_res.unwrap_err().contains("negative"));
+
+        // Inverted or equal start & end
+        let inv_res = update_candidate_timing(&state, cand_id, 25.0, 20.0).await;
+        assert!(inv_res.is_err());
+        assert!(inv_res.unwrap_err().contains("strictly greater"));
+
+        // Minimum duration (< 3.0s)
+        let short_res = update_candidate_timing(&state, cand_id, 10.0, 12.0).await;
+        assert!(short_res.is_err());
+        assert!(short_res.unwrap_err().contains("Minimum duration is 3.0 seconds"));
+
+        // Maximum duration (> 60.0s)
+        let long_res = update_candidate_timing(&state, cand_id, 5.0, 70.0).await;
+        assert!(long_res.is_err());
+        assert!(long_res.unwrap_err().contains("60.0 seconds"));
+
+        // Exceeds video duration (source_duration is 50.0s)
+        let exceed_start = update_candidate_timing(&state, cand_id, 55.0, 59.0).await;
+        assert!(exceed_start.is_err());
+        assert!(exceed_start.unwrap_err().contains("exceeds source video duration"));
+
+        let exceed_end = update_candidate_timing(&state, cand_id, 40.0, 52.0).await;
+        assert!(exceed_end.is_err());
+        assert!(exceed_end.unwrap_err().contains("exceeds source video duration"));
+    }
 }

@@ -128,6 +128,9 @@ pub fn run() {
             commands::clear_all_storage,
             commands::cancel_job,
             commands::get_active_jobs,
+            commands::record_candidate_feedback,
+            commands::list_candidate_feedback,
+            commands::clear_candidate_feedback,
         ])
         .run(tauri::generate_context!())
         .expect("error while running ClipOn");
