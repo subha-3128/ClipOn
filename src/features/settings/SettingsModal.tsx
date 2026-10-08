@@ -1182,6 +1182,39 @@ export function SettingsModal({
               </div>
             </div>
 
+            <div className="settings-field-group" style={{ marginTop: "16px" }}>
+              <label>Delete Saved Credential</label>
+              <div className="input-with-button">
+                <select
+                  aria-label="Credential to delete"
+                  value={credentialToDelete}
+                  onChange={(event) => setCredentialToDelete(event.target.value)}
+                >
+                  <option value="deepgram">Deepgram API Key</option>
+                  <option value="gemini">Google Gemini API Key</option>
+                  <option value="openai">OpenAI API Key</option>
+                  <option value="anthropic">Anthropic API Key</option>
+                  <option value="deepseek">DeepSeek API Key</option>
+                  <option value="groq">Groq API Key</option>
+                  <option value="openrouter">OpenRouter API Key</option>
+                  <option value="nvidia">NVIDIA API Key</option>
+                  <option value="nvidia_function_id">NVIDIA ASD Function ID</option>
+                  <option value="instagram">Instagram Access Token</option>
+                </select>
+                <button
+                  type="button"
+                  className="studio-btn danger"
+                  onClick={() => void onDeleteCredential(credentialToDelete)}
+                >
+                  <Trash2 size={13} />
+                  Delete Credential
+                </button>
+              </div>
+              <span className="folder-hint">
+                Permanently removes the selected API key from the local keystore.
+              </span>
+            </div>
+
             <div className="danger-zone">
               <label>Danger Zone</label>
               <p>
@@ -1206,31 +1239,6 @@ export function SettingsModal({
       </div>
 
       <div className="modal-footer">
-        <div className="settings-credential-reset">
-          <select
-            aria-label="Credential to delete"
-            value={credentialToDelete}
-            onChange={(event) => setCredentialToDelete(event.target.value)}
-          >
-            <option value="deepgram">Deepgram</option>
-            <option value="gemini">Gemini</option>
-            <option value="openai">OpenAI</option>
-            <option value="anthropic">Anthropic</option>
-            <option value="deepseek">DeepSeek</option>
-            <option value="groq">Groq</option>
-            <option value="openrouter">OpenRouter</option>
-            <option value="nvidia">NVIDIA</option>
-            <option value="instagram">Instagram</option>
-          </select>
-          <button
-            type="button"
-            className="studio-btn danger"
-            onClick={() => void onDeleteCredential(credentialToDelete)}
-          >
-            <Trash2 size={13} />
-            Delete saved credential
-          </button>
-        </div>
         <button className="studio-btn primary" onClick={onSaveAndClose}>
           Done
         </button>
