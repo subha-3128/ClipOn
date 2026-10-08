@@ -138,7 +138,9 @@ export function Onboarding({
           ["anthropic", antKey],
           ["deepseek", dsKey],
           ["groq", grKey],
-        ].map(([name, value]) => invoke("save_credential", { name, value }))
+        ]
+          .filter(([, value]) => value.trim())
+          .map(([name, value]) => invoke("save_credential", { name, value }))
       );
       await refreshEnv();
     } catch (err) {

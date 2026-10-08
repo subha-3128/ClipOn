@@ -351,7 +351,6 @@ pub type NvidiaAsdDetector = NvidiaAsdProvider;
 impl NvidiaAsdProvider {
     pub fn try_new() -> Result<Self> {
         let key = credentials::get(credentials::NVIDIA)?
-            .or_else(|| std::env::var("NVIDIA_API_KEY").ok())
             .ok_or_else(|| anyhow!("NVIDIA API key not configured"))?;
 
         let clean_key = key.trim().to_string();
@@ -360,7 +359,6 @@ impl NvidiaAsdProvider {
         }
 
         let function_id = credentials::get(credentials::NVIDIA_FUNCTION_ID)?
-            .or_else(|| std::env::var("NVIDIA_ASD_FUNCTION_ID").ok())
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
 
@@ -2227,7 +2225,6 @@ pub fn get_nvidia_asd_model_identifier() -> String {
     credentials::get(credentials::NVIDIA_FUNCTION_ID)
         .ok()
         .flatten()
-        .or_else(|| std::env::var("NVIDIA_ASD_FUNCTION_ID").ok())
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "default_nim_asd".to_string())

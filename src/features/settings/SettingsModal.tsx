@@ -89,6 +89,7 @@ export interface SettingsModalProps {
   ) => void;
   openFolder: (path: string) => void;
   onClearStorage: () => Promise<void>;
+  onDeleteCredential: (name: string) => Promise<void>;
   onSaveAndClose: () => void;
 }
 
@@ -157,9 +158,11 @@ export function SettingsModal({
   browseFolder,
   openFolder,
   onClearStorage,
+  onDeleteCredential,
   onSaveAndClose,
 }: SettingsModalProps) {
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("ai");
+  const [credentialToDelete, setCredentialToDelete] = useState("openai");
   const [tosAck, setTosAck] = useState(
     () => localStorage.getItem("clipon_youtube_tos_ack") === "true"
   );
@@ -264,14 +267,21 @@ export function SettingsModal({
 
             {transcriptionEngine === "deepgram" && (
               <div className="settings-field-group">
-                <label>Deepgram API Key</label>
+                <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span>Deepgram API Key</span>
+                  {environment?.hasDeepgramKey && (
+                    <span style={{ fontSize: "11px", color: "#10b981", display: "inline-flex", alignItems: "center", gap: "4px", fontWeight: 500 }}>
+                      <BadgeCheck size={13} /> Active
+                    </span>
+                  )}
+                </label>
                 <input
                   type="password"
                   value={deepgramKey}
                   onChange={(e) => setDeepgramKey(e.target.value)}
                   placeholder={
                     environment?.hasDeepgramKey
-                      ? "Loaded securely"
+                      ? "•••••••• (Saved securely)"
                       : "Enter Deepgram API Key"
                   }
                 />
@@ -318,14 +328,21 @@ export function SettingsModal({
 
             {llmEngine === "claude" && (
               <div className="settings-field-group">
-                <label>Anthropic API Key</label>
+                <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span>Anthropic API Key</span>
+                  {environment?.hasAnthropicKey && (
+                    <span style={{ fontSize: "11px", color: "#10b981", display: "inline-flex", alignItems: "center", gap: "4px", fontWeight: 500 }}>
+                      <BadgeCheck size={13} /> Active
+                    </span>
+                  )}
+                </label>
                 <input
                   type="password"
                   value={anthropicKey}
                   onChange={(e) => setAnthropicKey(e.target.value)}
                   placeholder={
                     environment?.hasAnthropicKey
-                      ? "Loaded securely"
+                      ? "•••••••• (Saved securely)"
                       : "Enter Anthropic API Key"
                   }
                 />
@@ -335,14 +352,21 @@ export function SettingsModal({
             {llmEngine === "deepseek" && (
               <>
                 <div className="settings-field-group">
-                  <label>DeepSeek API Key</label>
+                  <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span>DeepSeek API Key</span>
+                    {environment?.hasDeepseekKey && (
+                      <span style={{ fontSize: "11px", color: "#10b981", display: "inline-flex", alignItems: "center", gap: "4px", fontWeight: 500 }}>
+                        <BadgeCheck size={13} /> Active
+                      </span>
+                    )}
+                  </label>
                   <input
                     type="password"
                     value={deepseekKey}
                     onChange={(e) => setDeepseekKey(e.target.value)}
                     placeholder={
                       environment?.hasDeepseekKey
-                        ? "Loaded securely"
+                        ? "•••••••• (Saved securely)"
                         : "Enter DeepSeek API Key"
                     }
                   />
@@ -361,14 +385,21 @@ export function SettingsModal({
 
             {llmEngine === "gemini" && (
               <div className="settings-field-group">
-                <label>Google Gemini API Key</label>
+                <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span>Google Gemini API Key</span>
+                  {environment?.hasGeminiKey && (
+                    <span style={{ fontSize: "11px", color: "#10b981", display: "inline-flex", alignItems: "center", gap: "4px", fontWeight: 500 }}>
+                      <BadgeCheck size={13} /> Active
+                    </span>
+                  )}
+                </label>
                 <input
                   type="password"
                   value={geminiKey}
                   onChange={(e) => setGeminiKey(e.target.value)}
                   placeholder={
                     environment?.hasGeminiKey
-                      ? "Loaded securely"
+                      ? "•••••••• (Saved securely)"
                       : "Enter Gemini API Key"
                   }
                 />
@@ -377,14 +408,21 @@ export function SettingsModal({
 
             {llmEngine === "openai" && (
               <div className="settings-field-group">
-                <label>OpenAI API Key</label>
+                <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span>OpenAI API Key</span>
+                  {environment?.hasOpenaiKey && (
+                    <span style={{ fontSize: "11px", color: "#10b981", display: "inline-flex", alignItems: "center", gap: "4px", fontWeight: 500 }}>
+                      <BadgeCheck size={13} /> Active
+                    </span>
+                  )}
+                </label>
                 <input
                   type="password"
                   value={openaiKey}
                   onChange={(e) => setOpenaiKey(e.target.value)}
                   placeholder={
                     environment?.hasOpenaiKey
-                      ? "Loaded securely"
+                      ? "•••••••• (Saved securely)"
                       : "Enter OpenAI API Key"
                   }
                 />
@@ -393,14 +431,21 @@ export function SettingsModal({
 
             {llmEngine === "groq" && (
               <div className="settings-field-group">
-                <label>Groq API Key</label>
+                <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span>Groq API Key</span>
+                  {environment?.hasGroqKey && (
+                    <span style={{ fontSize: "11px", color: "#10b981", display: "inline-flex", alignItems: "center", gap: "4px", fontWeight: 500 }}>
+                      <BadgeCheck size={13} /> Active
+                    </span>
+                  )}
+                </label>
                 <input
                   type="password"
                   value={groqKey}
                   onChange={(e) => setGroqKey(e.target.value)}
                   placeholder={
                     environment?.hasGroqKey
-                      ? "Loaded securely"
+                      ? "•••••••• (Saved securely)"
                       : "Enter Groq API Key"
                   }
                 />
@@ -414,31 +459,45 @@ export function SettingsModal({
             </div>
 
             <div className="settings-field-group">
-              <label>NVIDIA API Key</label>
+              <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span>NVIDIA API Key</span>
+                {environment?.hasNvidiaKey && (
+                  <span style={{ fontSize: "11px", color: "#10b981", display: "inline-flex", alignItems: "center", gap: "4px", fontWeight: 500 }}>
+                    <BadgeCheck size={13} /> Active
+                  </span>
+                )}
+              </label>
               <input
                 type="password"
                 value={nvidiaKey}
                 onChange={(e) => setNvidiaKey(e.target.value)}
                 placeholder={
                   environment?.hasNvidiaKey
-                    ? "Loaded securely in Keychain"
+                    ? "•••••••• (Saved securely)"
                     : "Enter NVIDIA API Key (nvapi-...)"
                 }
               />
               <span className="folder-hint">
-                Primary engine for Active Speaker Detection &amp; speaker-person fusion. Stored securely in OS Keyring.
+                Primary engine for Active Speaker Detection &amp; speaker-person fusion. Stored securely.
               </span>
             </div>
 
             <div className="settings-field-group">
-              <label>NVIDIA ASD Function ID (Optional Preview UUID)</label>
+              <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span>NVIDIA ASD Function ID (Optional Preview UUID)</span>
+                {environment?.hasNvidiaFunctionId && (
+                  <span style={{ fontSize: "11px", color: "#10b981", display: "inline-flex", alignItems: "center", gap: "4px", fontWeight: 500 }}>
+                    <BadgeCheck size={13} /> Configured
+                  </span>
+                )}
+              </label>
               <input
                 type="text"
                 value={nvidiaFunctionId}
                 onChange={(e) => setNvidiaFunctionId?.(e.target.value)}
                 placeholder={
                   environment?.hasNvidiaFunctionId
-                    ? "Configured in Keychain / Env"
+                    ? "Configured securely"
                     : "e.g. 12345678-abcd-ef01-2345-6789abcdef01"
                 }
               />
@@ -527,19 +586,26 @@ export function SettingsModal({
                 </div>
 
                 <div className="settings-field-group">
-                  <label>Meta Long-Lived Access Token</label>
+                  <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span>Meta Long-Lived Access Token</span>
+                    {environment?.hasInstagramToken && (
+                      <span style={{ fontSize: "11px", color: "#10b981", display: "inline-flex", alignItems: "center", gap: "4px", fontWeight: 500 }}>
+                        <BadgeCheck size={13} /> Active
+                      </span>
+                    )}
+                  </label>
                   <input
                     type="password"
                     value={instagramAccessToken}
                     onChange={(e) => setInstagramAccessToken(e.target.value)}
                     placeholder={
                       environment?.hasInstagramToken
-                        ? "Loaded securely in Keychain"
+                        ? "•••••••• (Saved securely)"
                         : "EAA... (Token with instagram_content_publish permission)"
                     }
                   />
                   <span className="folder-hint">
-                    Stored securely in OS Keychain. Requires 'instagram_basic'
+                    Stored securely. Requires 'instagram_basic'
                     and 'instagram_content_publish' scopes
                   </span>
                 </div>
@@ -1140,6 +1206,31 @@ export function SettingsModal({
       </div>
 
       <div className="modal-footer">
+        <div className="settings-credential-reset">
+          <select
+            aria-label="Credential to delete"
+            value={credentialToDelete}
+            onChange={(event) => setCredentialToDelete(event.target.value)}
+          >
+            <option value="deepgram">Deepgram</option>
+            <option value="gemini">Gemini</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="groq">Groq</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="nvidia">NVIDIA</option>
+            <option value="instagram">Instagram</option>
+          </select>
+          <button
+            type="button"
+            className="studio-btn danger"
+            onClick={() => void onDeleteCredential(credentialToDelete)}
+          >
+            <Trash2 size={13} />
+            Delete saved credential
+          </button>
+        </div>
         <button className="studio-btn primary" onClick={onSaveAndClose}>
           Done
         </button>

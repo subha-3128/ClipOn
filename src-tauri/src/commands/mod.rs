@@ -306,6 +306,26 @@ pub async fn credential_status(name: String) -> Result<bool, String> {
     credential_service::credential_status(&name)
 }
 
+macro_rules! credential_status_command {
+    ($name:ident) => {
+        #[tauri::command]
+        pub async fn $name() -> Result<bool, String> {
+            credential_service::$name()
+        }
+    };
+}
+
+credential_status_command!(is_deepgram_configured);
+credential_status_command!(is_gemini_configured);
+credential_status_command!(is_openai_configured);
+credential_status_command!(is_anthropic_configured);
+credential_status_command!(is_deepseek_configured);
+credential_status_command!(is_groq_configured);
+credential_status_command!(is_openrouter_configured);
+credential_status_command!(is_nvidia_configured);
+credential_status_command!(is_instagram_configured);
+credential_status_command!(is_youtube_configured);
+
 #[tauri::command]
 pub async fn clear_all_storage(state: tauri::State<'_, AppState>) -> Result<String, String> {
     project_service::clear_all_storage(&state)
@@ -324,4 +344,3 @@ pub async fn cancel_job(
 pub async fn get_active_jobs(state: tauri::State<'_, AppState>) -> Result<Vec<JobInfo>, String> {
     render_service::get_active_jobs(&state)
 }
-

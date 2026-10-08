@@ -1,7 +1,6 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import { exec } from "node:child_process";
 
 function loadEnv() {
@@ -92,48 +91,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     const refreshToken = tokenData.refresh_token;
-    console.log("\n🎉 SUCCESS! Received YouTube Refresh Token:\n" + refreshToken);
-
-    // Save to .env
-    const envPath = path.resolve(process.cwd(), ".env");
-    if (fs.existsSync(envPath)) {
-      let content = fs.readFileSync(envPath, "utf-8");
-      if (content.includes("YOUTUBE_REFRESH_TOKEN=")) {
-        content = content.replace(/YOUTUBE_REFRESH_TOKEN=.*/g, `YOUTUBE_REFRESH_TOKEN=${refreshToken}`);
-      } else {
-        content += `\nYOUTUBE_REFRESH_TOKEN=${refreshToken}\n`;
-      }
-      fs.writeFileSync(envPath, content, "utf-8");
-      console.log("✅ Updated workspace .env");
-    }
-
-    // Save to App Support .env
-    const appSupportEnv = path.join(os.homedir(), "Library/Application Support/com.clipon.desktop/.env");
-    if (fs.existsSync(appSupportEnv)) {
-      let content = fs.readFileSync(appSupportEnv, "utf-8");
-      if (content.includes("YOUTUBE_REFRESH_TOKEN=")) {
-        content = content.replace(/YOUTUBE_REFRESH_TOKEN=.*/g, `YOUTUBE_REFRESH_TOKEN=${refreshToken}`);
-      } else {
-        content += `\nYOUTUBE_REFRESH_TOKEN=${refreshToken}\n`;
-      }
-      fs.writeFileSync(appSupportEnv, content, "utf-8");
-      console.log("✅ Updated app support .env");
-    }
-
-    // Save to credentials.json
-    const credsPath = path.join(os.homedir(), "Library/Application Support/com.clipon.desktop/credentials.json");
-    if (fs.existsSync(credsPath)) {
-      try {
-        const creds = JSON.parse(fs.readFileSync(credsPath, "utf-8"));
-        creds.youtube_client_id = CLIENT_ID;
-        creds.youtube_client_secret = CLIENT_SECRET;
-        creds.youtube_refresh_token = refreshToken;
-        fs.writeFileSync(credsPath, JSON.stringify(creds, null, 2), "utf-8");
-        console.log("✅ Updated credentials.json keystore");
-      } catch (e) {
-        console.error("Warning: could not update credentials.json", e);
-      }
-    }
+    console.log("\n🎉 SUCCESS! Return to ClipOn Settings and paste the refresh token there.");
 
     res.writeHead(200, { "Content-Type": "text/html" });
     res.end(`

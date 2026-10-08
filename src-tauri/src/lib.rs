@@ -51,18 +51,18 @@ pub fn run() {
             std::fs::create_dir_all(&data_dir).context("creating app data directory")?;
             std::fs::create_dir_all(data_dir.join("models"))
                 .context("creating models directory")?;
-            let env_path = data_dir.join(".env");
-            let candidates = [PathBuf::from(".env"), PathBuf::from("../.env")];
+            let candidates = [
+                data_dir.join(".env"),
+                PathBuf::from(".env"),
+                PathBuf::from("../.env"),
+            ];
             for cand in &candidates {
                 if cand.exists() {
                     let _ = dotenvy::from_path(cand);
-                    let _ = std::fs::copy(cand, &env_path);
-                    break;
                 }
             }
-            if env_path.exists() {
-                let _ = dotenvy::from_path(&env_path);
-            }
+            let _ = dotenvy::dotenv();
+            credentials::init_all_credentials();
             let db_path = if data_dir.join("clipon.sqlite").exists() {
                 data_dir.join("clipon.sqlite")
             } else if data_dir.join("autoshorts.sqlite").exists() {
@@ -114,6 +114,16 @@ pub fn run() {
             commands::save_credential,
             commands::delete_credential,
             commands::credential_status,
+            commands::is_deepgram_configured,
+            commands::is_gemini_configured,
+            commands::is_openai_configured,
+            commands::is_anthropic_configured,
+            commands::is_deepseek_configured,
+            commands::is_groq_configured,
+            commands::is_openrouter_configured,
+            commands::is_nvidia_configured,
+            commands::is_instagram_configured,
+            commands::is_youtube_configured,
             commands::update_candidate_timing,
             commands::clear_all_storage,
             commands::cancel_job,
@@ -122,6 +132,7 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running ClipOn");
 }
+
 
 #[cfg(test)]
 mod tests {

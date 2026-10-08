@@ -177,7 +177,9 @@ pub async fn publish_reel_graph_api(
         };
 
         // 1. Initialize Reel container with official Resumable Upload
-        let init_url = format!("https://graph.instagram.com/v20.0/{resolved_account_id}/media");
+        // Resumable Reel containers are created on the Facebook Graph host.
+        // graph.instagram.com uses the URL-based flow and requires video_url.
+        let init_url = format!("https://graph.facebook.com/v20.0/{resolved_account_id}/media");
         let init_res = client
             .post(&init_url)
             .header("Authorization", format!("Bearer {}", access_token.trim()))
@@ -224,7 +226,7 @@ pub async fn publish_reel_graph_api(
 
         // 3. Poll container processing status using Authorization header
         let status_url = format!(
-            "https://graph.instagram.com/v20.0/{}?fields=status_code,status,error_message",
+            "https://graph.facebook.com/v20.0/{}?fields=status_code,status,error_message",
             container_id
         );
 
@@ -285,7 +287,7 @@ pub async fn publish_reel_graph_api(
 
         // 4. Publish Media
         let publish_url = format!(
-            "https://graph.instagram.com/v20.0/{}/media_publish",
+            "https://graph.facebook.com/v20.0/{}/media_publish",
             resolved_account_id
         );
 
@@ -362,7 +364,7 @@ pub async fn publish_reel_graph_api(
 
         let container_id = init_data.id;
         let upload_uri = init_data.uri.unwrap_or_else(|| {
-            format!("https://rupload.facebook.com/reels_upload/{}", container_id)
+            format!("https://rupload.facebook.com/ig-reels-upload/{}", container_id)
         });
 
         let upload_res = client

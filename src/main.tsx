@@ -567,7 +567,6 @@ function AppContent() {
     setMetaModalSaving(true);
     try {
       setInstagramAccountId(metaModalAccountId.trim());
-      setInstagramAccessToken(""); // Clear raw token from frontend state
       localStorage.setItem(
         "clipon_instagram_account_id",
         metaModalAccountId.trim()
@@ -578,6 +577,7 @@ function AppContent() {
         accessToken: metaModalAccessToken.trim(),
       });
 
+      setInstagramAccessToken("");
       showToast("Meta Graph API credentials saved securely!");
       setShowMetaModal(false);
 
@@ -701,8 +701,6 @@ function AppContent() {
     setYtModalSaving(true);
     try {
       setYoutubeClientId(ytModalClientId.trim());
-      setYoutubeClientSecret("");
-      setYoutubeRefreshToken("");
       localStorage.setItem("clipon_youtube_client_id", ytModalClientId.trim());
 
       await invoke("save_youtube_credentials", {
@@ -711,6 +709,8 @@ function AppContent() {
         refreshToken: ytModalRefreshToken.trim(),
       });
 
+      setYoutubeClientSecret("");
+      setYoutubeRefreshToken("");
       showToast("YouTube OAuth2 credentials saved securely!");
       setShowYouTubeModal(false);
 
@@ -1173,7 +1173,6 @@ function AppContent() {
   }
 
   const closeAndSaveSettings = async () => {
-    setShowSettings(false);
     try {
       const keysToSave = [
         ["deepgram", deepgramKey],
@@ -1189,12 +1188,11 @@ function AppContent() {
       ].filter(([_, value]) => value && value.trim().length > 0);
 
       if (keysToSave.length > 0) {
-        await Promise.all(
-          keysToSave.map(([name, value]) =>
-            invoke("save_credential", { name, value })
-          )
-        );
+        for (const [name, value] of keysToSave) {
+          await invoke("save_credential", { name, value });
+        }
       }
+      await refresh();
       setDeepgramKey("");
       setGeminiKey("");
       setOpenaiKey("");
@@ -1205,11 +1203,33 @@ function AppContent() {
       setNvidiaFunctionId("");
       setOpenrouterKey("");
       setInstagramAccessToken("");
-
-      await refresh();
+      setShowSettings(false);
       showToast("Settings saved securely");
     } catch (err) {
       showError("Error saving API credentials", { details: String(err) });
+    }
+  };
+
+  const deleteSavedCredential = async (name: string) => {
+    try {
+      await invoke("delete_credential", { name });
+      const clearState: Record<string, () => void> = {
+        deepgram: () => setDeepgramKey(""),
+        gemini: () => setGeminiKey(""),
+        openai: () => setOpenaiKey(""),
+        anthropic: () => setAnthropicKey(""),
+        deepseek: () => setDeepseekKey(""),
+        groq: () => setGroqKey(""),
+        openrouter: () => setOpenrouterKey(""),
+        nvidia: () => setNvidiaKey(""),
+        nvidia_function_id: () => setNvidiaFunctionId(""),
+        instagram: () => setInstagramAccessToken(""),
+      };
+      clearState[name]?.();
+      await refresh();
+      showToast("Credential deleted");
+    } catch (err) {
+      showError("Could not delete credential", { details: String(err) });
     }
   };
 
@@ -1469,6 +1489,7 @@ function AppContent() {
             }
           }
         }}
+        onDeleteCredential={deleteSavedCredential}
         onSaveAndClose={closeAndSaveSettings}
       />
 

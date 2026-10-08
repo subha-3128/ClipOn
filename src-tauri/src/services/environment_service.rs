@@ -430,4 +430,3 @@ mod tests {
         assert!(deserialized.hardware_encoder_supported);
     }
 }
-
