@@ -52,7 +52,10 @@ interface InstagramPublishModalProps {
   testing: boolean;
   testStatus: { success: boolean; message: string } | null;
   // Publishing actions
-  onPublish: (candidateId: string, captionOverride: string) => Promise<InstagramPost | void>;
+  onPublish: (
+    candidateId: string,
+    captionOverride: string
+  ) => Promise<InstagramPost | void>;
   publishing: boolean;
   existingPost?: InstagramPost;
   onOpenExternal: (url: string) => void;
@@ -88,7 +91,9 @@ export function InstagramPublishModal({
 }: InstagramPublishModalProps) {
   const [activeTab, setActiveTab] = useState<"studio" | "settings">("studio");
   const [selectedStyle, setSelectedStyle] = useState<string>("hook_focused");
-  const [editedCaptions, setEditedCaptions] = useState<Record<string, string>>({});
+  const [editedCaptions, setEditedCaptions] = useState<Record<string, string>>(
+    {}
+  );
   const [activeCaption, setActiveCaption] = useState<string>("");
   const [hashtags, setHashtags] = useState<string[]>([]);
   const [newTagInput, setNewTagInput] = useState<string>("");
@@ -103,8 +108,12 @@ export function InstagramPublishModal({
   // Check if credentials are configured
   const isAccountConfigured = useMemo(() => {
     if (provider === "graph_api") {
-      const hasId = Boolean(accountId.trim() || environment?.instagramAccountId);
-      const hasToken = Boolean(accessToken.trim() || environment?.hasInstagramToken);
+      const hasId = Boolean(
+        accountId.trim() || environment?.instagramAccountId
+      );
+      const hasToken = Boolean(
+        accessToken.trim() || environment?.hasInstagramToken
+      );
       return hasId && hasToken;
     }
     return Boolean(webhookUrl.trim());
@@ -112,7 +121,10 @@ export function InstagramPublishModal({
 
   // Fallback options if socialKit is not loaded
   const captionOptions: CaptionOption[] = useMemo(() => {
-    if (candidate?.socialKit?.captionOptions && candidate.socialKit.captionOptions.length > 0) {
+    if (
+      candidate?.socialKit?.captionOptions &&
+      candidate.socialKit.captionOptions.length > 0
+    ) {
       return candidate.socialKit.captionOptions;
     }
     const cleanHook = candidate?.hook?.trim() || "Viral Reel Moment";
@@ -233,7 +245,11 @@ export function InstagramPublishModal({
     setIsRegenerating(true);
     try {
       const freshKit = await onRegenerateKit(candidate.id);
-      if (freshKit && freshKit.captionOptions && freshKit.captionOptions.length > 0) {
+      if (
+        freshKit &&
+        freshKit.captionOptions &&
+        freshKit.captionOptions.length > 0
+      ) {
         setHashtags(freshKit.hashtags);
         const opt = freshKit.captionOptions[0];
         setSelectedStyle(opt.style);
@@ -321,7 +337,8 @@ export function InstagramPublishModal({
                 : "Instagram Reels Publishing Studio"}
             </h3>
             <p>
-              AI-grounded captions, authentic Reels preview, and direct Meta Graph API publishing
+              AI-grounded captions, authentic Reels preview, and direct Meta
+              Graph API publishing
             </p>
           </div>
         </div>
@@ -366,8 +383,13 @@ export function InstagramPublishModal({
               <strong className="instagram-banner-title">
                 Meta Graph API Direct Publishing Configuration
               </strong>
-              <p style={{ margin: "4px 0 0 0", fontSize: "12px", opacity: 0.9 }}>
-                Direct Reel uploads require a <strong>Meta Page Access Token</strong> (starts with <code>EAA...</code>) linked to your Instagram Professional (Creator or Business) account.
+              <p
+                style={{ margin: "4px 0 0 0", fontSize: "12px", opacity: 0.9 }}
+              >
+                Direct Reel uploads require a{" "}
+                <strong>Meta Page Access Token</strong> (starts with{" "}
+                <code>EAA...</code>) linked to your Instagram Professional
+                (Creator or Business) account.
               </p>
               <div
                 style={{
@@ -379,10 +401,22 @@ export function InstagramPublishModal({
                   gap: "2px",
                 }}
               >
-                <span>1. Ensure your Instagram account is set to Professional in Instagram App settings.</span>
-                <span>2. Connect your Instagram account to a Facebook Page in Meta Business Suite.</span>
-                <span>3. In Meta Graph API Explorer, select your Page to generate an <code>EAA...</code> Page Access Token.</span>
-                <span>4. Required scopes: <code>instagram_basic</code>, <code>instagram_content_publish</code>.</span>
+                <span>
+                  1. Ensure your Instagram account is set to Professional in
+                  Instagram App settings.
+                </span>
+                <span>
+                  2. Connect your Instagram account to a Facebook Page in Meta
+                  Business Suite.
+                </span>
+                <span>
+                  3. In Meta Graph API Explorer, select your Page to generate an{" "}
+                  <code>EAA...</code> Page Access Token.
+                </span>
+                <span>
+                  4. Required scopes: <code>instagram_basic</code>,{" "}
+                  <code>instagram_content_publish</code>.
+                </span>
               </div>
             </div>
 
@@ -412,7 +446,8 @@ export function InstagramPublishModal({
                 >
                   <div className="option-title">Automation Webhook</div>
                   <div className="option-desc">
-                    Dispatch video payload to Zapier, Make, n8n, or custom server.
+                    Dispatch video payload to Zapier, Make, n8n, or custom
+                    server.
                   </div>
                 </button>
               </div>
@@ -422,14 +457,19 @@ export function InstagramPublishModal({
               <div className="settings-form-stack">
                 <div className="settings-field-group">
                   <div className="settings-field-header">
-                    <label htmlFor="ig-modal-account-id" className="settings-field-label">
+                    <label
+                      htmlFor="ig-modal-account-id"
+                      className="settings-field-label"
+                    >
                       <span>Instagram Business Account ID</span>
                     </label>
                     <button
                       type="button"
                       className="action-pill-btn"
                       onClick={() =>
-                        onOpenExternal("https://developers.facebook.com/tools/explorer/")
+                        onOpenExternal(
+                          "https://developers.facebook.com/tools/explorer/"
+                        )
                       }
                       title="Open Meta Graph API Explorer"
                     >
@@ -446,12 +486,16 @@ export function InstagramPublishModal({
                     className="settings-input"
                   />
                   <p className="settings-field-desc">
-                    Found in Meta Business Suite or via Graph Explorer <code>GET /me/accounts</code>.
+                    Found in Meta Business Suite or via Graph Explorer{" "}
+                    <code>GET /me/accounts</code>.
                   </p>
                 </div>
 
                 <div className="settings-field-group">
-                  <label htmlFor="ig-modal-access-token" className="settings-field-label">
+                  <label
+                    htmlFor="ig-modal-access-token"
+                    className="settings-field-label"
+                  >
                     <span>Meta Page Access Token (starts with EAA...)</span>
                   </label>
                   <input
@@ -468,10 +512,20 @@ export function InstagramPublishModal({
                   />
                   {accessToken.trim().startsWith("IGA") ||
                   accessToken.trim().startsWith("IGQ") ? (
-                    <div className="connection-status-banner error" style={{ marginTop: "6px" }}>
+                    <div
+                      className="connection-status-banner error"
+                      style={{ marginTop: "6px" }}
+                    >
                       <AlertTriangle size={14} style={{ flexShrink: 0 }} />
                       <span>
-                        <strong>Instagram User Token detected ({accessToken.trim().slice(0, 4)}...).</strong> Direct Reel uploads from desktop require a <strong>Meta Page Access Token</strong> (starts with <code>EAA...</code>). In Graph API Explorer, select your Facebook Page under <em>User or Page</em>.
+                        <strong>
+                          Instagram User Token detected (
+                          {accessToken.trim().slice(0, 4)}...).
+                        </strong>{" "}
+                        Direct Reel uploads from desktop require a{" "}
+                        <strong>Meta Page Access Token</strong> (starts with{" "}
+                        <code>EAA...</code>). In Graph API Explorer, select your
+                        Facebook Page under <em>User or Page</em>.
                       </span>
                     </div>
                   ) : null}
@@ -479,7 +533,10 @@ export function InstagramPublishModal({
               </div>
             ) : (
               <div className="settings-field-group">
-                <label htmlFor="ig-modal-webhook-url" className="settings-field-label">
+                <label
+                  htmlFor="ig-modal-webhook-url"
+                  className="settings-field-label"
+                >
                   <span>Webhook URL</span>
                 </label>
                 <input
@@ -491,7 +548,8 @@ export function InstagramPublishModal({
                   className="settings-input"
                 />
                 <p className="settings-field-desc">
-                  Clip metadata and output video path will be sent via JSON POST on publish.
+                  Clip metadata and output video path will be sent via JSON POST
+                  on publish.
                 </p>
               </div>
             )}
@@ -503,7 +561,11 @@ export function InstagramPublishModal({
                 onClick={() => void onTestConnection()}
                 disabled={testing}
               >
-                {testing ? <Loader2 className="spin" size={13} /> : <Check size={13} />}
+                {testing ? (
+                  <Loader2 className="spin" size={13} />
+                ) : (
+                  <Check size={13} />
+                )}
                 <span>{testing ? "Testing..." : "Test Connection"}</span>
               </button>
 
@@ -514,8 +576,16 @@ export function InstagramPublishModal({
                   onClick={() => void handleSaveCredentialsInline()}
                   disabled={saving || localSavingCreds}
                 >
-                  {(saving || localSavingCreds) ? <Loader2 className="spin" size={13} /> : <Key size={13} />}
-                  <span>{saving || localSavingCreds ? "Saving..." : "Save Credentials"}</span>
+                  {saving || localSavingCreds ? (
+                    <Loader2 className="spin" size={13} />
+                  ) : (
+                    <Key size={13} />
+                  )}
+                  <span>
+                    {saving || localSavingCreds
+                      ? "Saving..."
+                      : "Save Credentials"}
+                  </span>
                 </button>
               )}
             </div>
@@ -526,7 +596,11 @@ export function InstagramPublishModal({
                   testStatus.success ? "success" : "error"
                 }`}
               >
-                {testStatus.success ? <BadgeCheck size={16} /> : <AlertTriangle size={16} />}
+                {testStatus.success ? (
+                  <BadgeCheck size={16} />
+                ) : (
+                  <AlertTriangle size={16} />
+                )}
                 <span>{testStatus.message}</span>
               </div>
             )}
@@ -540,12 +614,16 @@ export function InstagramPublishModal({
               {candidate && (
                 <div className="ig-clip-meta-banner">
                   <div className="clip-meta-info">
-                    <span className="clip-rank-pill">Clip #{candidate.rank}</span>
+                    <span className="clip-rank-pill">
+                      Clip #{candidate.rank}
+                    </span>
                     <strong className="clip-hook-text">{candidate.hook}</strong>
                   </div>
                   <div className="clip-score-badge">
                     <Flame size={12} />
-                    <span>{Math.round(candidate.score * 100)}% Viral Score</span>
+                    <span>
+                      {Math.round(candidate.score * 100)}% Viral Score
+                    </span>
                   </div>
                 </div>
               )}
@@ -563,8 +641,13 @@ export function InstagramPublishModal({
                     disabled={isRegenerating || publishing}
                     title="Regenerate all 3 caption angles with AI"
                   >
-                    <RefreshCw className={isRegenerating ? "spin" : ""} size={11} />
-                    <span>{isRegenerating ? "Regenerating..." : "Regenerate AI"}</span>
+                    <RefreshCw
+                      className={isRegenerating ? "spin" : ""}
+                      size={11}
+                    />
+                    <span>
+                      {isRegenerating ? "Regenerating..." : "Regenerate AI"}
+                    </span>
                   </button>
                 </div>
 
@@ -585,7 +668,9 @@ export function InstagramPublishModal({
                         )}
                       </div>
                       <p className="tab-card-hook">
-                        {opt.hook ? `"${opt.hook.slice(0, 50)}..."` : "Content-grounded"}
+                        {opt.hook
+                          ? `"${opt.hook.slice(0, 50)}..."`
+                          : "Content-grounded"}
                       </p>
                     </button>
                   ))}
@@ -617,7 +702,9 @@ export function InstagramPublishModal({
                 <div className="ig-hashtags-section">
                   <div className="caption-editor-header">
                     <span>Target Hashtags</span>
-                    <span className="hashtag-count">{hashtags.length} tags</span>
+                    <span className="hashtag-count">
+                      {hashtags.length} tags
+                    </span>
                   </div>
                   <div className="hashtag-chips-container">
                     {hashtags.map((tag) => (
@@ -742,16 +829,21 @@ export function InstagramPublishModal({
 
                       <div className="reels-caption-box">
                         <p className="reels-caption-text">
-                          {activeCaption || "Your viral caption will preview here..."}
+                          {activeCaption ||
+                            "Your viral caption will preview here..."}
                         </p>
                         {hashtags.length > 0 && (
-                          <p className="reels-tags-text">{hashtags.join(" ")}</p>
+                          <p className="reels-tags-text">
+                            {hashtags.join(" ")}
+                          </p>
                         )}
                       </div>
 
                       <div className="reels-audio-tag">
                         <Music size={11} />
-                        <span className="audio-marquee">Original Audio • ClipOn Reel Sync</span>
+                        <span className="audio-marquee">
+                          Original Audio • ClipOn Reel Sync
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -801,7 +893,9 @@ export function InstagramPublishModal({
             </div>
             <div className="published-banner-content">
               <strong>🎉 Reel is Published Live on Instagram!</strong>
-              <p>Your video is transcoding and live in the Instagram Reels feed.</p>
+              <p>
+                Your video is transcoding and live in the Instagram Reels feed.
+              </p>
               <div className="published-links-row">
                 <button
                   type="button"
@@ -829,7 +923,10 @@ export function InstagramPublishModal({
 
         {/* Failure Banner if Post Failed */}
         {isPublishFailed && existingPost?.errorMessage && (
-          <div className="connection-status-banner error" style={{ margin: "16px 0 0 0" }}>
+          <div
+            className="connection-status-banner error"
+            style={{ margin: "16px 0 0 0" }}
+          >
             <AlertTriangle size={18} style={{ flexShrink: 0 }} />
             <div>
               <strong>Instagram Publishing Failed</strong>

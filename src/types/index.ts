@@ -184,12 +184,7 @@ export type BusyState =
 
 export type ReframeMode = "vertical_crop" | "smart_face_track" | "original";
 export type SettingsTab =
-  | "ai"
-  | "transcription"
-  | "video"
-  | "social"
-  | "storage"
-  | "system";
+  "ai" | "transcription" | "video" | "social" | "storage" | "system";
 
 // ===== Job System Types =====
 

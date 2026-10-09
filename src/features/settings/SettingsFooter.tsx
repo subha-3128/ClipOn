@@ -1,5 +1,11 @@
 import React from "react";
-import { CheckCircle2, AlertCircle, Save, Loader2, ShieldCheck } from "lucide-react";
+import {
+  CheckCircle2,
+  AlertCircle,
+  Save,
+  Loader2,
+  ShieldCheck,
+} from "lucide-react";
 
 interface SettingsFooterProps {
   hasUnsavedChanges: boolean;
@@ -17,7 +23,10 @@ export function SettingsFooter({
   return (
     <div className="settings-footer-bar">
       <div className="settings-footer-status">
-        <div className="settings-footer-security-badge" title="Local file keystore stored in app data dir with 0600 permissions">
+        <div
+          className="settings-footer-security-badge"
+          title="Local file keystore stored in app data dir with 0600 permissions"
+        >
           <ShieldCheck size={14} className="security-icon" />
           <span>Local Keystore Encryption</span>
         </div>

@@ -1,6 +1,13 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Youtube, X, AlertTriangle, Loader2, ShieldAlert, Captions } from "lucide-react";
+import {
+  Youtube,
+  X,
+  AlertTriangle,
+  Loader2,
+  ShieldAlert,
+  Captions,
+} from "lucide-react";
 import { useAppError } from "../error/ErrorProvider";
 import { AccessibleModal } from "../../components/AccessibleModal";
 
@@ -170,7 +177,11 @@ export function YoutubeImportModal({
             style={{ cursor: "pointer", color: "var(--text)" }}
           >
             {CAPTION_STYLES.map((style) => (
-              <option key={style.id} value={style.id} style={{ background: "var(--bg-card)", color: "var(--text)" }}>
+              <option
+                key={style.id}
+                value={style.id}
+                style={{ background: "var(--bg-card)", color: "var(--text)" }}
+              >
                 {style.label}
               </option>
             ))}

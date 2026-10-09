@@ -559,14 +559,17 @@ function AppContent() {
         environment?.instagramAccountId?.trim() ||
         null;
 
-      const post = await invoke<InstagramPost>("publish_candidate_to_instagram", {
-        candidateId,
-        captionOverride: captionOverride?.trim() || null,
-        provider: instagramProvider,
-        accountId: activeAccId,
-        accessToken: metaModalAccessToken.trim() || null,
-        webhookUrl: instagramWebhookUrl.trim() || null,
-      });
+      const post = await invoke<InstagramPost>(
+        "publish_candidate_to_instagram",
+        {
+          candidateId,
+          captionOverride: captionOverride?.trim() || null,
+          provider: instagramProvider,
+          accountId: activeAccId,
+          accessToken: metaModalAccessToken.trim() || null,
+          webhookUrl: instagramWebhookUrl.trim() || null,
+        }
+      );
       await refresh(detail.project.id);
       showToast("🎉 Successfully published to Instagram Reels!");
       return post;
@@ -633,7 +636,10 @@ function AppContent() {
         showWarning("Please enter your Automation Webhook URL");
         return;
       }
-      localStorage.setItem("clipon_instagram_webhook_url", instagramWebhookUrl.trim());
+      localStorage.setItem(
+        "clipon_instagram_webhook_url",
+        instagramWebhookUrl.trim()
+      );
       localStorage.setItem("clipon_instagram_provider", "webhook");
       showToast("Webhook URL saved!");
     }
@@ -687,7 +693,9 @@ function AppContent() {
     setPendingCandidateIdToPostYouTube(candidateId);
     setYtModalClientId(
       youtubeClientId ||
-        (environment?.hasYoutubeConfig ? "Configured via Keystore" : localStorage.getItem("clipon_youtube_client_id") || "")
+        (environment?.hasYoutubeConfig
+          ? "Configured via Keystore"
+          : localStorage.getItem("clipon_youtube_client_id") || "")
     );
     setShowYouTubeModal(true);
   }
@@ -741,7 +749,10 @@ function AppContent() {
     try {
       if (ytModalClientId.trim()) {
         setYoutubeClientId(ytModalClientId.trim());
-        localStorage.setItem("clipon_youtube_client_id", ytModalClientId.trim());
+        localStorage.setItem(
+          "clipon_youtube_client_id",
+          ytModalClientId.trim()
+        );
       }
 
       await invoke("save_youtube_credentials", {
@@ -1635,11 +1646,12 @@ function AppContent() {
           setPendingCandidateIdToPost(null);
         }}
         candidate={
-          detail?.candidates.find((c) => c.id === pendingCandidateIdToPost) || null
+          detail?.candidates.find((c) => c.id === pendingCandidateIdToPost) ||
+          null
         }
-        clip={
-          detail?.clips.find((c) => c.candidateId === pendingCandidateIdToPost)
-        }
+        clip={detail?.clips.find(
+          (c) => c.candidateId === pendingCandidateIdToPost
+        )}
         environment={environment}
         accountId={metaModalAccountId}
         setAccountId={setMetaModalAccountId}
@@ -1655,7 +1667,11 @@ function AppContent() {
         testing={metaModalTesting}
         testStatus={metaModalStatus}
         onPublish={(candId, capOverride) =>
-          executeInstagramPublish(candId, capOverride, metaModalAccountId.trim())
+          executeInstagramPublish(
+            candId,
+            capOverride,
+            metaModalAccountId.trim()
+          )
         }
         publishing={publishingCandidateId === pendingCandidateIdToPost}
         existingPost={
@@ -1675,11 +1691,13 @@ function AppContent() {
           setPendingCandidateIdToPostYouTube(null);
         }}
         candidate={
-          detail?.candidates.find((c) => c.id === pendingCandidateIdToPostYouTube) || null
+          detail?.candidates.find(
+            (c) => c.id === pendingCandidateIdToPostYouTube
+          ) || null
         }
-        clip={
-          detail?.clips.find((c) => c.candidateId === pendingCandidateIdToPostYouTube)
-        }
+        clip={detail?.clips.find(
+          (c) => c.candidateId === pendingCandidateIdToPostYouTube
+        )}
         environment={environment}
         clientId={ytModalClientId}
         setClientId={setYtModalClientId}
@@ -1693,7 +1711,9 @@ function AppContent() {
         onSaveCredentials={handleSaveYouTubeCredentialsFromModal}
         savingCredentials={ytModalSaving}
         onPublish={executeYouTubePublish}
-        publishing={publishingYouTubeCandidateId === pendingCandidateIdToPostYouTube}
+        publishing={
+          publishingYouTubeCandidateId === pendingCandidateIdToPostYouTube
+        }
         existingPost={
           pendingCandidateIdToPostYouTube
             ? youtubePostByCandidate?.get(pendingCandidateIdToPostYouTube)

@@ -5,7 +5,7 @@
 **Approach:** Audit first, improve incrementally, preserve the existing
 architecture unless evidence proves a replacement is necessary.
 
-------------------------------------------------------------------------
+---
 
 ## 1. Executive Summary
 
@@ -23,68 +23,71 @@ framing, and render reliably.
 
 The upgrade should focus on measurable output quality:
 
--   Strong hooks in the first 1--2 seconds.
--   Accurate start and end boundaries.
--   Self-contained clips with enough context to make sense.
--   Better active-speaker and subject tracking.
--   Stable crops with fewer jumps and identity switches.
--   Readable, well-timed captions.
--   Consistent render quality and predictable performance.
--   A feedback loop that helps improve future candidate ranking.
+- Strong hooks in the first 1--2 seconds.
+- Accurate start and end boundaries.
+- Self-contained clips with enough context to make sense.
+- Better active-speaker and subject tracking.
+- Stable crops with fewer jumps and identity switches.
+- Readable, well-timed captions.
+- Consistent render quality and predictable performance.
+- A feedback loop that helps improve future candidate ranking.
 
 ## 2. Current Architecture to Preserve
 
 The repository currently uses the following broad architecture:
 
-  -----------------------------------------------------------------------
-  Area                    Current technology /    Upgrade principle
-                          approach                
-  ----------------------- ----------------------- -----------------------
-  Desktop shell and       Tauri 2 and Rust        Retain; strengthen
-  backend                                         service boundaries and
-                                                  error handling.
+---
 
-  Frontend                React 19, TypeScript,   Retain; improve
-                          Vite                    workflows and expose
-                                                  quality signals
-                                                  clearly.
+Area Current technology / Upgrade principle
+approach
 
-  Project persistence     SQLite                  Retain; use migrations
-                                                  for any schema changes.
+---
 
-  Media processing        FFmpeg / FFprobe        Retain as the rendering
-                                                  and media-inspection
-                                                  foundation.
+Desktop shell and Tauri 2 and Rust Retain; strengthen
+backend service boundaries and
+error handling.
 
-  macOS accelerated       Apple VideoToolbox      Retain with a tested
-  encoding                where available         fallback path.
+Frontend React 19, TypeScript, Retain; improve
+Vite workflows and expose
+quality signals
+clearly.
 
-  Face detection and      Apple Vision / Swift    Retain initially;
-  tracking                helper on supported     benchmark before
-                          macOS paths             considering a
-                                                  replacement.
+Project persistence SQLite Retain; use migrations
+for any schema changes.
 
-  Transcription           Local Whisper and       Improve reliability,
-                          Deepgram options        timing validation, and
-                                                  provider fallback
-                                                  behavior.
+Media processing FFmpeg / FFprobe Retain as the rendering
+and media-inspection
+foundation.
 
-  AI moment ranking       Configurable LLM        Keep provider
-                          providers, including    abstraction; add a
-                          local and cloud options structured scoring
-                                                  layer around model
-                                                  output.
+macOS accelerated Apple VideoToolbox Retain with a tested
+encoding where available fallback path.
 
-  Publishing              YouTube upload and      Retain; improve
-                          Instagram publishing    preflight validation
-                          integrations            and actionable errors.
+Face detection and Apple Vision / Swift Retain initially;
+tracking helper on supported benchmark before
+macOS paths considering a
+replacement.
 
-  Credentials             OS keyring-backed       Preserve secure
-                          secret storage          storage; never write
-                                                  API keys to logs or
-                                                  ordinary settings
-                                                  files.
-  -----------------------------------------------------------------------
+Transcription Local Whisper and Improve reliability,
+Deepgram options timing validation, and
+provider fallback
+behavior.
+
+AI moment ranking Configurable LLM Keep provider
+providers, including abstraction; add a
+local and cloud options structured scoring
+layer around model
+output.
+
+Publishing YouTube upload and Retain; improve
+Instagram publishing preflight validation
+integrations and actionable errors.
+
+Credentials OS keyring-backed Preserve secure
+secret storage storage; never write
+API keys to logs or
+ordinary settings
+files.
+-----------------------------------------------------------------------
 
 **Important:** This table describes the broad stack visible in the
 project. Before implementation, confirm the current call paths and
@@ -122,16 +125,16 @@ optional provider is configured or active.
 
 Before making changes:
 
--   Trace the path from video import through transcription, candidate
-    generation, editing, reframing, rendering, and publishing.
--   Identify duplicate or competing implementations of clip scoring,
-    crop calculation, transcript normalization, and boundary adjustment.
--   Record current behavior for center crop, face tracking, multi-person
-    layouts, captions, cancellation, and provider errors.
--   Build a small representative benchmark set covering podcasts,
-    interviews, solo speakers, multiple speakers, screen recordings, and
-    low-quality footage.
--   Save baseline outputs and record current failures.
+- Trace the path from video import through transcription, candidate
+  generation, editing, reframing, rendering, and publishing.
+- Identify duplicate or competing implementations of clip scoring,
+  crop calculation, transcript normalization, and boundary adjustment.
+- Record current behavior for center crop, face tracking, multi-person
+  layouts, captions, cancellation, and provider errors.
+- Build a small representative benchmark set covering podcasts,
+  interviews, solo speakers, multiple speakers, screen recordings, and
+  low-quality footage.
+- Save baseline outputs and record current failures.
 
 **Deliverable:** `docs/AI_PIPELINE_BASELINE.md` with pipeline diagrams,
 key file paths, current limitations, and baseline metrics.
@@ -144,14 +147,14 @@ opening.
 
 Assess each candidate for:
 
--   Hook strength in the first 1--2 seconds.
--   Clarity and specificity.
--   Emotional or informational value.
--   Standalone context.
--   Coherence and completeness.
--   Redundancy with other selected clips.
--   Transcript confidence and timing quality.
--   Whether the clip begins or ends mid-word or mid-thought.
+- Hook strength in the first 1--2 seconds.
+- Clarity and specificity.
+- Emotional or informational value.
+- Standalone context.
+- Coherence and completeness.
+- Redundancy with other selected clips.
+- Transcript confidence and timing quality.
+- Whether the clip begins or ends mid-word or mid-thought.
 
 The LLM should return structured candidate data, not an unvalidated
 block of prose. Keep the model responsible for semantic judgment, while
@@ -160,12 +163,12 @@ and required fields.
 
 **Acceptance criteria:**
 
--   Every candidate has a valid start, end, duration, transcript span,
-    and explanation.
--   Invalid or out-of-range timestamps are rejected or repaired through
-    a deterministic rule.
--   The ranking output is stable enough to compare in regression tests.
--   Hook quality is measured separately from overall clip quality.
+- Every candidate has a valid start, end, duration, transcript span,
+  and explanation.
+- Invalid or out-of-range timestamps are rejected or repaired through
+  a deterministic rule.
+- The ranking output is stable enough to compare in regression tests.
+- Hook quality is measured separately from overall clip quality.
 
 ### P2 --- Start and end boundary optimization
 
@@ -192,11 +195,11 @@ the speaker's meaning, tone, or comedic timing.
 
 **Acceptance criteria:**
 
--   No clip begins or ends inside a detected word.
--   No clip extends beyond source duration.
--   Boundary adjustments are logged with a reason code.
--   The editor can inspect and manually override the suggested
-    boundaries.
+- No clip begins or ends inside a detected word.
+- No clip extends beyond source duration.
+- Boundary adjustments are logged with a reason code.
+- The editor can inspect and manually override the suggested
+  boundaries.
 
 ### P3 --- Context independence and coherence
 
@@ -205,12 +208,12 @@ video.
 
 Evaluate whether the clip:
 
--   Establishes the topic or question.
--   Explains necessary references such as "he," "that," or "the other
-    one."
--   Contains a complete claim, story beat, answer, or payoff.
--   Avoids depending on missing visuals or earlier dialogue.
--   Ends at a natural point.
+- Establishes the topic or question.
+- Explains necessary references such as "he," "that," or "the other
+  one."
+- Contains a complete claim, story beat, answer, or payoff.
+- Avoids depending on missing visuals or earlier dialogue.
+- Ends at a natural point.
 
 Use the transcript and nearby context to detect missing setup. If
 context cannot be restored within the allowed duration, lower the score
@@ -218,11 +221,11 @@ rather than inventing content.
 
 **Acceptance criteria:**
 
--   Context independence is an explicit score dimension.
--   Candidates that require substantial missing context are ranked
-    lower.
--   The system never fabricates transcript content to make a clip appear
-    self-contained.
+- Context independence is an explicit score dimension.
+- Candidates that require substantial missing context are ranked
+  lower.
+- The system never fabricates transcript content to make a clip appear
+  self-contained.
 
 ### P4 --- Centralized `ClipQualityScore`
 
@@ -231,35 +234,38 @@ editor, and evaluation tools.
 
 Suggested dimensions, each normalized to a documented range:
 
-  -----------------------------------------------------------------------
-  Dimension                           Purpose
-  ----------------------------------- -----------------------------------
-  `hook_score`                        Strength of the first 1--2 seconds.
+---
 
-  `coherence_score`                   Whether the clip forms a complete,
-                                      understandable unit.
+Dimension Purpose
 
-  `context_score`                     Whether it makes sense without the
-                                      full video.
+---
 
-  `payoff_score`                      Whether the clip reaches a useful
-                                      conclusion, reveal, or punchline.
+`hook_score` Strength of the first 1--2 seconds.
 
-  `speech_quality_score`              Transcript confidence,
-                                      intelligibility signals, and timing
-                                      quality.
+`coherence_score` Whether the clip forms a complete,
+understandable unit.
 
-  `visual_quality_score`              Subject visibility, framing, and
-                                      visual stability.
+`context_score` Whether it makes sense without the
+full video.
 
-  `boundary_score`                    Whether start and end points are
-                                      clean.
+`payoff_score` Whether the clip reaches a useful
+conclusion, reveal, or punchline.
 
-  `redundancy_penalty`                Reduces near-duplicate candidates.
+`speech_quality_score` Transcript confidence,
+intelligibility signals, and timing
+quality.
 
-  `risk_penalty`                      Flags uncertainty, missing context,
-                                      or unreliable analysis.
-  -----------------------------------------------------------------------
+`visual_quality_score` Subject visibility, framing, and
+visual stability.
+
+`boundary_score` Whether start and end points are
+clean.
+
+`redundancy_penalty` Reduces near-duplicate candidates.
+
+`risk_penalty` Flags uncertainty, missing context,
+or unreliable analysis.
+-----------------------------------------------------------------------
 
 A starting formula can be used as a configurable baseline, not as a
 permanent truth:
@@ -273,12 +279,12 @@ poorly.
 
 **Acceptance criteria:**
 
--   A single shared score schema is used across the pipeline.
--   Scores and weights are versioned.
--   Missing dimensions are handled explicitly, not silently treated as
-    perfect scores.
--   Unit tests cover normalization, missing data, invalid values, and
-    penalty behavior.
+- A single shared score schema is used across the pipeline.
+- Scores and weights are versioned.
+- Missing dimensions are handled explicitly, not silently treated as
+  perfect scores.
+- Unit tests cover normalization, missing data, invalid values, and
+  penalty behavior.
 
 ### P5 --- Active-speaker accuracy and identity preservation
 
@@ -303,76 +309,76 @@ Recommended sequence:
 
 Potential improvements to evaluate after the baseline:
 
--   **Vision Feature Prints** for appearance-based identity continuity.
--   **Kalman filtering** for smoother position and velocity estimates.
--   **Core ML** only if a measured capability gap justifies another
-    model.
--   **SyncDiscriminator or another audio-visual speaker signal** only
-    after a small proof of concept demonstrates useful gains on ClipOn's
-    target footage.
+- **Vision Feature Prints** for appearance-based identity continuity.
+- **Kalman filtering** for smoother position and velocity estimates.
+- **Core ML** only if a measured capability gap justifies another
+  model.
+- **SyncDiscriminator or another audio-visual speaker signal** only
+  after a small proof of concept demonstrates useful gains on ClipOn's
+  target footage.
 
 These are candidates for controlled experiments, not mandatory
 dependencies. Avoid adding several tracking systems at once.
 
 **Acceptance criteria:**
 
--   Fewer identity switches on the benchmark set.
--   Reduced crop jitter without excessive lag.
--   Short occlusions do not cause immediate, arbitrary subject changes.
--   A deterministic fallback is used when active-speaker confidence is
-    insufficient.
--   Performance is measured on supported hardware.
+- Fewer identity switches on the benchmark set.
+- Reduced crop jitter without excessive lag.
+- Short occlusions do not cause immediate, arbitrary subject changes.
+- A deterministic fallback is used when active-speaker confidence is
+  insufficient.
+- Performance is measured on supported hardware.
 
 ### P6 --- Crop smoothing and composition
 
 Make reframing feel intentional rather than mechanically reactive.
 
--   Smooth crop-center movement over time.
--   Add dead zones or hysteresis so tiny face movements do not move the
-    frame.
--   Limit crop velocity and acceleration to avoid sudden jumps.
--   Account for shot changes and genuine speaker changes so smoothing
-    does not lag behind the scene.
--   Keep faces and important visual content inside safe margins.
--   Make the crop strategy configurable and visible in the editor.
--   Test portrait, landscape, low-resolution, multi-person, and
-    moving-camera footage.
--   Ensure crop calculations use the correct source dimensions,
-    rotation, pixel aspect ratio, and output aspect ratio.
+- Smooth crop-center movement over time.
+- Add dead zones or hysteresis so tiny face movements do not move the
+  frame.
+- Limit crop velocity and acceleration to avoid sudden jumps.
+- Account for shot changes and genuine speaker changes so smoothing
+  does not lag behind the scene.
+- Keep faces and important visual content inside safe margins.
+- Make the crop strategy configurable and visible in the editor.
+- Test portrait, landscape, low-resolution, multi-person, and
+  moving-camera footage.
+- Ensure crop calculations use the correct source dimensions,
+  rotation, pixel aspect ratio, and output aspect ratio.
 
 **Acceptance criteria:**
 
--   No invalid crop dimensions or out-of-bounds crop regions.
--   Crop movement is smoother while still responding to meaningful scene
-    changes.
--   Important subjects remain visible in benchmark examples.
--   Center-crop fallback remains available.
+- No invalid crop dimensions or out-of-bounds crop regions.
+- Crop movement is smoother while still responding to meaningful scene
+  changes.
+- Important subjects remain visible in benchmark examples.
+- Center-crop fallback remains available.
 
 ### P7 --- Caption accuracy and visual quality
 
 Captioning should be synchronized, readable, and consistent with the
 clip.
 
--   Prefer word-level timing when supported by the selected
-    transcription engine.
--   Validate subtitle timestamps and clip-relative offsets.
--   Keep text within platform-safe margins.
--   Prevent captions from being clipped at the edges.
--   Avoid excessive words per line and overly rapid caption changes.
--   Handle punctuation, capitalization, numbers, and multilingual text
-    carefully.
--   Keep caption rendering separate from transcript acquisition so
-    styles can change without retranscribing.
--   Test caption output after the final crop and render, not only in the
-    editor preview.
+- Prefer word-level timing when supported by the selected
+  transcription engine.
+- Validate subtitle timestamps and clip-relative offsets.
+- Keep text within platform-safe margins.
+- Prevent captions from being clipped at the edges.
+- Avoid excessive words per line and overly rapid caption changes.
+- Handle punctuation, capitalization, numbers, and multilingual text
+  carefully.
+- Keep caption rendering separate from transcript acquisition so
+  styles can change without retranscribing.
+- Test caption output after the final crop and render, not only in the
+  editor preview.
 
 **Acceptance criteria:**
 
--   Subtitle times are monotonic and within clip duration.
--   Captions do not render outside the safe area.
--   Caption layout is tested at final output resolution.
--   Transcription failure and subtitle-generation failure have separate
-    actionable errors.
+- Subtitle times are monotonic and within clip duration.
+- Captions do not render outside the safe area.
+- Caption layout is tested at final output resolution.
+- Transcription failure and subtitle-generation failure have separate
+  actionable errors.
 
 ### P8 --- Visual validation after rendering
 
@@ -380,14 +386,14 @@ Add automated checks for rendered output.
 
 At minimum, validate:
 
--   File exists and is non-empty.
--   FFprobe can read the output.
--   Duration and resolution are within expected bounds.
--   Audio stream exists when expected.
--   Output aspect ratio matches the selected format.
--   Subtitle timing stays within the rendered duration.
--   The output can be decoded through representative frames.
--   Cancellation does not leave a misleading "completed" state.
+- File exists and is non-empty.
+- FFprobe can read the output.
+- Duration and resolution are within expected bounds.
+- Audio stream exists when expected.
+- Output aspect ratio matches the selected format.
+- Subtitle timing stays within the rendered duration.
+- The output can be decoded through representative frames.
+- Cancellation does not leave a misleading "completed" state.
 
 For higher-value validation, extract representative frames and inspect
 face visibility, crop bounds, black bars, subtitle clipping, and sudden
@@ -396,22 +402,22 @@ with manual review for subjective quality.
 
 **Acceptance criteria:**
 
--   Render success is reported only after validation passes.
--   Failed validation returns a useful error and preserves diagnostic
-    details without secrets.
--   The app can distinguish render failure from post-render validation
-    failure.
+- Render success is reported only after validation passes.
+- Failed validation returns a useful error and preserves diagnostic
+  details without secrets.
+- The app can distinguish render failure from post-render validation
+  failure.
 
 ### P9 --- Feedback and ranking improvement
 
 Add an opt-in way to record useful, non-sensitive feedback such as:
 
--   Candidate kept or rejected.
--   Boundary manually changed.
--   Crop mode changed.
--   Captions edited.
--   Clip exported or published.
--   User's quality rating, if supplied.
+- Candidate kept or rejected.
+- Boundary manually changed.
+- Crop mode changed.
+- Captions edited.
+- Clip exported or published.
+- User's quality rating, if supplied.
 
 Use feedback first to inspect recurring failure patterns and tune
 explicit weights. Do not immediately train a custom model from a small
@@ -425,68 +431,71 @@ rules-based baseline on a held-out set before adoption.
 
 **Acceptance criteria:**
 
--   Feedback is stored with a documented schema and privacy policy.
--   User feedback can be disabled or deleted.
--   Training/evaluation data excludes credentials and unnecessary
-    personal content.
--   Any learned ranker has a reproducible evaluation and rollback path.
+- Feedback is stored with a documented schema and privacy policy.
+- User feedback can be disabled or deleted.
+- Training/evaluation data excludes credentials and unnecessary
+  personal content.
+- Any learned ranker has a reproducible evaluation and rollback path.
 
 ## 5. Recommended Technology Decisions
 
-  -----------------------------------------------------------------------
-  Technology / capability Decision                Reason
-  ----------------------- ----------------------- -----------------------
-  Rust + Tauri + React    Keep                    Existing architecture
-                                                  supports a native
-                                                  desktop app with a
-                                                  web-based UI.
+---
 
-  FFmpeg / FFprobe        Keep                    Core media-processing
-                                                  and validation
-                                                  foundation.
+Technology / capability Decision Reason
 
-  SQLite                  Keep                    Suitable for local
-                                                  project metadata and
-                                                  versioned migrations.
+---
 
-  Apple Vision            Keep initially          Existing macOS
-                                                  capability; replace
-                                                  only if benchmark
-                                                  results justify it.
+Rust + Tauri + React Keep Existing architecture
+supports a native
+desktop app with a
+web-based UI.
 
-  Whisper / Deepgram      Keep behind a common    Supports local and
-                          interface               cloud transcription
-                                                  choices.
+FFmpeg / FFprobe Keep Core media-processing
+and validation
+foundation.
 
-  Existing LLM providers  Keep behind a provider  Avoid provider lock-in
-                          abstraction             and make failure
-                                                  handling consistent.
+SQLite Keep Suitable for local
+project metadata and
+versioned migrations.
 
-  Central quality scorer  Implement               Makes ranking
-                                                  explainable and
-                                                  testable across the
-                                                  app.
+Apple Vision Keep initially Existing macOS
+capability; replace
+only if benchmark
+results justify it.
 
-  Vision Feature Prints   Evaluate                May improve identity
-                                                  continuity.
+Whisper / Deepgram Keep behind a common Supports local and
+interface cloud transcription
+choices.
 
-  Kalman filter           Evaluate                May reduce jitter in
-                                                  tracking and crop
-                                                  movement.
+Existing LLM providers Keep behind a provider Avoid provider lock-in
+abstraction and make failure
+handling consistent.
 
-  Core ML                 Defer until benchmark   Additional models add
-                          evidence                maintenance and
-                                                  performance costs.
+Central quality scorer Implement Makes ranking
+explainable and
+testable across the
+app.
 
-  SyncDiscriminator /     Prototype only          Potential benefit must
-  audio-visual speaker                            be verified against
-  detection                                       actual target footage.
+Vision Feature Prints Evaluate May improve identity
+continuity.
 
-  LightGBM / XGBoost      Defer until sufficient  A learned ranker needs
-                          feedback                enough high-quality
-                                                  labels and a reliable
-                                                  evaluation set.
-  -----------------------------------------------------------------------
+Kalman filter Evaluate May reduce jitter in
+tracking and crop
+movement.
+
+Core ML Defer until benchmark Additional models add
+evidence maintenance and
+performance costs.
+
+SyncDiscriminator / Prototype only Potential benefit must
+audio-visual speaker be verified against
+detection actual target footage.
+
+LightGBM / XGBoost Defer until sufficient A learned ranker needs
+feedback enough high-quality
+labels and a reliable
+evaluation set.
+-----------------------------------------------------------------------
 
 ## 6. Suggested Internal Interfaces
 
@@ -496,7 +505,7 @@ after inspecting the code.
 
 ### Candidate
 
-``` ts
+```ts
 type ClipCandidate = {
   id: string;
   sourceId: string;
@@ -512,7 +521,7 @@ type ClipCandidate = {
 
 ### Quality score
 
-``` ts
+```ts
 type ClipQualityScore = {
   hook: number | null;
   coherence: number | null;
@@ -530,7 +539,7 @@ type ClipQualityScore = {
 
 ### Tracking result
 
-``` ts
+```ts
 type TrackingSample = {
   timestampSeconds: number;
   subjectId?: string;
@@ -546,102 +555,105 @@ then extend or consolidate them to avoid competing schemas.
 
 ## 7. Reliability, Security, and Error Handling
 
--   Keep API keys in the OS keyring or existing secure credential
-    mechanism.
--   Never expose secret values in logs, errors, analytics, or generated
-    reports.
--   Do not persist raw provider responses unless necessary; sanitize and
-    bound diagnostic data.
--   Use timeouts and cancellation for network and media tasks.
--   Distinguish authentication errors, quota/rate-limit errors, network
-    failures, malformed model output, and media failures.
--   Use bounded concurrency for expensive render tasks and make queue
-    state explicit.
--   Ensure cancellation cleans up temporary files and does not leave
-    projects stuck.
--   Use database migrations for schema changes and test upgrades from an
-    existing user database.
--   Validate all model-generated timestamps, scores, IDs, and text
-    before use.
--   Keep platform-specific code behind clear capability checks.
--   Avoid logging transcript or source-video content unless the user
-    explicitly opts into diagnostic capture.
+- Keep API keys in the OS keyring or existing secure credential
+  mechanism.
+- Never expose secret values in logs, errors, analytics, or generated
+  reports.
+- Do not persist raw provider responses unless necessary; sanitize and
+  bound diagnostic data.
+- Use timeouts and cancellation for network and media tasks.
+- Distinguish authentication errors, quota/rate-limit errors, network
+  failures, malformed model output, and media failures.
+- Use bounded concurrency for expensive render tasks and make queue
+  state explicit.
+- Ensure cancellation cleans up temporary files and does not leave
+  projects stuck.
+- Use database migrations for schema changes and test upgrades from an
+  existing user database.
+- Validate all model-generated timestamps, scores, IDs, and text
+  before use.
+- Keep platform-specific code behind clear capability checks.
+- Avoid logging transcript or source-video content unless the user
+  explicitly opts into diagnostic capture.
 
 ## 8. Testing and Benchmark Plan
 
 ### Unit tests
 
--   Timestamp and duration validation.
--   Transcript normalization.
--   Clip boundary padding and trimming.
--   Score normalization and weight handling.
--   Duplicate-candidate detection.
--   Crop geometry and safe margins.
--   Tracking smoothing and identity-switch behavior.
--   Subtitle offset and timing validation.
--   Provider response parsing and malformed-output handling.
+- Timestamp and duration validation.
+- Transcript normalization.
+- Clip boundary padding and trimming.
+- Score normalization and weight handling.
+- Duplicate-candidate detection.
+- Crop geometry and safe margins.
+- Tracking smoothing and identity-switch behavior.
+- Subtitle offset and timing validation.
+- Provider response parsing and malformed-output handling.
 
 ### Integration tests
 
--   Import → transcribe → candidate generation.
--   Candidate selection → boundary refinement → render.
--   Center crop and face-tracking render paths.
--   Captioned render → FFprobe validation.
--   Render cancellation and retry.
--   Missing credentials and provider outage handling.
--   YouTube and Instagram preflight validation without publishing real
-    content.
+- Import → transcribe → candidate generation.
+- Candidate selection → boundary refinement → render.
+- Center crop and face-tracking render paths.
+- Captioned render → FFprobe validation.
+- Render cancellation and retry.
+- Missing credentials and provider outage handling.
+- YouTube and Instagram preflight validation without publishing real
+  content.
 
 ### Regression benchmark
 
 Maintain a small, permission-cleared benchmark set with expected
 annotations. For each change, record:
 
--   Human-rated hook quality.
--   Human-rated coherence and context independence.
--   Boundary correction frequency.
--   Word-cut or mid-sentence-cut frequency.
--   Active-speaker accuracy and identity switches.
--   Crop jitter and subject visibility.
--   Caption timing/layout failures.
--   Render success rate and processing time.
+- Human-rated hook quality.
+- Human-rated coherence and context independence.
+- Boundary correction frequency.
+- Word-cut or mid-sentence-cut frequency.
+- Active-speaker accuracy and identity switches.
+- Crop jitter and subject visibility.
+- Caption timing/layout failures.
+- Render success rate and processing time.
 
 Compare against the baseline. Do not claim quality improvements based
 only on a few visually impressive examples.
 
 ## 9. Implementation Order and Deliverables
 
-  --------------------------------------------------------------------------------
-  Phase                   Work                    Deliverable
-  ----------------------- ----------------------- --------------------------------
-  0                       Repository and pipeline `docs/AI_PIPELINE_BASELINE.md`
-                          audit                   
+---
 
-  1                       Benchmark set and       `docs/AI_QUALITY_BENCHMARK.md`
-                          baseline metrics        
+Phase Work Deliverable
 
-  2                       Structured candidate    Candidate schema, validation,
-                          output and hook scoring tests
+---
 
-  3                       Boundary refinement and Boundary service updates and
-                          context checks          regression tests
+0 Repository and pipeline `docs/AI_PIPELINE_BASELINE.md`
+audit
 
-  4                       Central quality scoring Shared scorer, versioned
-                                                  weights, score breakdown
+1 Benchmark set and `docs/AI_QUALITY_BENCHMARK.md`
+baseline metrics
 
-  5                       Tracking and crop       Tracking improvements behind
-                          stability               controlled flags
+2 Structured candidate Candidate schema, validation,
+output and hook scoring tests
 
-  6                       Caption and             Validation checks and actionable
-                          rendered-output         UI errors
-                          validation              
+3 Boundary refinement and Boundary service updates and
+context checks regression tests
 
-  7                       Feedback capture and    Opt-in feedback schema and
-                          evaluation              analysis workflow
+4 Central quality scoring Shared scorer, versioned
+weights, score breakdown
 
-  8                       Optional model          Benchmark reports with
-                          experiments             keep/reject decision
-  --------------------------------------------------------------------------------
+5 Tracking and crop Tracking improvements behind
+stability controlled flags
+
+6 Caption and Validation checks and actionable
+rendered-output UI errors
+validation
+
+7 Feedback capture and Opt-in feedback schema and
+evaluation analysis workflow
+
+8 Optional model Benchmark reports with
+experiments keep/reject decision
+--------------------------------------------------------------------------------
 
 Keep each phase in small pull requests. Feature flags are useful for
 experimental tracking or ranking paths, but avoid creating flags for
@@ -651,21 +663,21 @@ every trivial change.
 
 The upgrade is complete only when:
 
--   The existing architecture is understood and documented.
--   Each change has a clear problem statement and baseline.
--   Candidate results are validated and scored consistently.
--   Hook quality, coherence, context independence, and boundary quality
-    are separately measurable.
--   Reframing preserves subject visibility and avoids unnecessary jumps.
--   Caption and render outputs pass automated validation.
--   Provider failures and cancellation leave the project in a
-    recoverable state.
--   Security-sensitive values remain protected.
--   Unit, integration, and regression tests pass.
--   Benchmark results demonstrate improvement without unacceptable
-    regressions in speed or reliability.
--   Optional technologies are adopted only when their measured benefit
-    exceeds their maintenance cost.
+- The existing architecture is understood and documented.
+- Each change has a clear problem statement and baseline.
+- Candidate results are validated and scored consistently.
+- Hook quality, coherence, context independence, and boundary quality
+  are separately measurable.
+- Reframing preserves subject visibility and avoids unnecessary jumps.
+- Caption and render outputs pass automated validation.
+- Provider failures and cancellation leave the project in a
+  recoverable state.
+- Security-sensitive values remain protected.
+- Unit, integration, and regression tests pass.
+- Benchmark results demonstrate improvement without unacceptable
+  regressions in speed or reliability.
+- Optional technologies are adopted only when their measured benefit
+  exceeds their maintenance cost.
 
 ## 11. Instructions for the Implementing Engineer or Coding Agent
 
@@ -692,7 +704,7 @@ The upgrade is complete only when:
     assumption instead of inventing APIs or silently rewriting the
     architecture.
 
-------------------------------------------------------------------------
+---
 
 ## Final Direction
 

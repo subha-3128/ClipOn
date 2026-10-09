@@ -288,7 +288,10 @@ export function SettingsModal({
               {/* Active Engine Card */}
               <div className="settings-card highlight">
                 <div className="settings-field-group">
-                  <label htmlFor="llm-engine-select" className="settings-field-label">
+                  <label
+                    htmlFor="llm-engine-select"
+                    className="settings-field-label"
+                  >
                     <span>Active Detection Model</span>
                     <span className="status-pill active">
                       <Zap size={11} /> Primary Analyzer
@@ -308,12 +311,20 @@ export function SettingsModal({
                     }}
                     className="settings-select"
                   >
-                    <option value="gemini">Google Gemini 2.5 (Fast &amp; Accurate - Recommended)</option>
+                    <option value="gemini">
+                      Google Gemini 2.5 (Fast &amp; Accurate - Recommended)
+                    </option>
                     <option value="openai">OpenAI GPT-4o / GPT-4o-mini</option>
-                    <option value="anthropic">Anthropic Claude 3.5 Sonnet</option>
+                    <option value="anthropic">
+                      Anthropic Claude 3.5 Sonnet
+                    </option>
                     <option value="deepseek">DeepSeek Chat / Reasoner</option>
-                    <option value="groq">Groq Cloud (Llama 3 70B - Ultra Fast)</option>
-                    <option value="ollama">Ollama Local (100% Private On-Device)</option>
+                    <option value="groq">
+                      Groq Cloud (Llama 3 70B - Ultra Fast)
+                    </option>
+                    <option value="ollama">
+                      Ollama Local (100% Private On-Device)
+                    </option>
                     <option value="openrouter">OpenRouter Unified API</option>
                   </select>
                 </div>
@@ -325,7 +336,9 @@ export function SettingsModal({
               </div>
 
               {/* Gemini */}
-              <div className={`settings-card ${llmEngine === "gemini" ? "selected" : ""}`}>
+              <div
+                className={`settings-card ${llmEngine === "gemini" ? "selected" : ""}`}
+              >
                 <SettingsSecretField
                   id="gemini-key"
                   label="Google Gemini API Key"
@@ -339,7 +352,9 @@ export function SettingsModal({
               </div>
 
               {/* OpenAI */}
-              <div className={`settings-card ${llmEngine === "openai" ? "selected" : ""}`}>
+              <div
+                className={`settings-card ${llmEngine === "openai" ? "selected" : ""}`}
+              >
                 <SettingsSecretField
                   id="openai-key"
                   label="OpenAI API Key"
@@ -353,7 +368,9 @@ export function SettingsModal({
               </div>
 
               {/* Anthropic Claude */}
-              <div className={`settings-card ${llmEngine === "anthropic" ? "selected" : ""}`}>
+              <div
+                className={`settings-card ${llmEngine === "anthropic" ? "selected" : ""}`}
+              >
                 <SettingsSecretField
                   id="anthropic-key"
                   label="Anthropic Claude API Key"
@@ -367,7 +384,9 @@ export function SettingsModal({
               </div>
 
               {/* DeepSeek */}
-              <div className={`settings-card ${llmEngine === "deepseek" ? "selected" : ""}`}>
+              <div
+                className={`settings-card ${llmEngine === "deepseek" ? "selected" : ""}`}
+              >
                 <SettingsSecretField
                   id="deepseek-key"
                   label="DeepSeek API Key"
@@ -379,7 +398,10 @@ export function SettingsModal({
                   placeholder="sk-..."
                 />
                 <div className="settings-field-group sub-field">
-                  <label htmlFor="deepseek-model" className="settings-field-label">
+                  <label
+                    htmlFor="deepseek-model"
+                    className="settings-field-label"
+                  >
                     <span>DeepSeek Model Identifier</span>
                   </label>
                   <input
@@ -388,7 +410,10 @@ export function SettingsModal({
                     value={deepseekModel}
                     onChange={(e) => {
                       setDeepseekModel(e.target.value);
-                      localStorage.setItem("clipon_deepseek_model", e.target.value);
+                      localStorage.setItem(
+                        "clipon_deepseek_model",
+                        e.target.value
+                      );
                     }}
                     placeholder="deepseek-chat (default)"
                     className="settings-input"
@@ -397,7 +422,9 @@ export function SettingsModal({
               </div>
 
               {/* Groq Cloud */}
-              <div className={`settings-card ${llmEngine === "groq" ? "selected" : ""}`}>
+              <div
+                className={`settings-card ${llmEngine === "groq" ? "selected" : ""}`}
+              >
                 <SettingsSecretField
                   id="groq-key"
                   label="Groq Cloud API Key"
@@ -411,18 +438,28 @@ export function SettingsModal({
               </div>
 
               {/* Ollama Local */}
-              <div className={`settings-card ${llmEngine === "ollama" ? "selected" : ""}`}>
+              <div
+                className={`settings-card ${llmEngine === "ollama" ? "selected" : ""}`}
+              >
                 <div className="settings-field-group">
                   <div className="settings-field-header">
-                    <label htmlFor="ollama-model" className="settings-field-label">
+                    <label
+                      htmlFor="ollama-model"
+                      className="settings-field-label"
+                    >
                       <span>Ollama Local Model (On-Device)</span>
                     </label>
-                    <span className={`status-pill ${environment?.hasOllama ? "active" : "missing"}`}>
-                      {environment?.hasOllama ? "Ollama Connected" : "Ollama Not Detected"}
+                    <span
+                      className={`status-pill ${environment?.hasOllama ? "active" : "missing"}`}
+                    >
+                      {environment?.hasOllama
+                        ? "Ollama Connected"
+                        : "Ollama Not Detected"}
                     </span>
                   </div>
                   <p className="settings-field-desc">
-                    Runs 100% locally on your machine with zero cloud dependencies or API keys.
+                    Runs 100% locally on your machine with zero cloud
+                    dependencies or API keys.
                   </p>
                   <div className="input-with-action-btn">
                     <input
@@ -431,7 +468,10 @@ export function SettingsModal({
                       value={localLlmModel}
                       onChange={(e) => {
                         setLocalLlmModel(e.target.value);
-                        localStorage.setItem("clipon_local_llm_model", e.target.value);
+                        localStorage.setItem(
+                          "clipon_local_llm_model",
+                          e.target.value
+                        );
                       }}
                       placeholder="llama3.2"
                       className="settings-input"
@@ -439,7 +479,9 @@ export function SettingsModal({
                     <button
                       type="button"
                       className="studio-btn secondary small"
-                      onClick={() => handlePullModel(localLlmModel.trim() || "llama3.2")}
+                      onClick={() =>
+                        handlePullModel(localLlmModel.trim() || "llama3.2")
+                      }
                       disabled={pullingModel || !environment?.hasOllama}
                       title="Pull model weights using local Ollama daemon"
                     >
@@ -495,7 +537,10 @@ export function SettingsModal({
                   }`}
                   onClick={() => {
                     setTranscriptionEngine("deepgram");
-                    localStorage.setItem("clipon_transcription_engine", "deepgram");
+                    localStorage.setItem(
+                      "clipon_transcription_engine",
+                      "deepgram"
+                    );
                   }}
                   role="button"
                   tabIndex={0}
@@ -519,7 +564,10 @@ export function SettingsModal({
                   }`}
                   onClick={() => {
                     setTranscriptionEngine("local");
-                    localStorage.setItem("clipon_transcription_engine", "local");
+                    localStorage.setItem(
+                      "clipon_transcription_engine",
+                      "local"
+                    );
                   }}
                   role="button"
                   tabIndex={0}
@@ -528,7 +576,9 @@ export function SettingsModal({
                     <div className="option-icon-box">
                       <AudioLines size={18} />
                     </div>
-                    <span className="option-badge local">Private On-Device</span>
+                    <span className="option-badge local">
+                      Private On-Device
+                    </span>
                   </div>
                   <h5>Whisper Offline (Local)</h5>
                   <p>
@@ -571,7 +621,9 @@ export function SettingsModal({
                       environment?.hasLocalWhisperModel ? "active" : "neutral"
                     }`}
                   >
-                    {environment?.hasLocalWhisperModel ? "Model Ready" : "Auto-Download"}
+                    {environment?.hasLocalWhisperModel
+                      ? "Model Ready"
+                      : "Auto-Download"}
                   </span>
                 </div>
               </div>
@@ -605,7 +657,10 @@ export function SettingsModal({
                     }`}
                     onClick={() => {
                       setReframeMode("vertical_crop");
-                      localStorage.setItem("clipon_reframe_mode", "vertical_crop");
+                      localStorage.setItem(
+                        "clipon_reframe_mode",
+                        "vertical_crop"
+                      );
                     }}
                     role="button"
                     tabIndex={0}
@@ -614,7 +669,10 @@ export function SettingsModal({
                       <h5>Vertical Crop</h5>
                       <span className="format-pill">Center</span>
                     </div>
-                    <p>Clean 9:16 center crop. Best for talking head interviews and podcasts.</p>
+                    <p>
+                      Clean 9:16 center crop. Best for talking head interviews
+                      and podcasts.
+                    </p>
                   </div>
 
                   <div
@@ -623,7 +681,10 @@ export function SettingsModal({
                     }`}
                     onClick={() => {
                       setReframeMode("smart_face_track");
-                      localStorage.setItem("clipon_reframe_mode", "smart_face_track");
+                      localStorage.setItem(
+                        "clipon_reframe_mode",
+                        "smart_face_track"
+                      );
                     }}
                     role="button"
                     tabIndex={0}
@@ -632,7 +693,10 @@ export function SettingsModal({
                       <h5>Smart Face Track</h5>
                       <span className="format-pill">AI Vision</span>
                     </div>
-                    <p>Dynamically pans the 9:16 window to follow moving subjects.</p>
+                    <p>
+                      Dynamically pans the 9:16 window to follow moving
+                      subjects.
+                    </p>
                   </div>
 
                   <div
@@ -664,7 +728,10 @@ export function SettingsModal({
                 <div className="settings-toggle-row">
                   <div className="toggle-info">
                     <strong>Dynamic Punch-Zoom</strong>
-                    <p>Applies a subtle 1.12x scale punch-in on key statements to boost visual retention.</p>
+                    <p>
+                      Applies a subtle 1.12x scale punch-in on key statements to
+                      boost visual retention.
+                    </p>
                   </div>
                   <label className="switch">
                     <input
@@ -672,7 +739,10 @@ export function SettingsModal({
                       checked={punchZoom}
                       onChange={(e) => {
                         setPunchZoom(e.target.checked);
-                        localStorage.setItem("clipon_punch_zoom", String(e.target.checked));
+                        localStorage.setItem(
+                          "clipon_punch_zoom",
+                          String(e.target.checked)
+                        );
                       }}
                     />
                     <span className="slider round" />
@@ -684,7 +754,10 @@ export function SettingsModal({
                 <div className="settings-toggle-row">
                   <div className="toggle-info">
                     <strong>Silence Removal &amp; Jumpcuts</strong>
-                    <p>Trims speech pauses longer than 400ms to eliminate dead air.</p>
+                    <p>
+                      Trims speech pauses longer than 400ms to eliminate dead
+                      air.
+                    </p>
                   </div>
                   <label className="switch">
                     <input
@@ -692,7 +765,10 @@ export function SettingsModal({
                       checked={removeSilence}
                       onChange={(e) => {
                         setRemoveSilence(e.target.checked);
-                        localStorage.setItem("clipon_remove_silence", String(e.target.checked));
+                        localStorage.setItem(
+                          "clipon_remove_silence",
+                          String(e.target.checked)
+                        );
                       }}
                     />
                     <span className="slider round" />
@@ -704,7 +780,10 @@ export function SettingsModal({
                 <div className="settings-toggle-row">
                   <div className="toggle-info">
                     <strong>Studio Audio Compression</strong>
-                    <p>Two-pass dynamic normalization with broadcast compression for crisp mobile loudness.</p>
+                    <p>
+                      Two-pass dynamic normalization with broadcast compression
+                      for crisp mobile loudness.
+                    </p>
                   </div>
                   <label className="switch">
                     <input
@@ -712,7 +791,10 @@ export function SettingsModal({
                       checked={studioAudio}
                       onChange={(e) => {
                         setStudioAudio(e.target.checked);
-                        localStorage.setItem("clipon_studio_audio", String(e.target.checked));
+                        localStorage.setItem(
+                          "clipon_studio_audio",
+                          String(e.target.checked)
+                        );
                       }}
                     />
                     <span className="slider round" />
@@ -736,12 +818,15 @@ export function SettingsModal({
                         environment?.hasNvidiaKey ? "active" : "neutral"
                       }`}
                     >
-                      {environment?.hasNvidiaKey ? "Maxine Cloud Active" : "Local Energy Fallback"}
+                      {environment?.hasNvidiaKey
+                        ? "Maxine Cloud Active"
+                        : "Local Energy Fallback"}
                     </span>
                   </div>
                   <p className="settings-field-desc">
-                    Connect NVIDIA Maxine cloud endpoints for multi-speaker visual lip-sync
-                    detection. If left blank, ClipOn uses fast local energy fallback.
+                    Connect NVIDIA Maxine cloud endpoints for multi-speaker
+                    visual lip-sync detection. If left blank, ClipOn uses fast
+                    local energy fallback.
                   </p>
                   <SettingsSecretField
                     id="nvidia-key"
@@ -755,7 +840,10 @@ export function SettingsModal({
 
                   {setNvidiaFunctionId && (
                     <div className="settings-field-group sub-field">
-                      <label htmlFor="nvidia-function-id" className="settings-field-label">
+                      <label
+                        htmlFor="nvidia-function-id"
+                        className="settings-field-label"
+                      >
                         <span>NVIDIA Function ID (Optional)</span>
                       </label>
                       <input
@@ -797,7 +885,10 @@ export function SettingsModal({
                     </div>
                     <div>
                       <strong>Instagram Reels Publishing</strong>
-                      <p>Publish rendered 9:16 vertical clips directly to Instagram Reels or an automation webhook.</p>
+                      <p>
+                        Publish rendered 9:16 vertical clips directly to
+                        Instagram Reels or an automation webhook.
+                      </p>
                     </div>
                   </div>
                   <span
@@ -831,22 +922,36 @@ export function SettingsModal({
                       className={`settings-option-card compact ${instagramProvider === "graph_api" ? "selected" : ""}`}
                       onClick={() => {
                         setInstagramProvider("graph_api");
-                        localStorage.setItem("clipon_instagram_provider", "graph_api");
+                        localStorage.setItem(
+                          "clipon_instagram_provider",
+                          "graph_api"
+                        );
                       }}
                     >
-                      <div className="option-title">Meta Graph API (Direct)</div>
-                      <div className="option-desc">Official Meta Graph API publishing to Business / Creator account.</div>
+                      <div className="option-title">
+                        Meta Graph API (Direct)
+                      </div>
+                      <div className="option-desc">
+                        Official Meta Graph API publishing to Business / Creator
+                        account.
+                      </div>
                     </button>
                     <button
                       type="button"
                       className={`settings-option-card compact ${instagramProvider === "webhook" ? "selected" : ""}`}
                       onClick={() => {
                         setInstagramProvider("webhook");
-                        localStorage.setItem("clipon_instagram_provider", "webhook");
+                        localStorage.setItem(
+                          "clipon_instagram_provider",
+                          "webhook"
+                        );
                       }}
                     >
                       <div className="option-title">Automation Webhook</div>
-                      <div className="option-desc">Dispatch video payload to Zapier, Make, n8n, or custom server.</div>
+                      <div className="option-desc">
+                        Dispatch video payload to Zapier, Make, n8n, or custom
+                        server.
+                      </div>
                     </button>
                   </div>
                 </div>
@@ -854,7 +959,10 @@ export function SettingsModal({
                 {instagramProvider === "graph_api" ? (
                   <>
                     <div className="settings-field-group">
-                      <label htmlFor="ig-account-id" className="settings-field-label">
+                      <label
+                        htmlFor="ig-account-id"
+                        className="settings-field-label"
+                      >
                         <span>Instagram Business Account ID</span>
                       </label>
                       <input
@@ -863,7 +971,10 @@ export function SettingsModal({
                         value={instagramAccountId}
                         onChange={(e) => {
                           setInstagramAccountId(e.target.value);
-                          localStorage.setItem("clipon_instagram_account_id", e.target.value);
+                          localStorage.setItem(
+                            "clipon_instagram_account_id",
+                            e.target.value
+                          );
                         }}
                         placeholder="17841400000000000"
                         className="settings-input"
@@ -876,7 +987,9 @@ export function SettingsModal({
                       description="User access token with instagram_basic and instagram_content_publish permissions."
                       value={instagramAccessToken}
                       onChange={setInstagramAccessToken}
-                      isSavedInKeystore={Boolean(environment?.hasInstagramToken)}
+                      isSavedInKeystore={Boolean(
+                        environment?.hasInstagramToken
+                      )}
                       onDeleteCredential={() => onDeleteCredential("instagram")}
                       placeholder="EAAG..."
                     />
@@ -893,7 +1006,9 @@ export function SettingsModal({
                         ) : (
                           <CheckCircle2 size={13} />
                         )}
-                        <span>{instagramTesting ? "Testing..." : "Test Connection"}</span>
+                        <span>
+                          {instagramTesting ? "Testing..." : "Test Connection"}
+                        </span>
                       </button>
                       {instagramTestResult && (
                         <span
@@ -908,7 +1023,10 @@ export function SettingsModal({
                   </>
                 ) : (
                   <div className="settings-field-group">
-                    <label htmlFor="ig-webhook-url" className="settings-field-label">
+                    <label
+                      htmlFor="ig-webhook-url"
+                      className="settings-field-label"
+                    >
                       <span>Automation Webhook URL</span>
                     </label>
                     <input
@@ -917,13 +1035,18 @@ export function SettingsModal({
                       value={instagramWebhookUrl}
                       onChange={(e) => {
                         setInstagramWebhookUrl(e.target.value);
-                        localStorage.setItem("clipon_instagram_webhook_url", e.target.value);
+                        localStorage.setItem(
+                          "clipon_instagram_webhook_url",
+                          e.target.value
+                        );
                       }}
                       placeholder="https://hooks.zapier.com/hooks/catch/..."
                       className="settings-input"
                     />
                     <p className="settings-field-desc">
-                      When publishing, ClipOn dispatches a POST request with video metadata and clip file location to your automated workflow.
+                      When publishing, ClipOn dispatches a POST request with
+                      video metadata and clip file location to your automated
+                      workflow.
                     </p>
                   </div>
                 )}
@@ -938,7 +1061,10 @@ export function SettingsModal({
                     </div>
                     <div>
                       <strong>YouTube Shorts (OAuth2 Data API v3)</strong>
-                      <p>Upload 9:16 clips directly to your channel as YouTube Shorts.</p>
+                      <p>
+                        Upload 9:16 clips directly to your channel as YouTube
+                        Shorts.
+                      </p>
                     </div>
                   </div>
                   <span
@@ -951,7 +1077,10 @@ export function SettingsModal({
                 </div>
 
                 <div className="settings-field-group">
-                  <label htmlFor="yt-client-id" className="settings-field-label">
+                  <label
+                    htmlFor="yt-client-id"
+                    className="settings-field-label"
+                  >
                     <span>Google OAuth2 Client ID</span>
                   </label>
                   <input
@@ -960,7 +1089,10 @@ export function SettingsModal({
                     value={youtubeClientId}
                     onChange={(e) => {
                       setYoutubeClientId(e.target.value);
-                      localStorage.setItem("clipon_youtube_client_id", e.target.value);
+                      localStorage.setItem(
+                        "clipon_youtube_client_id",
+                        e.target.value
+                      );
                     }}
                     placeholder="123456789-xxx.apps.googleusercontent.com"
                     className="settings-input"
@@ -973,7 +1105,9 @@ export function SettingsModal({
                   value={youtubeClientSecret}
                   onChange={setYoutubeClientSecret}
                   isSavedInKeystore={Boolean(environment?.hasYoutubeConfig)}
-                  onDeleteCredential={() => onDeleteCredential("youtube_client_secret")}
+                  onDeleteCredential={() =>
+                    onDeleteCredential("youtube_client_secret")
+                  }
                   placeholder="GOCSPX-..."
                 />
 
@@ -983,7 +1117,9 @@ export function SettingsModal({
                   value={youtubeRefreshToken}
                   onChange={setYoutubeRefreshToken}
                   isSavedInKeystore={Boolean(environment?.hasYoutubeConfig)}
-                  onDeleteCredential={() => onDeleteCredential("youtube_refresh_token")}
+                  onDeleteCredential={() =>
+                    onDeleteCredential("youtube_refresh_token")
+                  }
                   placeholder="1//04..."
                 />
 
@@ -994,7 +1130,10 @@ export function SettingsModal({
                       checked={tosAck}
                       onChange={(e) => handleTosToggle(e.target.checked)}
                     />
-                    <span>I acknowledge adherence to YouTube API Services Terms of Service</span>
+                    <span>
+                      I acknowledge adherence to YouTube API Services Terms of
+                      Service
+                    </span>
                   </label>
                 </div>
 
@@ -1010,7 +1149,9 @@ export function SettingsModal({
                     ) : (
                       <CheckCircle2 size={13} />
                     )}
-                    <span>{youtubeTesting ? "Testing..." : "Test Connection"}</span>
+                    <span>
+                      {youtubeTesting ? "Testing..." : "Test Connection"}
+                    </span>
                   </button>
                   {youtubeTestResult && (
                     <span
@@ -1035,8 +1176,8 @@ export function SettingsModal({
                 <div>
                   <h4>Storage &amp; Destinations</h4>
                   <p>
-                    Set local directories for downloaded YouTube recordings,
-                    cut video clips, and database cache.
+                    Set local directories for downloaded YouTube recordings, cut
+                    video clips, and database cache.
                   </p>
                 </div>
               </div>
@@ -1048,11 +1189,14 @@ export function SettingsModal({
                     <span>YouTube Download Staging Directory</span>
                   </label>
                   <p className="settings-field-desc">
-                    Where raw videos downloaded via yt-dlp are saved before clipping.
+                    Where raw videos downloaded via yt-dlp are saved before
+                    clipping.
                   </p>
                   <div className="path-display-box">
                     <span className="path-text truncate">
-                      {youtubeSaveDir || defaultFolders?.youtubeSaveDir || "Default Downloads"}
+                      {youtubeSaveDir ||
+                        defaultFolders?.youtubeSaveDir ||
+                        "Default Downloads"}
                     </span>
                   </div>
                   <div className="path-actions-row">
@@ -1061,7 +1205,9 @@ export function SettingsModal({
                       className="studio-btn secondary small"
                       onClick={() =>
                         browseFolder(
-                          youtubeSaveDir || defaultFolders?.youtubeSaveDir || "",
+                          youtubeSaveDir ||
+                            defaultFolders?.youtubeSaveDir ||
+                            "",
                           setYoutubeSaveDir,
                           "clipon_youtube_dir"
                         )
@@ -1106,11 +1252,14 @@ export function SettingsModal({
                     <span>Rendered Clips Output Directory</span>
                   </label>
                   <p className="settings-field-desc">
-                    Where cut 9:16 vertical video clips and subtitle files are rendered.
+                    Where cut 9:16 vertical video clips and subtitle files are
+                    rendered.
                   </p>
                   <div className="path-display-box">
                     <span className="path-text truncate">
-                      {clipsSaveDir || defaultFolders?.clipsOutputDir || "Default Output"}
+                      {clipsSaveDir ||
+                        defaultFolders?.clipsOutputDir ||
+                        "Default Output"}
                     </span>
                   </div>
                   <div className="path-actions-row">
@@ -1161,10 +1310,13 @@ export function SettingsModal({
               <div className="settings-card">
                 <div className="settings-field-group">
                   <label className="settings-field-label">
-                    <span>Application SQLite Database &amp; Data Directory</span>
+                    <span>
+                      Application SQLite Database &amp; Data Directory
+                    </span>
                   </label>
                   <p className="settings-field-desc">
-                    Stores projects, dialogue segments, candidates, and secure keystore.
+                    Stores projects, dialogue segments, candidates, and secure
+                    keystore.
                   </p>
                   <div className="path-display-box">
                     <span className="path-text truncate">
@@ -1197,8 +1349,8 @@ export function SettingsModal({
                 <div>
                   <h4>System &amp; Diagnostics</h4>
                   <p>
-                    Verify local hardware acceleration, binary tool status,
-                    and manage encrypted credentials.
+                    Verify local hardware acceleration, binary tool status, and
+                    manage encrypted credentials.
                   </p>
                 </div>
               </div>
@@ -1209,7 +1361,9 @@ export function SettingsModal({
                   <div className="telemetry-info">
                     <Zap size={22} className="telemetry-icon-emerald" />
                     <div>
-                      <strong>Apple Silicon VideoToolbox GPU Acceleration</strong>
+                      <strong>
+                        Apple Silicon VideoToolbox GPU Acceleration
+                      </strong>
                       <p>
                         {environment?.hasHardwareAccel
                           ? "Hardware accelerated h264_videotoolbox encoder is active for fast rendering."
@@ -1222,42 +1376,56 @@ export function SettingsModal({
                       environment?.hasHardwareAccel ? "active" : "neutral"
                     }`}
                   >
-                    {environment?.hasHardwareAccel ? "GPU Active" : "CPU Fallback"}
+                    {environment?.hasHardwareAccel
+                      ? "GPU Active"
+                      : "CPU Fallback"}
                   </span>
                 </div>
               </div>
 
               {/* Binary Tools Telemetry */}
               <div className="settings-card">
-                <h5 className="settings-card-title">Installed Toolchain Diagnostic</h5>
+                <h5 className="settings-card-title">
+                  Installed Toolchain Diagnostic
+                </h5>
                 <div className="binary-diagnostic-grid">
                   <div className="diag-item">
                     <span>FFmpeg Full</span>
-                    <span className={`diag-badge ${environment?.hasFfmpeg ? "ok" : "err"}`}>
+                    <span
+                      className={`diag-badge ${environment?.hasFfmpeg ? "ok" : "err"}`}
+                    >
                       {environment?.hasFfmpeg ? "Detected" : "Missing"}
                     </span>
                   </div>
                   <div className="diag-item">
                     <span>FFprobe</span>
-                    <span className={`diag-badge ${environment?.hasFfprobe ? "ok" : "err"}`}>
+                    <span
+                      className={`diag-badge ${environment?.hasFfprobe ? "ok" : "err"}`}
+                    >
                       {environment?.hasFfprobe ? "Detected" : "Missing"}
                     </span>
                   </div>
                   <div className="diag-item">
                     <span>yt-dlp (YouTube)</span>
-                    <span className={`diag-badge ${environment?.hasYtdlp ? "ok" : "err"}`}>
+                    <span
+                      className={`diag-badge ${environment?.hasYtdlp ? "ok" : "err"}`}
+                    >
                       {environment?.hasYtdlp ? "Detected" : "Missing"}
                     </span>
                   </div>
                   <div className="diag-item">
                     <span>whisper.cpp</span>
-                    <span className={`diag-badge ${environment?.hasLocalWhisperModel ? "ok" : "warn"}`}>
+                    <span
+                      className={`diag-badge ${environment?.hasLocalWhisperModel ? "ok" : "warn"}`}
+                    >
                       {environment?.hasLocalWhisperModel ? "Ready" : "Standby"}
                     </span>
                   </div>
                   <div className="diag-item">
                     <span>Ollama Daemon</span>
-                    <span className={`diag-badge ${environment?.hasOllama ? "ok" : "warn"}`}>
+                    <span
+                      className={`diag-badge ${environment?.hasOllama ? "ok" : "warn"}`}
+                    >
                       {environment?.hasOllama ? "Running" : "Offline"}
                     </span>
                   </div>
@@ -1268,7 +1436,8 @@ export function SettingsModal({
               <div className="settings-card">
                 <h5 className="settings-card-title">Delete Saved Credential</h5>
                 <p className="settings-field-desc">
-                  Select an individual API key or token to permanently remove from the secure keystore.
+                  Select an individual API key or token to permanently remove
+                  from the secure keystore.
                 </p>
                 <div className="delete-credential-row">
                   <select

@@ -105,7 +105,10 @@ describe("Frontend Core Types and Utilities", () => {
   });
 
   it("verifies secret field masking and keystore status contract", () => {
-    const getPlaceholder = (isSavedInKeystore: boolean, customPlaceholder?: string) => {
+    const getPlaceholder = (
+      isSavedInKeystore: boolean,
+      customPlaceholder?: string
+    ) => {
       if (isSavedInKeystore) {
         return "•••••••••••••••• (Leave blank to keep existing key)";
       }
@@ -119,7 +122,9 @@ describe("Frontend Core Types and Utilities", () => {
     };
 
     // When saved in keystore and user hasn't typed anything
-    expect(getPlaceholder(true)).toBe("•••••••••••••••• (Leave blank to keep existing key)");
+    expect(getPlaceholder(true)).toBe(
+      "•••••••••••••••• (Leave blank to keep existing key)"
+    );
     expect(getStatusState("", true)).toBe("saved-in-keystore");
 
     // When user types a new key
@@ -243,7 +248,9 @@ describe("Frontend Core Types and Utilities", () => {
     };
 
     const rawTitle = "Why Most Startups Fail In Year One";
-    expect(formatShortsTitle(rawTitle)).toBe("Why Most Startups Fail In Year One #Shorts");
+    expect(formatShortsTitle(rawTitle)).toBe(
+      "Why Most Startups Fail In Year One #Shorts"
+    );
 
     const longTitle = "A".repeat(95);
     expect(formatShortsTitle(longTitle)).toBe(longTitle.slice(0, 100));
@@ -253,7 +260,9 @@ describe("Frontend Core Types and Utilities", () => {
     expect(cleanTags).toContain("Startup");
     expect(cleanTags).toContain("Tech");
     expect(cleanTags).toContain("Shorts");
-    expect(cleanTags.filter((t) => t.toLowerCase() === "shorts")).toHaveLength(1);
+    expect(cleanTags.filter((t) => t.toLowerCase() === "shorts")).toHaveLength(
+      1
+    );
   });
 
   it("verifies YouTube video download name parsing and subtitle style assignment", () => {
@@ -266,11 +275,15 @@ describe("Frontend Core Types and Utilities", () => {
     };
 
     expect(
-      parseYoutubeDownloadTitle("my solo trip to the swiss alps_vZdYo_1Pwz8.mp4")
+      parseYoutubeDownloadTitle(
+        "my solo trip to the swiss alps_vZdYo_1Pwz8.mp4"
+      )
     ).toBe("my solo trip to the swiss alps");
 
     expect(
-      parseYoutubeDownloadTitle("A Week in Italy with people I love_GgiWAclfKmM.mp4")
+      parseYoutubeDownloadTitle(
+        "A Week in Italy with people I love_GgiWAclfKmM.mp4"
+      )
     ).toBe("A Week in Italy with people I love");
 
     const availableStyles = [
@@ -284,6 +297,3 @@ describe("Frontend Core Types and Utilities", () => {
     expect(availableStyles).toContain("submagic-viral");
   });
 });
-
-
-

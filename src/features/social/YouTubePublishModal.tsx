@@ -92,7 +92,9 @@ export function YouTubePublishModal({
   const [activeTab, setActiveTab] = useState<"studio" | "settings">("studio");
   const [selectedStyle, setSelectedStyle] = useState<string>("hook_focused");
   const [activeTitle, setActiveTitle] = useState<string>("");
-  const [editedDescriptions, setEditedDescriptions] = useState<Record<string, string>>({});
+  const [editedDescriptions, setEditedDescriptions] = useState<
+    Record<string, string>
+  >({});
   const [activeDescription, setActiveDescription] = useState<string>("");
   const [tags, setTags] = useState<string[]>([]);
   const [newTagInput, setNewTagInput] = useState<string>("");
@@ -145,11 +147,17 @@ export function YouTubePublishModal({
     let initTitle = candidate.hook;
     if (activeKit?.titles && activeKit.titles.length > 0) {
       initTitle = activeKit.titles[0];
-    } else if (activeKit?.captionOptions && activeKit.captionOptions.length > 0) {
+    } else if (
+      activeKit?.captionOptions &&
+      activeKit.captionOptions.length > 0
+    ) {
       initTitle = activeKit.captionOptions[0].hook;
     }
     // Append #Shorts if not present and room allows
-    if (!initTitle.toLowerCase().includes("#shorts") && initTitle.length <= 92) {
+    if (
+      !initTitle.toLowerCase().includes("#shorts") &&
+      initTitle.length <= 92
+    ) {
       initTitle = `${initTitle} #Shorts`;
     }
     setActiveTitle(initTitle);
@@ -166,7 +174,8 @@ export function YouTubePublishModal({
 
     // 3. Description initialization
     const currentOption =
-      availableOptions.find((o) => o.style === selectedStyle) || availableOptions[0];
+      availableOptions.find((o) => o.style === selectedStyle) ||
+      availableOptions[0];
     const initialText = currentOption?.text || candidate.rationale || "";
     const tagsString = initialTags.map((t) => `#${t}`).join(" ");
     const fullDesc = `${initialText}\n\n${tagsString}`.trim();
@@ -215,7 +224,10 @@ export function YouTubePublishModal({
   // Handle title pill selection from AI titles
   function handlePickTitle(title: string) {
     let formatted = title;
-    if (!formatted.toLowerCase().includes("#shorts") && formatted.length <= 92) {
+    if (
+      !formatted.toLowerCase().includes("#shorts") &&
+      formatted.length <= 92
+    ) {
       formatted = `${formatted} #Shorts`;
     }
     setActiveTitle(formatted);
@@ -267,7 +279,9 @@ export function YouTubePublishModal({
     try {
       const newKit = await onRegenerateKit(candidate.id);
       if (newKit) {
-        onShowToast("✨ AI Social Kit regenerated with fresh titles and angles!");
+        onShowToast(
+          "✨ AI Social Kit regenerated with fresh titles and angles!"
+        );
       }
     } catch (err) {
       onShowToast(`Regeneration failed: ${String(err)}`);
@@ -345,7 +359,7 @@ export function YouTubePublishModal({
 
   const isConnected = Boolean(
     environment?.hasYoutubeConfig ||
-      (clientId.trim() && clientSecret.trim() && refreshToken.trim())
+    (clientId.trim() && clientSecret.trim() && refreshToken.trim())
   );
 
   return (
@@ -362,7 +376,8 @@ export function YouTubePublishModal({
           <div
             className="modal-icon-badge"
             style={{
-              background: "linear-gradient(135deg, #ef4444 0%, #dc2626 50%, #991b1b 100%)",
+              background:
+                "linear-gradient(135deg, #ef4444 0%, #dc2626 50%, #991b1b 100%)",
               color: "#ffffff",
               borderColor: "rgba(239, 68, 68, 0.4)",
             }}
@@ -371,10 +386,12 @@ export function YouTubePublishModal({
           </div>
           <div>
             <h3 id="yt-publishing-studio-title">
-              Publish Short • {candidate ? `Clip #${candidate.rank}` : "YouTube Shorts"}
+              Publish Short •{" "}
+              {candidate ? `Clip #${candidate.rank}` : "YouTube Shorts"}
             </h3>
             <p>
-              AI Social Kit title generation, 3 caption angles, and direct YouTube Data API v3 upload
+              AI Social Kit title generation, 3 caption angles, and direct
+              YouTube Data API v3 upload
             </p>
           </div>
         </div>
@@ -401,7 +418,11 @@ export function YouTubePublishModal({
             </button>
           </div>
 
-          <button className="modal-close-btn" onClick={onClose} aria-label="Close dialog">
+          <button
+            className="modal-close-btn"
+            onClick={onClose}
+            aria-label="Close dialog"
+          >
             <X size={16} />
           </button>
         </div>
@@ -433,7 +454,9 @@ export function YouTubePublishModal({
                   </div>
                   <div className="clip-score-badge">
                     <Flame size={12} />
-                    <span>{(candidate.score * 100).toFixed(0)}% Viral Score</span>
+                    <span>
+                      {(candidate.score * 100).toFixed(0)}% Viral Score
+                    </span>
                   </div>
                 </div>
               )}
@@ -442,16 +465,28 @@ export function YouTubePublishModal({
               <div className="ig-caption-studio-section">
                 <div className="ig-caption-section-header">
                   <div className="caption-section-title-wrap">
-                    <label className="caption-section-label">AI Video Title (Under 100 Chars)</label>
+                    <label className="caption-section-label">
+                      AI Video Title (Under 100 Chars)
+                    </label>
                     <span className="caption-helper-text">
-                      Click a title option or edit directly. Auto-formats with #Shorts.
+                      Click a title option or edit directly. Auto-formats with
+                      #Shorts.
                     </span>
                   </div>
-                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "8px",
+                      alignItems: "center",
+                    }}
+                  >
                     <span
                       style={{
                         fontSize: "11px",
-                        color: activeTitle.length > 100 ? "#ef4444" : "var(--text-muted, #94a3b8)",
+                        color:
+                          activeTitle.length > 100
+                            ? "#ef4444"
+                            : "var(--text-muted, #94a3b8)",
                         fontVariantNumeric: "tabular-nums",
                       }}
                     >
@@ -471,7 +506,9 @@ export function YouTubePublishModal({
 
                 {/* AI Title Suggestions Pills */}
                 {activeKit?.titles && activeKit.titles.length > 0 && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  <div
+                    style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}
+                  >
                     {activeKit.titles.map((t, idx) => (
                       <button
                         key={idx}
@@ -529,7 +566,9 @@ export function YouTubePublishModal({
               <div className="ig-caption-studio-section">
                 <div className="ig-caption-section-header">
                   <div className="caption-section-title-wrap">
-                    <label className="caption-section-label">AI Social Kit Angles</label>
+                    <label className="caption-section-label">
+                      AI Social Kit Angles
+                    </label>
                     <span className="caption-helper-text">
                       Select angle to populate description &amp; preview
                     </span>
@@ -542,8 +581,13 @@ export function YouTubePublishModal({
                       disabled={isRegenerating || publishing}
                       title="Regenerate Social Kit"
                     >
-                      <RefreshCw size={12} className={isRegenerating ? "spin" : ""} />
-                      <span>{isRegenerating ? "Generating..." : "Regenerate AI"}</span>
+                      <RefreshCw
+                        size={12}
+                        className={isRegenerating ? "spin" : ""}
+                      />
+                      <span>
+                        {isRegenerating ? "Generating..." : "Regenerate AI"}
+                      </span>
                     </button>
                   )}
                 </div>
@@ -572,7 +616,10 @@ export function YouTubePublishModal({
                           {isActive && (
                             <span
                               className="tab-active-dot"
-                              style={{ background: "#ef4444", boxShadow: "0 0 6px #ef4444" }}
+                              style={{
+                                background: "#ef4444",
+                                boxShadow: "0 0 6px #ef4444",
+                              }}
                             />
                           )}
                         </div>
@@ -586,8 +633,16 @@ export function YouTubePublishModal({
               {/* Description Content Editor */}
               <div className="ig-caption-studio-section">
                 <div className="ig-caption-section-header">
-                  <label className="caption-section-label">Video Description</label>
-                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  <label className="caption-section-label">
+                    Video Description
+                  </label>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "8px",
+                      alignItems: "center",
+                    }}
+                  >
                     <span
                       style={{
                         fontSize: "11px",
@@ -622,7 +677,9 @@ export function YouTubePublishModal({
               {/* YouTube Tags Chips Manager */}
               <div className="ig-hashtags-section">
                 <div className="ig-caption-section-header">
-                  <label className="caption-section-label">Target Tags ({tags.length})</label>
+                  <label className="caption-section-label">
+                    Target Tags ({tags.length})
+                  </label>
                   <span className="caption-helper-text">
                     Tags enhance search discoverability on YouTube Shorts
                   </span>
@@ -644,7 +701,14 @@ export function YouTubePublishModal({
                   ))}
 
                   <div className="hashtag-input-chip">
-                    <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.4)" }}>#</span>
+                    <span
+                      style={{
+                        fontSize: "11px",
+                        color: "rgba(255,255,255,0.4)",
+                      }}
+                    >
+                      #
+                    </span>
                     <input
                       type="text"
                       className="hashtag-mini-input"
@@ -671,9 +735,14 @@ export function YouTubePublishModal({
               </div>
 
               {/* Privacy Setting & Publishing Stepper */}
-              <div style={{ display: "flex", gap: "14px", alignItems: "center" }}>
+              <div
+                style={{ display: "flex", gap: "14px", alignItems: "center" }}
+              >
                 <div style={{ flex: 1 }}>
-                  <label className="caption-section-label" style={{ marginBottom: "6px", display: "block" }}>
+                  <label
+                    className="caption-section-label"
+                    style={{ marginBottom: "6px", display: "block" }}
+                  >
                     Privacy Setting
                   </label>
                   <select
@@ -690,8 +759,12 @@ export function YouTubePublishModal({
                       cursor: "pointer",
                     }}
                   >
-                    <option value="public">🌐 Public (Instant Live Short)</option>
-                    <option value="unlisted">👁️ Unlisted (Review via Direct Link)</option>
+                    <option value="public">
+                      🌐 Public (Instant Live Short)
+                    </option>
+                    <option value="unlisted">
+                      👁️ Unlisted (Review via Direct Link)
+                    </option>
                     <option value="private">🔒 Private (Only You)</option>
                   </select>
                 </div>
@@ -701,8 +774,12 @@ export function YouTubePublishModal({
               {publishing && (
                 <div className="publishing-stepper-box">
                   <div className="stepper-header">
-                    <span className="stepper-title">Uploading to YouTube Shorts</span>
-                    <span className="stepper-step-count">Step {publishStep} of 4</span>
+                    <span className="stepper-title">
+                      Uploading to YouTube Shorts
+                    </span>
+                    <span className="stepper-step-count">
+                      Step {publishStep} of 4
+                    </span>
                   </div>
                   <div className="stepper-track">
                     <div
@@ -714,10 +791,18 @@ export function YouTubePublishModal({
                     />
                   </div>
                   <div className="stepper-labels">
-                    <span className={publishStep >= 1 ? "active" : ""}>Validate</span>
-                    <span className={publishStep >= 2 ? "active" : ""}>Refresh Token</span>
-                    <span className={publishStep >= 3 ? "active" : ""}>Resumable Session</span>
-                    <span className={publishStep >= 4 ? "active" : ""}>Upload Bytes</span>
+                    <span className={publishStep >= 1 ? "active" : ""}>
+                      Validate
+                    </span>
+                    <span className={publishStep >= 2 ? "active" : ""}>
+                      Refresh Token
+                    </span>
+                    <span className={publishStep >= 3 ? "active" : ""}>
+                      Resumable Session
+                    </span>
+                    <span className={publishStep >= 4 ? "active" : ""}>
+                      Upload Bytes
+                    </span>
                   </div>
                 </div>
               )}
@@ -785,7 +870,9 @@ export function YouTubePublishModal({
                       <div className="fallback-play-circle">
                         <Play size={22} fill="currentColor" />
                       </div>
-                      <span style={{ fontSize: "12px", fontWeight: 600 }}>9:16 Shorts Preview</span>
+                      <span style={{ fontSize: "12px", fontWeight: 600 }}>
+                        9:16 Shorts Preview
+                      </span>
                       <span style={{ fontSize: "10px", marginTop: "4px" }}>
                         Clip renders automatically on upload
                       </span>
@@ -795,13 +882,33 @@ export function YouTubePublishModal({
                   {/* YouTube Shorts UI Overlays */}
                   <div className="reels-overlay-layer">
                     {/* Top Header */}
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontSize: "12px", fontWeight: 700, color: "#fff", textShadow: "0 1px 3px rgba(0,0,0,0.8)" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: 700,
+                          color: "#fff",
+                          textShadow: "0 1px 3px rgba(0,0,0,0.8)",
+                        }}
+                      >
                         Shorts
                       </span>
                       <div style={{ display: "flex", gap: "10px" }}>
-                        <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.7)" }}>
-                          {candidate ? `${(candidate.endSec - candidate.startSec).toFixed(0)}s` : "0:30"}
+                        <span
+                          style={{
+                            fontSize: "10px",
+                            color: "rgba(255,255,255,0.7)",
+                          }}
+                        >
+                          {candidate
+                            ? `${(candidate.endSec - candidate.startSec).toFixed(0)}s`
+                            : "0:30"}
                         </span>
                       </div>
                     </div>
@@ -846,7 +953,8 @@ export function YouTubePublishModal({
                         <div
                           className="creator-avatar"
                           style={{
-                            background: "linear-gradient(135deg, #ef4444, #b91c1c)",
+                            background:
+                              "linear-gradient(135deg, #ef4444, #b91c1c)",
                           }}
                         >
                           YT
@@ -880,7 +988,10 @@ export function YouTubePublishModal({
                           className="reels-tags-text"
                           style={{ color: "#ef4444", fontWeight: 600 }}
                         >
-                          {tags.slice(0, 3).map((t) => `#${t}`).join(" ")}
+                          {tags
+                            .slice(0, 3)
+                            .map((t) => `#${t}`)
+                            .join(" ")}
                         </span>
                       )}
                     </div>
@@ -891,12 +1002,18 @@ export function YouTubePublishModal({
           </div>
         ) : (
           /* TAB 2: YouTube OAuth2 Settings */
-          <div className="settings-form-stack" style={{ maxWidth: "600px", margin: "0 auto" }}>
+          <div
+            className="settings-form-stack"
+            style={{ maxWidth: "600px", margin: "0 auto" }}
+          >
             <div className="youtube-banner-box">
-              <strong className="youtube-banner-title">Google Cloud OAuth2 Configuration</strong>
-              Enter your Google Cloud OAuth2 Client ID, Client Secret, and Refresh Token. ClipOn
-              securely stores these in your local restricted keystore (0600 permissions) and manages
-              automatic token refreshment.
+              <strong className="youtube-banner-title">
+                Google Cloud OAuth2 Configuration
+              </strong>
+              Enter your Google Cloud OAuth2 Client ID, Client Secret, and
+              Refresh Token. ClipOn securely stores these in your local
+              restricted keystore (0600 permissions) and manages automatic token
+              refreshment.
             </div>
 
             <div className="settings-field-group">
@@ -911,7 +1028,11 @@ export function YouTubePublishModal({
                 <button
                   type="button"
                   className="action-pill-btn"
-                  onClick={() => onOpenExternal("https://console.cloud.google.com/apis/credentials")}
+                  onClick={() =>
+                    onOpenExternal(
+                      "https://console.cloud.google.com/apis/credentials"
+                    )
+                  }
                 >
                   <ExternalLink size={10} />
                   <span>Google Cloud Console</span>
@@ -955,7 +1076,11 @@ export function YouTubePublishModal({
                 onClick={() => void onTestConnection()}
                 disabled={testing}
               >
-                {testing ? <Loader2 className="spin" size={13} /> : <Check size={13} />}
+                {testing ? (
+                  <Loader2 className="spin" size={13} />
+                ) : (
+                  <Check size={13} />
+                )}
                 <span>{testing ? "Testing..." : "Test Connection"}</span>
               </button>
 
@@ -972,15 +1097,23 @@ export function YouTubePublishModal({
                     <Key size={13} />
                   )}
                   <span>
-                    {savingCredentials || localSavingCreds ? "Saving..." : "Save Credentials"}
+                    {savingCredentials || localSavingCreds
+                      ? "Saving..."
+                      : "Save Credentials"}
                   </span>
                 </button>
               )}
             </div>
 
             {status && (
-              <div className={`connection-status-banner ${status.success ? "success" : "error"}`}>
-                {status.success ? <BadgeCheck size={16} /> : <AlertTriangle size={16} />}
+              <div
+                className={`connection-status-banner ${status.success ? "success" : "error"}`}
+              >
+                {status.success ? (
+                  <BadgeCheck size={16} />
+                ) : (
+                  <AlertTriangle size={16} />
+                )}
                 <span>{status.message}</span>
               </div>
             )}
@@ -1023,7 +1156,11 @@ export function YouTubePublishModal({
         </div>
 
         <div style={{ display: "flex", gap: "10px" }}>
-          <button className="studio-btn secondary" onClick={onClose} disabled={publishing}>
+          <button
+            className="studio-btn secondary"
+            onClick={onClose}
+            disabled={publishing}
+          >
             Cancel
           </button>
 

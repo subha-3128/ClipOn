@@ -52,6 +52,9 @@ jobs:
         with:
           workspaces: "src-tauri -> target"
 
+      - name: Create frontend dist stub for Tauri context
+        run: mkdir -p dist && touch dist/index.html
+
       - name: Run Clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml
 
@@ -75,6 +78,9 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: "src-tauri -> target"
+
+      - name: Create frontend dist stub for Tauri context
+        run: mkdir -p dist && touch dist/index.html
 
       - name: Run Golden Reframe Integration Tests (with Strict Fixtures / Synthetic Fallback)
         env:

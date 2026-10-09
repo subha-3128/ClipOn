@@ -23,7 +23,9 @@ const CLIENT_ID = process.env.YOUTUBE_CLIENT_ID;
 const CLIENT_SECRET = process.env.YOUTUBE_CLIENT_SECRET;
 
 if (!CLIENT_ID || !CLIENT_SECRET) {
-  console.error("❌ Error: YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET must be set in your .env or environment.");
+  console.error(
+    "❌ Error: YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET must be set in your .env or environment."
+  );
   process.exit(1);
 }
 
@@ -41,9 +43,13 @@ console.log("\n==================================================");
 console.log("   ClipOn YouTube Shorts OAuth2 Token Generator   ");
 console.log("==================================================\n");
 console.log("1. Opening browser to authorize YouTube upload access...");
-console.log("   If the browser does not open automatically, copy & paste this URL:\n");
+console.log(
+  "   If the browser does not open automatically, copy & paste this URL:\n"
+);
 console.log(authUrl);
-console.log("\n2. Waiting for authorization code on http://localhost:" + PORT + "...\n");
+console.log(
+  "\n2. Waiting for authorization code on http://localhost:" + PORT + "...\n"
+);
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -82,7 +88,10 @@ const server = http.createServer(async (req, res) => {
     const tokenData = await tokenResponse.json();
 
     if (!tokenResponse.ok || !tokenData.refresh_token) {
-      const errMsg = tokenData.error_description || tokenData.error || "No refresh token returned";
+      const errMsg =
+        tokenData.error_description ||
+        tokenData.error ||
+        "No refresh token returned";
       res.writeHead(400, { "Content-Type": "text/html" });
       res.end(`<h2>Token Exchange Failed</h2><p>${errMsg}</p>`);
       console.error("\n❌ Failed to get refresh token:", tokenData);
@@ -91,7 +100,9 @@ const server = http.createServer(async (req, res) => {
     }
 
     const refreshToken = tokenData.refresh_token;
-    console.log("\n🎉 SUCCESS! Return to ClipOn Settings and paste the refresh token there.");
+    console.log(
+      "\n🎉 SUCCESS! Return to ClipOn Settings and paste the refresh token there."
+    );
 
     res.writeHead(200, { "Content-Type": "text/html" });
     res.end(`
@@ -116,7 +127,6 @@ const server = http.createServer(async (req, res) => {
       server.close();
       process.exit(0);
     }, 1500);
-
   } catch (err) {
     console.error("Server error:", err);
     res.writeHead(500, { "Content-Type": "text/plain" });

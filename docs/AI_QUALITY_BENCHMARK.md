@@ -10,14 +10,14 @@
 
 The benchmark comprises representative video profiles across the most common YouTube Shorts & Instagram Reels genres:
 
-| ID | Category | Characteristics | Duration | Target Challenges |
-|---|---|---|---|---|
-| `BM-POD-01` | **Two-Person Podcast** | Two seated speakers, wide shot with switching dialogue | 180s | Active speaker switching, multi-person crop, conversational continuity. |
-| `BM-INT-02` | **Studio Interview** | Guest and host, alternating angles, lapel audio | 240s | Pronoun context, payoff delivery, question-and-answer boundary. |
-| `BM-SOLO-03` | **Solo Educational / Tech** | Centered presenter, dynamic hand gestures, head movement | 120s | Crop jitter reduction, hook energy in first 2s, kinetic caption sync. |
-| `BM-SCRN-04` | **Screen Recording + Facecam** | Small webcam corner overlay with desktop slides/code | 90s | Visual ROI detection, maintaining presenter visibility vs screen detail. |
-| `BM-LOWQ-05` | **Low-Quality / Mobile Video** | Variable lighting, acoustic reverb, hand-held camera shake | 60s | Noisy audio RMS, face tracker re-acquisition under motion blur. |
-| `BM-FAST-06` | **Rapid Comedy / Narrative** | Fast-paced speech, overlapping dialogue, punchline timing | 90s | Sentence cutoff prevention, punchline retention, zero dead air. |
+| ID           | Category                       | Characteristics                                            | Duration | Target Challenges                                                        |
+| ------------ | ------------------------------ | ---------------------------------------------------------- | -------- | ------------------------------------------------------------------------ |
+| `BM-POD-01`  | **Two-Person Podcast**         | Two seated speakers, wide shot with switching dialogue     | 180s     | Active speaker switching, multi-person crop, conversational continuity.  |
+| `BM-INT-02`  | **Studio Interview**           | Guest and host, alternating angles, lapel audio            | 240s     | Pronoun context, payoff delivery, question-and-answer boundary.          |
+| `BM-SOLO-03` | **Solo Educational / Tech**    | Centered presenter, dynamic hand gestures, head movement   | 120s     | Crop jitter reduction, hook energy in first 2s, kinetic caption sync.    |
+| `BM-SCRN-04` | **Screen Recording + Facecam** | Small webcam corner overlay with desktop slides/code       | 90s      | Visual ROI detection, maintaining presenter visibility vs screen detail. |
+| `BM-LOWQ-05` | **Low-Quality / Mobile Video** | Variable lighting, acoustic reverb, hand-held camera shake | 60s      | Noisy audio RMS, face tracker re-acquisition under motion blur.          |
+| `BM-FAST-06` | **Rapid Comedy / Narrative**   | Fast-paced speech, overlapping dialogue, punchline timing  | 90s      | Sentence cutoff prevention, punchline retention, zero dead air.          |
 
 ---
 
@@ -26,37 +26,45 @@ The benchmark comprises representative video profiles across the most common You
 Every candidate clip is evaluated against 8 core dimensions on a normalized 0.0 to 1.0 scale:
 
 ### 1. Hook Strength (`H`)
+
 - **Measurement:** First 1.5–2.0 seconds of speech and audio.
 - **Positive Indicators:** Contrarian statement ("Stop doing X"), direct question ("Why does everyone..."), quantifiable curiosity ("Here are 3 reasons..."), high RMS energy onset.
 - **Negative Indicators:** Filler lead-in ("So basically...", "Um, yeah"), intro pleasantries ("Hey guys welcome back"), dead air > 0.4s.
 
 ### 2. Coherence & Context Independence (`C`)
+
 - **Measurement:** Standalone comprehensibility without seeing the full video.
 - **Positive Indicators:** Clear topic introduction, explicit subject nouns before pronouns, single self-contained idea or thesis.
 - **Negative Indicators:** Unresolved demonstratives ("And that's why he did that"), dangling premises without conclusions.
 
 ### 3. Payoff & Conclusion (`P`)
+
 - **Measurement:** Ending 3–5 seconds of the clip.
 - **Positive Indicators:** Natural resolution, comedic punchline, actionable takeaway, crisp statement followed by natural pause.
 - **Negative Indicators:** Mid-sentence cut-off, speaker inhaling for the next sentence, trailing thoughts.
 
 ### 4. Boundary Accuracy (`B`)
+
 - **Measurement:** Word-level alignment at start and end.
 - **Standard:** Zero clipped phonemes (starts ≥ 80ms before first word, ends ≥ 150ms after final word; never cuts inside a word).
 
 ### 5. Subject & Active-Speaker Tracking (`T`)
+
 - **Measurement:** Visual subject continuity in vertical 9:16 framing.
 - **Standard:** Correct speaker framed ≥ 90% of speaking time; identity preserved during head turns; smooth pan without sudden teleports.
 
 ### 6. Crop Stability & Composition (`S`)
+
 - **Measurement:** Camera motion stability.
 - **Standard:** Head and shoulders centered within top 60% vertical safe zone; zero jitter during stationary speech; smooth transition on camera cuts.
 
 ### 7. Caption Synchronization & Readability (`K`)
+
 - **Measurement:** Kinetic word highlights vs audio waveform.
 - **Standard:** Word highlight error ≤ 50ms; lines fit within horizontal 80% safe zone; no text obscured by UI overlays (reels caption area).
 
 ### 8. Render & Video Quality (`R`)
+
 - **Measurement:** Codec, resolution, framerate, and audio fidelity.
 - **Standard:** Constant 1080x1920 (9:16), clean hardware encode, audio normalized to -14 LUFS (EBU R128).
 
@@ -82,6 +90,7 @@ The benchmark test suite is automated via Rust integration and unit tests:
 ## 4. Benchmark Execution & Regression Protocol
 
 When running quality evaluations across candidate changes:
+
 1. Run `cargo test --lib` for deterministic regression checks.
 2. Generate synthetic and sampled clips on the catalog profiles.
 3. Verify metrics against baseline targets.

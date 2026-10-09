@@ -43,14 +43,15 @@ export function SettingsSecretField({
               Unsaved Edit
             </span>
           ) : isSavedInKeystore ? (
-            <span className="status-pill active" title="Credential is saved securely in local keystore (chmod 0600)">
+            <span
+              className="status-pill active"
+              title="Credential is saved securely in local keystore (chmod 0600)"
+            >
               <ShieldCheck size={12} />
               Saved in Keystore
             </span>
           ) : (
-            <span className="status-pill missing">
-              Not Configured
-            </span>
+            <span className="status-pill missing">Not Configured</span>
           )}
         </div>
       </div>
