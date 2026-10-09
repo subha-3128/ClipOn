@@ -911,6 +911,27 @@ function AppContent() {
     }
   }
 
+  async function handleYoutubeImportSuccess(
+    downloadedPath: string,
+    style: string
+  ) {
+    let newProjectId: string | null = null;
+    await run("import", async () => {
+      const project = await invoke<Project>("create_project_from_path", {
+        path: downloadedPath,
+        transcriptionMode: transcriptionEngine === "local" ? "local" : "cloud",
+        captionStyle: style || selectedStyle,
+      });
+      newProjectId = project.id;
+      await refresh(project.id);
+      showToast("YouTube video imported into All Projects!");
+    });
+
+    if (newProjectId) {
+      await runAutoPipeline(newProjectId);
+    }
+  }
+
   async function runAutoPipeline(projectId: string) {
     const env = await invoke<EnvironmentStatus>("environment_status");
 
@@ -1589,11 +1610,9 @@ function AppContent() {
       <YoutubeImportModal
         isOpen={youtubeModalOpen}
         onClose={() => setYoutubeModalOpen(false)}
-        onSuccess={(downloadedPath) => {
-          setMediaPathToImport(downloadedPath);
-          setShowStyleModal(true);
-        }}
+        onSuccess={handleYoutubeImportSuccess}
         youtubeSaveDir={youtubeSaveDir}
+        initialCaptionStyle={selectedStyle}
       />
 
       <SocialKitModal

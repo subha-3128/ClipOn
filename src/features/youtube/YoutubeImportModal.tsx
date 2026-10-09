@@ -1,14 +1,29 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Youtube, X, AlertTriangle, Loader2, ShieldAlert } from "lucide-react";
+import { Youtube, X, AlertTriangle, Loader2, ShieldAlert, Captions } from "lucide-react";
 import { useAppError } from "../error/ErrorProvider";
 import { AccessibleModal } from "../../components/AccessibleModal";
+
+const CAPTION_STYLES = [
+  { id: "hormozi-kinetic", label: "Hormozi Kinetic (Pro Karaoke ⚡)" },
+  { id: "submagic-viral", label: "Submagic Viral (Auto-Emoji 💰)" },
+  { id: "hormozi-punch", label: "Hormozi Punch (Auto-Emoji 🔥)" },
+  { id: "neon-glow", label: "Neon Glow (Auto-Emoji 🚀)" },
+  { id: "modern-box", label: "Modern Box (Clean Translucent)" },
+  { id: "classic-outline", label: "Classic Outline (Bold Yellow Stroke)" },
+  { id: "minimal-shadow", label: "Minimal Shadow (Pure White Elegant)" },
+  { id: "vibrant-cyan", label: "Vibrant Cyan (Tech Gradient)" },
+  { id: "vibrant-yellow-box", label: "Vibrant Yellow Box (High Contrast)" },
+  { id: "vibrant-green", label: "Vibrant Green (Energy Neon)" },
+  { id: "vibrant-red", label: "Vibrant Red (Dramatic Hook)" },
+];
 
 interface YoutubeImportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: (downloadedPath: string) => void;
+  onSuccess: (downloadedPath: string, captionStyle: string) => void;
   youtubeSaveDir: string;
+  initialCaptionStyle?: string;
 }
 
 export function YoutubeImportModal({
@@ -16,8 +31,10 @@ export function YoutubeImportModal({
   onClose,
   onSuccess,
   youtubeSaveDir,
+  initialCaptionStyle = "hormozi-kinetic",
 }: YoutubeImportModalProps) {
   const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [captionStyle, setCaptionStyle] = useState(initialCaptionStyle);
   const [youtubeStatus, setYoutubeStatus] = useState<
     "idle" | "checking" | "warning" | "downloading"
   >("idle");
@@ -64,11 +81,12 @@ export function YoutubeImportModal({
         outputDir: youtubeSaveDir.trim() || null,
         userAcknowledged: acknowledgedTos,
       });
+      const selectedStyle = captionStyle;
       setYoutubeUrl("");
       setAcknowledgedTos(false);
       setYoutubeStatus("idle");
       onClose();
-      onSuccess(downloadedPath);
+      onSuccess(downloadedPath, selectedStyle);
     } catch (err) {
       showError("Failed to download YouTube video", { details: String(err) });
       setYoutubeStatus("idle");
@@ -129,6 +147,35 @@ export function YoutubeImportModal({
           disabled={youtubeStatus !== "idle" && youtubeStatus !== "warning"}
           className="youtube-url-input"
         />
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <label
+            style={{
+              fontSize: 12,
+              fontWeight: 600,
+              color: "var(--text-muted)",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <Captions size={14} color="var(--accent-cyan)" />
+            <span>Automated Subtitle Style</span>
+          </label>
+          <select
+            className="youtube-url-input"
+            value={captionStyle}
+            onChange={(e) => setCaptionStyle(e.target.value)}
+            disabled={youtubeStatus !== "idle" && youtubeStatus !== "warning"}
+            style={{ cursor: "pointer", color: "var(--text)" }}
+          >
+            {CAPTION_STYLES.map((style) => (
+              <option key={style.id} value={style.id} style={{ background: "var(--bg-card)", color: "var(--text)" }}>
+                {style.label}
+              </option>
+            ))}
+          </select>
+        </div>
 
         {youtubeStatus === "warning" && (
           <div className="youtube-warning-box">

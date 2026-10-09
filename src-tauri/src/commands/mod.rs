@@ -46,6 +46,17 @@ pub fn list_projects(state: tauri::State<'_, AppState>) -> Result<Vec<Project>, 
 }
 
 #[tauri::command]
+pub fn sync_orphaned_media(
+    state: tauri::State<'_, AppState>,
+    custom_dir: Option<String>,
+) -> Result<usize, String> {
+    Ok(project_service::sync_orphaned_media_files(
+        &state,
+        custom_dir.as_deref(),
+    ))
+}
+
+#[tauri::command]
 pub fn get_project_detail(
     state: tauri::State<'_, AppState>,
     project_id: String,

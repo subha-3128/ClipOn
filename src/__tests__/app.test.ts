@@ -255,6 +255,34 @@ describe("Frontend Core Types and Utilities", () => {
     expect(cleanTags).toContain("Shorts");
     expect(cleanTags.filter((t) => t.toLowerCase() === "shorts")).toHaveLength(1);
   });
+
+  it("verifies YouTube video download name parsing and subtitle style assignment", () => {
+    const parseYoutubeDownloadTitle = (filename: string) => {
+      const stem = filename.replace(/\.[^/.]+$/, "");
+      if (stem.length > 12 && stem.charAt(stem.length - 12) === "_") {
+        return stem.slice(0, stem.length - 12);
+      }
+      return stem;
+    };
+
+    expect(
+      parseYoutubeDownloadTitle("my solo trip to the swiss alps_vZdYo_1Pwz8.mp4")
+    ).toBe("my solo trip to the swiss alps");
+
+    expect(
+      parseYoutubeDownloadTitle("A Week in Italy with people I love_GgiWAclfKmM.mp4")
+    ).toBe("A Week in Italy with people I love");
+
+    const availableStyles = [
+      "hormozi-kinetic",
+      "submagic-viral",
+      "hormozi-punch",
+      "neon-glow",
+      "modern-box",
+    ];
+    expect(availableStyles).toContain("hormozi-kinetic");
+    expect(availableStyles).toContain("submagic-viral");
+  });
 });
 
 

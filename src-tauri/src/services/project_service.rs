@@ -198,7 +198,107 @@ pub fn create_project_from_path(
         .map_err(|e| e.to_string())
 }
 
+pub fn sync_orphaned_media_files(state: &AppState, custom_dir: Option<&str>) -> usize {
+    let mut check_dirs = Vec::new();
+
+    if let Some(c_dir) = custom_dir.filter(|d| !d.trim().is_empty()) {
+        check_dirs.push(expand_tilde(c_dir));
+    }
+    if let Ok(dir) = std::env::var("CLIPON_YOUTUBE_DIR") {
+        check_dirs.push(expand_tilde(&dir));
+    }
+    if let Ok(dir) = std::env::var("AUTOSHORTS_YOUTUBE_DIR") {
+        check_dirs.push(expand_tilde(&dir));
+    }
+    if let Some(doc_dir) = dirs::document_dir() {
+        check_dirs.push(doc_dir.join("ClipOn").join("Youtube Video"));
+        check_dirs.push(doc_dir.join("ClipOn"));
+    }
+    if let Some(dl_dir) = dirs::download_dir() {
+        check_dirs.push(dl_dir.join("ClipOn"));
+    }
+
+    let existing_projects = match state.db.list_projects() {
+        Ok(projs) => projs,
+        Err(_) => return 0,
+    };
+
+    let existing_paths: std::collections::HashSet<String> = existing_projects
+        .into_iter()
+        .map(|p| {
+            std::fs::canonicalize(&p.source_path)
+                .map(|cp| cp.to_string_lossy().to_string())
+                .unwrap_or(p.source_path)
+        })
+        .collect();
+
+    let mut imported_count = 0;
+
+    for dir in check_dirs {
+        if !dir.exists() || !dir.is_dir() {
+            continue;
+        }
+
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if ext != "mp4" && ext != "mov" && ext != "m4v" {
+                continue;
+            }
+
+            let canonical_path = std::fs::canonicalize(&path)
+                .map(|cp| cp.to_string_lossy().to_string())
+                .unwrap_or_else(|_| path.to_string_lossy().to_string());
+
+            if existing_paths.contains(&canonical_path)
+                || existing_paths.contains(&path.to_string_lossy().to_string())
+            {
+                continue;
+            }
+
+            let stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Untitled Video");
+
+            let clean_name = if stem.len() > 12 && stem.as_bytes()[stem.len() - 12] == b'_' {
+                &stem[..stem.len() - 12]
+            } else {
+                stem
+            };
+
+            let raw_path_str = path.to_string_lossy().to_string();
+            let probe = media::probe_media(&raw_path_str).ok();
+            let duration = probe.and_then(|p| p.duration_sec);
+
+            if let Ok(project) =
+                state.db.create_project(&raw_path_str, "cloud", "hormozi-kinetic", duration)
+            {
+                let _ = state.db.rename_project(&project.id, clean_name);
+                let _ = state.db.update_project_status(&project.id, "ready", duration);
+                imported_count += 1;
+            }
+        }
+    }
+
+    imported_count
+}
+
 pub fn list_projects(state: &AppState) -> Result<Vec<Project>, String> {
+    let _ = sync_orphaned_media_files(state, None);
     state.db.list_projects().map_err(|e| e.to_string())
 }
 

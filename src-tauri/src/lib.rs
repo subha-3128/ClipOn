@@ -92,6 +92,7 @@ pub fn run() {
             commands::install_ollama,
             commands::create_project_from_path,
             commands::list_projects,
+            commands::sync_orphaned_media,
             commands::get_project_detail,
             commands::probe_project,
             commands::extract_project_audio,
