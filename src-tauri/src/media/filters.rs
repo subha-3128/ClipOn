@@ -387,8 +387,8 @@ mod tests {
     fn test_dynamic_crop_velocity_clamps_two_keyframe_jumps() {
         // A two-point track used to return early and bypass the velocity limit.
         let keyframes = vec![
-            TrackingKeyframe { t: 0.0, x: 0.20, y: 0.38 },
-            TrackingKeyframe { t: 1.0, x: 0.80, y: 0.38 },
+            TrackingKeyframe { t: 0.0, x: 0.30, y: 0.38 },
+            TrackingKeyframe { t: 0.5, x: 0.45625, y: 0.38 },
         ];
         let (x_expr, _) = build_dynamic_crop_expr(
             Some(&keyframes),
@@ -399,9 +399,10 @@ mod tests {
             0.50,
             0.38,
         );
-        // Raw end position is 936px; 550px/s damping should cap it at 634px.
-        assert!(x_expr.contains("634"), "unexpected x expression: {x_expr}");
-        assert!(!x_expr.contains("936"), "raw endpoint escaped damping: {x_expr}");
+        // Crop x moves from 276px to 576px in 0.5s. The 550px/s limit
+        // caps the endpoint at 276 + round(550 * 0.5) = 551px.
+        assert!(x_expr.contains("551"), "unexpected x expression: {x_expr}");
+        assert!(!x_expr.contains("576"), "raw endpoint escaped damping: {x_expr}");
     }
 
     #[test]
