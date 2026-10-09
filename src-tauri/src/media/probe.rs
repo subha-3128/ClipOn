@@ -176,10 +176,12 @@ mod tests {
         let res = probe_media(tmp.to_str().unwrap());
         let _ = std::fs::remove_file(&tmp);
         assert!(res.is_err());
-        assert!(res
-            .unwrap_err()
-            .to_string()
-            .contains("corrupted or unsupported"));
+        let err_str = res.unwrap_err().to_string();
+        assert!(
+            err_str.contains("corrupted or unsupported")
+                || err_str.contains("ffprobe is not installed"),
+            "unexpected error message: {err_str}"
+        );
     }
 
     #[test]

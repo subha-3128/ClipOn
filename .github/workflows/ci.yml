@@ -52,6 +52,9 @@ jobs:
         with:
           workspaces: "src-tauri -> target"
 
+      - name: Install FFmpeg
+        run: brew install ffmpeg
+
       - name: Create frontend dist stub for Tauri context
         run: mkdir -p dist && touch dist/index.html
 
