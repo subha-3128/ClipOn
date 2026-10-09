@@ -39,6 +39,19 @@ pub async fn publish_candidate_to_instagram(
         .get_candidate_with_project(&candidate_id)
         .map_err(|e| e.to_string())?;
 
+    // Check duplicate-post / in-flight publishing protection
+    if let Ok(existing_posts) = db.list_instagram_posts_for_project(&project.id) {
+        if existing_posts
+            .iter()
+            .any(|p| p.candidate_id == candidate_id && p.status == "publishing")
+        {
+            return Err(
+                "A publishing operation is already in progress for this clip. Please wait for Meta to finish processing."
+                    .to_string(),
+            );
+        }
+    }
+
     let mut clip = db
         .list_clips_for_project(&project.id)
         .map_err(|e| e.to_string())?
@@ -89,7 +102,7 @@ pub async fn publish_candidate_to_instagram(
                 let words: Vec<&str> = normalized
                     .words
                     .iter()
-                    .filter(|w| w.start >= candidate.start_sec && w.end <= candidate.end_sec)
+                    .filter(|w| w.end >= candidate.start_sec && w.start <= candidate.end_sec)
                     .map(|w| w.text.as_str())
                     .collect();
                 if !words.is_empty() {
@@ -100,11 +113,15 @@ pub async fn publish_candidate_to_instagram(
         let kit =
             llm::generate_social_kit(&candidate.id, &candidate.hook, &transcript_text, None, None)
                 .await;
-        let hashtags = kit.hashtags.join(" ");
-        format!(
-            "{}\n\n{}\n\n{}\n\n{}",
-            candidate.hook, kit.description, kit.call_to_action, hashtags
-        )
+        let tags = kit.hashtags.join(" ");
+        if let Some(first_opt) = kit.caption_options.first() {
+            format!("{}\n\n{}", first_opt.text, tags)
+        } else {
+            format!(
+                "{}\n\n{}\n\n{}",
+                candidate.hook, kit.description, tags
+            )
+        }
     };
 
     let _ = db.upsert_instagram_post(

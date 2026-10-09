@@ -23,13 +23,13 @@ pub fn credential_status(name: &str) -> Result<bool, String> {
 
 pub fn save_instagram_credentials(account_id: &str, access_token: &str) -> Result<(), String> {
     let acc_id = account_id.trim();
-    let token = access_token.trim();
+    let token = crate::instagram::sanitize_token(access_token);
 
     if !acc_id.is_empty() {
         std::env::set_var("INSTAGRAM_ACCOUNT_ID", acc_id);
     }
     if !token.is_empty() {
-        credentials::save(credentials::INSTAGRAM, token).map_err(|e| e.to_string())?;
+        credentials::save(credentials::INSTAGRAM, &token).map_err(|e| e.to_string())?;
     }
 
     Ok(())

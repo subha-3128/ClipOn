@@ -1,5 +1,5 @@
 use crate::credentials;
-use crate::models::YouTubePost;
+use crate::models::{NormalizedTranscript, YouTubePost};
 use crate::services::render_service::render_flat_clip_for_candidate;
 use crate::youtube_uploader;
 use crate::AppState;
@@ -38,6 +38,7 @@ pub async fn publish_candidate_to_youtube(
     title_override: Option<String>,
     description_override: Option<String>,
     privacy: Option<String>,
+    tags_override: Option<Vec<String>>,
     client_id: Option<String>,
     client_secret: Option<String>,
     refresh_token: Option<String>,
@@ -46,6 +47,19 @@ pub async fn publish_candidate_to_youtube(
     let (candidate, project) = db
         .get_candidate_with_project(&candidate_id)
         .map_err(|e| e.to_string())?;
+
+    // Check duplicate-post / in-flight publishing protection
+    if let Ok(existing_posts) = db.list_youtube_posts_for_project(&project.id) {
+        if existing_posts
+            .iter()
+            .any(|p| p.candidate_id == candidate_id && p.status == "publishing")
+        {
+            return Err(
+                "A publishing operation is already in progress for this Short. Please wait for YouTube to finish processing."
+                    .to_string(),
+            );
+        }
+    }
 
     let mut clip = db
         .list_clips_for_project(&project.id)
@@ -111,24 +125,117 @@ pub async fn publish_candidate_to_youtube(
             "YouTube Refresh Token not configured. Set in Settings or .env.".to_string()
         })?;
 
-    let title = if let Some(t) = title_override.filter(|s| !s.trim().is_empty()) {
-        t
+    // Load or generate AI Social Kit for the candidate
+    let kit = if let Some(ref existing) = candidate.social_kit {
+        existing.clone()
     } else {
-        candidate.hook.clone()
+        let mut transcript_text = candidate.hook.clone();
+        if let Ok(Some(transcript_record)) = db.latest_transcript(&project.id) {
+            if let Ok(normalized) =
+                serde_json::from_str::<NormalizedTranscript>(&transcript_record.raw_json)
+            {
+                let words: Vec<&str> = normalized
+                    .words
+                    .iter()
+                    .filter(|w| w.end >= candidate.start_sec && w.start <= candidate.end_sec)
+                    .map(|w| w.text.as_str())
+                    .collect();
+                if !words.is_empty() {
+                    transcript_text = words.join(" ");
+                }
+            }
+        }
+        let generated = crate::llm::generate_social_kit(
+            &candidate.id,
+            &candidate.hook,
+            &transcript_text,
+            None,
+            None,
+        )
+        .await;
+        if let Ok(json_str) = serde_json::to_string(&generated) {
+            let _ = db.update_candidate_social_kit(&candidate.id, &json_str);
+        }
+        generated
     };
 
+    // 1. YouTube Shorts Title: Use override if specified, otherwise pick top AI title or hook
+    let title = if let Some(t) = title_override.filter(|s| !s.trim().is_empty()) {
+        youtube_uploader::format_youtube_title(&t)
+    } else {
+        let raw_title = kit
+            .titles
+            .first()
+            .cloned()
+            .or_else(|| kit.caption_options.first().map(|o| o.hook.clone()))
+            .unwrap_or_else(|| candidate.hook.clone());
+        youtube_uploader::format_youtube_title(&raw_title)
+    };
+
+    // 2. YouTube Shorts Description: Use override if specified, otherwise combine AI description & hashtags
     let description = if let Some(d) = description_override.filter(|s| !s.trim().is_empty()) {
         d
     } else {
-        format!("{}\n\n#Shorts #ClipOn", candidate.rationale)
+        let tags_str = kit
+            .hashtags
+            .iter()
+            .map(|h| {
+                if h.starts_with('#') {
+                    h.clone()
+                } else {
+                    format!("#{h}")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        let caption_body = kit
+            .caption_options
+            .first()
+            .map(|o| o.text.as_str())
+            .unwrap_or(kit.description.as_str());
+        if caption_body.is_empty() || caption_body == kit.description {
+            format!("{}\n\n#Shorts {}", kit.description, tags_str)
+                .trim()
+                .to_string()
+        } else {
+            format!("{}\n\n{}\n\n#Shorts {}", caption_body, kit.description, tags_str)
+                .trim()
+                .to_string()
+        }
     };
 
     let privacy_status = privacy.unwrap_or_else(|| "public".to_string());
-    let tags = vec![
-        "Shorts".to_string(),
-        "ClipOn".to_string(),
-        "viral".to_string(),
-    ];
+
+    // 3. YouTube Tags: Use tags_override or AI Social Kit hashtags sanitized without '#'
+    let mut tags: Vec<String> = if let Some(user_tags) = tags_override.filter(|t| !t.is_empty()) {
+        user_tags
+            .into_iter()
+            .map(|h| h.trim_start_matches('#').trim().to_string())
+            .filter(|h| !h.is_empty())
+            .collect()
+    } else {
+        kit.hashtags
+            .iter()
+            .map(|h| h.trim_start_matches('#').trim().to_string())
+            .filter(|h| !h.is_empty())
+            .collect()
+    };
+    if !tags.iter().any(|t| t.eq_ignore_ascii_case("shorts")) {
+        tags.insert(0, "Shorts".to_string());
+    }
+    if !tags.iter().any(|t| t.eq_ignore_ascii_case("clipon")) {
+        tags.push("ClipOn".to_string());
+    }
+
+    let _ = db.upsert_youtube_post(
+        &candidate_id,
+        clip.as_ref().map(|c| c.id.as_str()),
+        "publishing",
+        Some(&title),
+        None,
+        None,
+        None,
+    );
 
     let upload_result = youtube_uploader::upload_shorts(
         &client_id,

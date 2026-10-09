@@ -8,6 +8,7 @@ import {
   Sparkles,
   Scissors,
   FolderOpen,
+  Play,
 } from "lucide-react";
 import { Candidate, Clip, InstagramPost, YouTubePost } from "../../types";
 
@@ -26,6 +27,7 @@ interface MomentCardProps {
   onOpenFolder: (path: string) => void;
   onPublishToInstagram: (candidateId: string) => void;
   onPublishToYouTube: (candidateId: string) => void;
+  onPreviewClip?: (candidate: Candidate) => void;
   hasFfmpeg: boolean;
   isBusy: boolean;
 }
@@ -45,6 +47,7 @@ export function MomentCard({
   onOpenFolder,
   onPublishToInstagram,
   onPublishToYouTube,
+  onPreviewClip,
   hasFfmpeg,
   isBusy,
 }: MomentCardProps) {
@@ -348,14 +351,24 @@ export function MomentCard({
           </button>
 
           {isCut && clip?.outputPath && (
-            <button
-              className="action-pill-btn finder"
-              onClick={() => onOpenFolder(clip.outputPath!)}
-              title="Reveal clip in macOS Finder"
-            >
-              <FolderOpen size={13} />
-              <span>Finder</span>
-            </button>
+            <>
+              <button
+                className="action-pill-btn preview"
+                onClick={() => onPreviewClip?.(candidate)}
+                title="Play and preview vertical 9:16 clip with audio & captions"
+              >
+                <Play size={13} />
+                <span>Preview</span>
+              </button>
+              <button
+                className="action-pill-btn finder"
+                onClick={() => onOpenFolder(clip.outputPath!)}
+                title="Reveal clip in macOS Finder"
+              >
+                <FolderOpen size={13} />
+                <span>Finder</span>
+              </button>
+            </>
           )}
         </div>
 

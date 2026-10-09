@@ -13,6 +13,7 @@ import { InstagramPublishModal } from "./features/social/InstagramPublishModal";
 import { YouTubePublishModal } from "./features/social/YouTubePublishModal";
 import { SettingsModal } from "./features/settings/SettingsModal";
 import { CaptionStyleModal } from "./features/rendering/CaptionStyleModal";
+import { VideoPreviewModal } from "./features/preview/VideoPreviewModal";
 import { Onboarding } from "./features/onboarding/OnboardingModal";
 import { ProjectSidebar } from "./features/projects/ProjectSidebar";
 import { ProjectHeader } from "./features/projects/ProjectHeader";
@@ -109,6 +110,9 @@ function AppContent() {
   >(null);
   const [socialKitModalCandidate, setSocialKitModalCandidate] =
     useState<Candidate | null>(null);
+  const [previewCandidate, setPreviewCandidate] = useState<Candidate | null>(
+    null
+  );
   const [socialKitData, setSocialKitData] = useState<Record<string, SocialKit>>(
     {}
   );
@@ -512,91 +516,126 @@ function AppContent() {
 
   async function handlePublishToInstagram(candidateId: string) {
     if (!detail) return;
-    const currentAccId =
-      instagramAccountId.trim() ||
-      environment?.instagramAccountId?.trim() ||
-      "";
-    const hasToken = Boolean(
-      instagramAccessToken.trim() || environment?.hasInstagramToken
+    setPendingCandidateIdToPost(candidateId);
+    setMetaModalAccountId(
+      instagramAccountId.trim() || environment?.instagramAccountId?.trim() || ""
     );
 
-    if (instagramProvider === "graph_api" && (!currentAccId || !hasToken)) {
-      setPendingCandidateIdToPost(candidateId);
-      setShowMetaModal(true);
-      return;
-    }
-    if (instagramProvider === "webhook" && !instagramWebhookUrl.trim()) {
-      setShowSettings(true);
-      showWarning("Configure your Instagram Webhook URL in Settings");
-      return;
+    // If candidate does not have socialKit or captionOptions yet, trigger generation
+    const cand = detail.candidates.find((c) => c.id === candidateId);
+    if (
+      cand &&
+      (!cand.socialKit ||
+        !cand.socialKit.captionOptions ||
+        cand.socialKit.captionOptions.length === 0)
+    ) {
+      invoke<SocialKit>("generate_social_kit_for_candidate", {
+        candidateId,
+        provider: llmEngine,
+        modelName: llmEngine === "local" ? localLlmModel : null,
+      })
+        .then((freshKit) => {
+          cand.socialKit = freshKit;
+          refresh(detail.project.id);
+        })
+        .catch(() => {});
     }
 
-    await executeInstagramPublish(candidateId, currentAccId);
+    setShowMetaModal(true);
   }
 
-  async function executeInstagramPublish(candidateId: string, accId?: string) {
+  async function executeInstagramPublish(
+    candidateId: string,
+    captionOverride?: string,
+    accId?: string
+  ): Promise<InstagramPost | void> {
     if (!detail) return;
     setPublishingCandidateId(candidateId);
     try {
       const activeAccId =
         accId ||
+        metaModalAccountId.trim() ||
         instagramAccountId.trim() ||
         environment?.instagramAccountId?.trim() ||
         null;
 
-      await invoke<InstagramPost>("publish_candidate_to_instagram", {
+      const post = await invoke<InstagramPost>("publish_candidate_to_instagram", {
         candidateId,
-        captionOverride: null,
+        captionOverride: captionOverride?.trim() || null,
         provider: instagramProvider,
         accountId: activeAccId,
-        accessToken: null, // Retrieved securely from OS Keyring
+        accessToken: metaModalAccessToken.trim() || null,
         webhookUrl: instagramWebhookUrl.trim() || null,
       });
       await refresh(detail.project.id);
       showToast("🎉 Successfully published to Instagram Reels!");
+      return post;
     } catch (err) {
       console.error("Instagram publish error:", err);
       showError("Instagram publishing failed", { details: String(err) });
+      throw err;
     } finally {
       setPublishingCandidateId(null);
     }
   }
 
-  async function handleSaveMetaAndPost() {
-    if (!metaModalAccountId.trim()) {
-      showWarning("Please enter your Instagram Account ID");
-      return;
+  async function handleRegenerateSocialKitForModal(
+    candidateId: string
+  ): Promise<SocialKit> {
+    const kit = await invoke<SocialKit>("generate_social_kit_for_candidate", {
+      candidateId,
+      provider: llmEngine,
+      modelName: llmEngine === "local" ? localLlmModel : null,
+    });
+    if (detail) {
+      const cand = detail.candidates.find((c) => c.id === candidateId);
+      if (cand) cand.socialKit = kit;
+      await refresh(detail.project.id);
     }
-    if (!metaModalAccessToken.trim()) {
-      showWarning("Please enter your Meta Graph API Access Token");
-      return;
-    }
-    setMetaModalSaving(true);
-    try {
-      setInstagramAccountId(metaModalAccountId.trim());
-      localStorage.setItem(
-        "clipon_instagram_account_id",
-        metaModalAccountId.trim()
-      );
+    return kit;
+  }
 
-      await invoke("save_instagram_credentials", {
-        accountId: metaModalAccountId.trim(),
-        accessToken: metaModalAccessToken.trim(),
-      });
-
-      setInstagramAccessToken("");
-      showToast("Meta Graph API credentials saved securely!");
-      setShowMetaModal(false);
-
-      if (pendingCandidateIdToPost) {
-        const candId = pendingCandidateIdToPost;
-        setPendingCandidateIdToPost(null);
-        await executeInstagramPublish(candId, metaModalAccountId.trim());
+  async function handleSaveMetaCredentials() {
+    if (instagramProvider === "graph_api") {
+      if (!metaModalAccountId.trim()) {
+        showWarning("Please enter your Instagram Account ID");
+        return;
       }
-    } catch (err) {
-      showError("Failed to save credentials", { details: String(err) });
-    } finally {
-      setMetaModalSaving(false);
+      if (!metaModalAccessToken.trim() && !environment?.hasInstagramToken) {
+        showWarning("Please enter your Meta Graph API Access Token");
+        return;
+      }
+      setMetaModalSaving(true);
+      try {
+        setInstagramAccountId(metaModalAccountId.trim());
+        localStorage.setItem(
+          "clipon_instagram_account_id",
+          metaModalAccountId.trim()
+        );
+
+        if (metaModalAccessToken.trim()) {
+          await invoke("save_instagram_credentials", {
+            accountId: metaModalAccountId.trim(),
+            accessToken: metaModalAccessToken.trim(),
+          });
+          setInstagramAccessToken("");
+          setMetaModalAccessToken("");
+        }
+        await refresh(detail?.project.id);
+        showToast("Meta Graph API credentials saved securely!");
+      } catch (err) {
+        showError("Failed to save credentials", { details: String(err) });
+      } finally {
+        setMetaModalSaving(false);
+      }
+    } else {
+      if (!instagramWebhookUrl.trim()) {
+        showWarning("Please enter your Automation Webhook URL");
+        return;
+      }
+      localStorage.setItem("clipon_instagram_webhook_url", instagramWebhookUrl.trim());
+      localStorage.setItem("clipon_instagram_provider", "webhook");
+      showToast("Webhook URL saved!");
     }
   }
 
@@ -643,74 +682,67 @@ function AppContent() {
     }
   }
 
-  async function handlePublishToYouTube(candidateId: string) {
+  function handlePublishToYouTube(candidateId: string) {
     if (!detail) return;
-    const hasConfig = Boolean(
-      environment?.hasYoutubeConfig ||
-      (youtubeClientId.trim() &&
-        youtubeClientSecret.trim() &&
-        youtubeRefreshToken.trim())
+    setPendingCandidateIdToPostYouTube(candidateId);
+    setYtModalClientId(
+      youtubeClientId ||
+        (environment?.hasYoutubeConfig ? "Configured via Keystore" : localStorage.getItem("clipon_youtube_client_id") || "")
     );
-
-    if (!hasConfig) {
-      setPendingCandidateIdToPostYouTube(candidateId);
-      setYtModalClientId(youtubeClientId || "");
-      setShowYouTubeModal(true);
-      return;
-    }
-
-    await executeYouTubePublish(candidateId);
+    setShowYouTubeModal(true);
   }
 
   async function executeYouTubePublish(
     candidateId: string,
     titleOverride?: string,
     descriptionOverride?: string,
-    privacyStatus?: string
-  ) {
+    privacyStatus?: string,
+    tagsOverride?: string[]
+  ): Promise<YouTubePost | void> {
     if (!detail) return;
     setPublishingYouTubeCandidateId(candidateId);
     try {
-      await invoke<YouTubePost>("publish_candidate_to_youtube", {
+      const res = await invoke<YouTubePost>("publish_candidate_to_youtube", {
         candidateId,
         titleOverride: titleOverride || null,
         descriptionOverride: descriptionOverride || null,
         privacyStatus: privacyStatus || "public",
+        tagsOverride: tagsOverride || null,
         clientId: youtubeClientId.trim() || null,
         clientSecret: youtubeClientSecret.trim() || null,
         refreshToken: youtubeRefreshToken.trim() || null,
       });
       await refresh(detail.project.id);
       showToast("🎉 Successfully uploaded to YouTube Shorts!");
+      return res;
     } catch (err) {
       console.error("YouTube Shorts upload error:", err);
       showError("YouTube Shorts upload failed", { details: String(err) });
+      throw err;
     } finally {
       setPublishingYouTubeCandidateId(null);
     }
   }
 
-  async function handleSaveYouTubeAndPost(
-    titleOverride?: string,
-    descriptionOverride?: string,
-    privacyStatus?: string
-  ) {
-    if (!ytModalClientId.trim()) {
+  async function handleSaveYouTubeCredentialsFromModal() {
+    if (!ytModalClientId.trim() && !environment?.hasYoutubeConfig) {
       showWarning("Please enter your OAuth2 Client ID");
       return;
     }
-    if (!ytModalClientSecret.trim()) {
+    if (!ytModalClientSecret.trim() && !environment?.hasYoutubeConfig) {
       showWarning("Please enter your OAuth2 Client Secret");
       return;
     }
-    if (!ytModalRefreshToken.trim()) {
+    if (!ytModalRefreshToken.trim() && !environment?.hasYoutubeConfig) {
       showWarning("Please enter your OAuth2 Refresh Token");
       return;
     }
     setYtModalSaving(true);
     try {
-      setYoutubeClientId(ytModalClientId.trim());
-      localStorage.setItem("clipon_youtube_client_id", ytModalClientId.trim());
+      if (ytModalClientId.trim()) {
+        setYoutubeClientId(ytModalClientId.trim());
+        localStorage.setItem("clipon_youtube_client_id", ytModalClientId.trim());
+      }
 
       await invoke("save_youtube_credentials", {
         clientId: ytModalClientId.trim(),
@@ -720,19 +752,8 @@ function AppContent() {
 
       setYoutubeClientSecret("");
       setYoutubeRefreshToken("");
+      await refresh(detail?.project.id);
       showToast("YouTube OAuth2 credentials saved securely!");
-      setShowYouTubeModal(false);
-
-      if (pendingCandidateIdToPostYouTube) {
-        const candId = pendingCandidateIdToPostYouTube;
-        setPendingCandidateIdToPostYouTube(null);
-        await executeYouTubePublish(
-          candId,
-          titleOverride,
-          descriptionOverride,
-          privacyStatus
-        );
-      }
     } catch (err) {
       showError("Failed to save credentials", { details: String(err) });
     } finally {
@@ -1220,6 +1241,28 @@ function AppContent() {
           await invoke("save_credential", { name, value });
         }
       }
+
+      // Persist Instagram credentials if provided
+      if (instagramAccountId.trim() || instagramAccessToken.trim()) {
+        await invoke("save_instagram_credentials", {
+          accountId: instagramAccountId.trim(),
+          accessToken: instagramAccessToken.trim(),
+        });
+      }
+
+      // Persist YouTube OAuth2 credentials if provided
+      if (
+        youtubeClientId.trim() ||
+        youtubeClientSecret.trim() ||
+        youtubeRefreshToken.trim()
+      ) {
+        await invoke("save_youtube_credentials", {
+          clientId: youtubeClientId.trim(),
+          clientSecret: youtubeClientSecret.trim(),
+          refreshToken: youtubeRefreshToken.trim(),
+        });
+      }
+
       await refresh();
       setDeepgramKey("");
       setGeminiKey("");
@@ -1231,6 +1274,8 @@ function AppContent() {
       setNvidiaFunctionId("");
       setOpenrouterKey("");
       setInstagramAccessToken("");
+      setYoutubeClientSecret("");
+      setYoutubeRefreshToken("");
       setShowSettings(false);
       showToast("Settings saved securely");
     } catch (err) {
@@ -1252,6 +1297,14 @@ function AppContent() {
         nvidia: () => setNvidiaKey(""),
         nvidia_function_id: () => setNvidiaFunctionId(""),
         instagram: () => setInstagramAccessToken(""),
+        youtube_client_id: () => setYoutubeClientId(""),
+        youtube_client_secret: () => setYoutubeClientSecret(""),
+        youtube_refresh_token: () => setYoutubeRefreshToken(""),
+        youtube: () => {
+          setYoutubeClientId("");
+          setYoutubeClientSecret("");
+          setYoutubeRefreshToken("");
+        },
       };
       clearState[name]?.();
       await refresh();
@@ -1396,6 +1449,7 @@ function AppContent() {
                   openFolder={openFolder}
                   handlePublishToInstagram={handlePublishToInstagram}
                   handlePublishToYouTube={handlePublishToYouTube}
+                  onPreviewClip={(c) => setPreviewCandidate(c)}
                   onJobComplete={() => {
                     showToast("Render completed!");
                     if (detail) refresh(detail.project.id);
@@ -1557,23 +1611,57 @@ function AppContent() {
 
       <InstagramPublishModal
         isOpen={showMetaModal}
-        onClose={() => setShowMetaModal(false)}
+        onClose={() => {
+          setShowMetaModal(false);
+          setPendingCandidateIdToPost(null);
+        }}
+        candidate={
+          detail?.candidates.find((c) => c.id === pendingCandidateIdToPost) || null
+        }
+        clip={
+          detail?.clips.find((c) => c.candidateId === pendingCandidateIdToPost)
+        }
+        environment={environment}
         accountId={metaModalAccountId}
         setAccountId={setMetaModalAccountId}
         accessToken={metaModalAccessToken}
         setAccessToken={setMetaModalAccessToken}
+        provider={instagramProvider}
+        setProvider={setInstagramProvider}
+        webhookUrl={instagramWebhookUrl}
+        setWebhookUrl={setInstagramWebhookUrl}
+        onSaveCredentials={handleSaveMetaCredentials}
+        saving={metaModalSaving}
         onTestConnection={handleTestMetaConnection}
         testing={metaModalTesting}
-        status={metaModalStatus}
-        onSaveAndPost={handleSaveMetaAndPost}
-        saving={metaModalSaving}
-        pendingCandidateId={pendingCandidateIdToPost}
+        testStatus={metaModalStatus}
+        onPublish={(candId, capOverride) =>
+          executeInstagramPublish(candId, capOverride, metaModalAccountId.trim())
+        }
+        publishing={publishingCandidateId === pendingCandidateIdToPost}
+        existingPost={
+          pendingCandidateIdToPost
+            ? instagramPostByCandidate.get(pendingCandidateIdToPost)
+            : undefined
+        }
         onOpenExternal={openFolder}
+        onShowToast={showToast}
+        onRegenerateKit={handleRegenerateSocialKitForModal}
       />
 
       <YouTubePublishModal
         isOpen={showYouTubeModal}
-        onClose={() => setShowYouTubeModal(false)}
+        onClose={() => {
+          setShowYouTubeModal(false);
+          setPendingCandidateIdToPostYouTube(null);
+        }}
+        candidate={
+          detail?.candidates.find((c) => c.id === pendingCandidateIdToPostYouTube) || null
+        }
+        clip={
+          detail?.clips.find((c) => c.candidateId === pendingCandidateIdToPostYouTube)
+        }
+        environment={environment}
         clientId={ytModalClientId}
         setClientId={setYtModalClientId}
         clientSecret={ytModalClientSecret}
@@ -1583,17 +1671,42 @@ function AppContent() {
         onTestConnection={handleTestYouTubeModalConnection}
         testing={ytModalTesting}
         status={ytModalStatus}
-        onSaveAndPost={handleSaveYouTubeAndPost}
-        saving={ytModalSaving}
-        pendingCandidateId={pendingCandidateIdToPostYouTube}
-        defaultTitle={
-          pendingCandidateIdToPostYouTube && detail
-            ? detail.candidates.find(
-                (c) => c.id === pendingCandidateIdToPostYouTube
-              )?.hook
+        onSaveCredentials={handleSaveYouTubeCredentialsFromModal}
+        savingCredentials={ytModalSaving}
+        onPublish={executeYouTubePublish}
+        publishing={publishingYouTubeCandidateId === pendingCandidateIdToPostYouTube}
+        existingPost={
+          pendingCandidateIdToPostYouTube
+            ? youtubePostByCandidate?.get(pendingCandidateIdToPostYouTube)
             : undefined
         }
         onOpenExternal={openFolder}
+        onShowToast={showToast}
+        onRegenerateKit={handleRegenerateSocialKitForModal}
+      />
+
+      <VideoPreviewModal
+        candidate={previewCandidate}
+        clip={
+          previewCandidate
+            ? clipByCandidate.get(previewCandidate.id)
+            : undefined
+        }
+        igPost={
+          previewCandidate
+            ? instagramPostByCandidate.get(previewCandidate.id)
+            : undefined
+        }
+        ytPost={
+          previewCandidate
+            ? youtubePostByCandidate?.get(previewCandidate.id)
+            : undefined
+        }
+        onClose={() => setPreviewCandidate(null)}
+        onOpenSocialKit={handleOpenSocialKit}
+        onPublishToInstagram={handlePublishToInstagram}
+        onPublishToYouTube={handlePublishToYouTube}
+        onOpenFolder={openFolder}
       />
     </div>
   );

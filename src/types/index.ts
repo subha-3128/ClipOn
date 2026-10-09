@@ -52,12 +52,20 @@ export type Transcript = {
   createdAt: string;
 };
 
+export type CaptionOption = {
+  style: "hook_focused" | "conversational" | "insight_focused" | string;
+  title: string;
+  hook: string;
+  text: string;
+};
+
 export type SocialKit = {
   candidateId: string;
   titles: string[];
   description: string;
   hashtags: string[];
   callToAction: string;
+  captionOptions?: CaptionOption[];
 };
 
 export type ClipQualityScore = {
@@ -175,7 +183,13 @@ export type BusyState =
   | "cut";
 
 export type ReframeMode = "vertical_crop" | "smart_face_track" | "original";
-export type SettingsTab = "ai" | "storage" | "export" | "system";
+export type SettingsTab =
+  | "ai"
+  | "transcription"
+  | "video"
+  | "social"
+  | "storage"
+  | "system";
 
 // ===== Job System Types =====
 

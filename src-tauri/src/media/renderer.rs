@@ -541,7 +541,7 @@ mod tests {
     #[test]
     fn test_temp_dir_guard_lifecycle() {
         let path =
-            std::env::temp_dir().join(format!("clipon_reframe_test_{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("clipon_guard_test_{}", uuid::Uuid::new_v4()));
         {
             let guard = TempDirGuard::new(path.clone());
             assert!(guard.path().exists());

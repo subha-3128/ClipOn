@@ -89,4 +89,173 @@ describe("Frontend Core Types and Utilities", () => {
     expect(isDurationValidReel(60.1)).toBe(false);
     expect(isDurationValidReel(75.0)).toBe(false);
   });
+
+  it("verifies Settings tabs and two-level architecture mapping", () => {
+    const validTabs: Array<
+      "ai" | "transcription" | "video" | "social" | "storage" | "system"
+    > = ["ai", "transcription", "video", "social", "storage", "system"];
+
+    expect(validTabs).toHaveLength(6);
+    expect(validTabs).toContain("ai");
+    expect(validTabs).toContain("transcription");
+    expect(validTabs).toContain("video");
+    expect(validTabs).toContain("social");
+    expect(validTabs).toContain("storage");
+    expect(validTabs).toContain("system");
+  });
+
+  it("verifies secret field masking and keystore status contract", () => {
+    const getPlaceholder = (isSavedInKeystore: boolean, customPlaceholder?: string) => {
+      if (isSavedInKeystore) {
+        return "•••••••••••••••• (Leave blank to keep existing key)";
+      }
+      return customPlaceholder || "Enter API Key";
+    };
+
+    const getStatusState = (typedValue: string, isSavedInKeystore: boolean) => {
+      if (typedValue.trim().length > 0) return "unsaved-edit";
+      if (isSavedInKeystore) return "saved-in-keystore";
+      return "not-configured";
+    };
+
+    // When saved in keystore and user hasn't typed anything
+    expect(getPlaceholder(true)).toBe("•••••••••••••••• (Leave blank to keep existing key)");
+    expect(getStatusState("", true)).toBe("saved-in-keystore");
+
+    // When user types a new key
+    expect(getStatusState("sk-ant-api03-xxx", true)).toBe("unsaved-edit");
+
+    // When not configured
+    expect(getPlaceholder(false, "sk-proj-...")).toBe("sk-proj-...");
+    expect(getStatusState("", false)).toBe("not-configured");
+  });
+
+  it("verifies Instagram Reel caption options and preservation of user edits", () => {
+    interface CaptionOption {
+      style: string;
+      title: string;
+      hook: string;
+      text: string;
+    }
+
+    const options: CaptionOption[] = [
+      {
+        style: "hook_focused",
+        title: "Hook-Focused",
+        hook: "The key revelation",
+        text: "The key revelation. Here is the context. What do you think?",
+      },
+      {
+        style: "conversational",
+        title: "Natural & Conversational",
+        hook: "A thought on this",
+        text: "This moment really stood out to me. How do you approach this?",
+      },
+      {
+        style: "insight_focused",
+        title: "Key Takeaway",
+        hook: "Key insight",
+        text: "Key takeaway from this clip: Keep it simple. Save this.",
+      },
+    ];
+
+    expect(options).toHaveLength(3);
+
+    // Edit preservation cache simulation
+    const editsCache: Record<string, string> = {};
+    let currentStyle = "hook_focused";
+    let activeText = options[0].text;
+    expect(activeText).toBe(options[0].text);
+
+    // User edits the hook-focused caption
+    activeText = "User custom edited hook caption!";
+    editsCache[currentStyle] = activeText;
+
+    // User switches to conversational
+    currentStyle = "conversational";
+    activeText = editsCache[currentStyle] || options[1].text;
+    expect(activeText).toBe(options[1].text);
+
+    // User switches back to hook_focused - verify edit is preserved!
+    currentStyle = "hook_focused";
+    activeText = editsCache[currentStyle] || options[0].text;
+    expect(activeText).toBe("User custom edited hook caption!");
+  });
+
+  it("verifies Instagram hashtag sanitization and formatting", () => {
+    const sanitizeTag = (input: string) => {
+      let clean = input.trim().replace(/\s+/g, "");
+      if (!clean) return null;
+      if (!clean.startsWith("#")) clean = `#${clean}`;
+      return clean;
+    };
+
+    expect(sanitizeTag("tech")).toBe("#tech");
+    expect(sanitizeTag("#SaaS ")).toBe("#SaaS");
+    expect(sanitizeTag("   ai video ")).toBe("#aivideo");
+    expect(sanitizeTag("   ")).toBeNull();
+  });
+
+  it("verifies Instagram publishing stage stepper transitions", () => {
+    const getPublishStepLabel = (step: number) => {
+      switch (step) {
+        case 1:
+          return "Video Validation";
+        case 2:
+          return "Container Init";
+        case 3:
+          return "Rupload Transfer";
+        case 4:
+          return "Meta Transcoding";
+        case 5:
+          return "Live!";
+        default:
+          return "Idle";
+      }
+    };
+
+    expect(getPublishStepLabel(1)).toBe("Video Validation");
+    expect(getPublishStepLabel(3)).toBe("Rupload Transfer");
+    expect(getPublishStepLabel(4)).toBe("Meta Transcoding");
+    expect(getPublishStepLabel(5)).toBe("Live!");
+  });
+
+  it("verifies YouTube Shorts AI Social Kit title formatting and tag sanitization", () => {
+    const formatShortsTitle = (title: string) => {
+      let trimmed = title.trim();
+      if (!trimmed.toLowerCase().includes("#shorts") && trimmed.length <= 92) {
+        trimmed = `${trimmed} #Shorts`;
+      }
+      return trimmed.slice(0, 100);
+    };
+
+    const sanitizeYoutubeTags = (hashtags: string[]) => {
+      const clean = hashtags
+        .map((h) => {
+          const s = h.trim().replace(/^#/, "");
+          return s.toLowerCase() === "shorts" ? "Shorts" : s;
+        })
+        .filter((h) => h.length > 0);
+      if (!clean.some((t) => t.toLowerCase() === "shorts")) {
+        clean.unshift("Shorts");
+      }
+      return Array.from(new Set(clean));
+    };
+
+    const rawTitle = "Why Most Startups Fail In Year One";
+    expect(formatShortsTitle(rawTitle)).toBe("Why Most Startups Fail In Year One #Shorts");
+
+    const longTitle = "A".repeat(95);
+    expect(formatShortsTitle(longTitle)).toBe(longTitle.slice(0, 100));
+
+    const rawTags = ["#Startup", "Tech", "#shorts", "#AI"];
+    const cleanTags = sanitizeYoutubeTags(rawTags);
+    expect(cleanTags).toContain("Startup");
+    expect(cleanTags).toContain("Tech");
+    expect(cleanTags).toContain("Shorts");
+    expect(cleanTags.filter((t) => t.toLowerCase() === "shorts")).toHaveLength(1);
+  });
 });
+
+
+

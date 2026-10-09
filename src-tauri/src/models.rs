@@ -297,12 +297,23 @@ impl ClipQualityScore {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CaptionOption {
+    pub style: String,
+    pub title: String,
+    pub hook: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SocialKit {
     pub candidate_id: String,
     pub titles: Vec<String>,
     pub description: String,
     pub hashtags: Vec<String>,
     pub call_to_action: String,
+    #[serde(default)]
+    pub caption_options: Vec<CaptionOption>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

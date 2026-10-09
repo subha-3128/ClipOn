@@ -58,6 +58,7 @@ interface MomentsPanelProps {
   openFolder: (path: string) => void;
   handlePublishToInstagram: (id: string) => void;
   handlePublishToYouTube?: (id: string) => void;
+  onPreviewClip?: (candidate: Candidate) => void;
   onJobComplete: () => void;
   onJobCancel: () => void;
 }
@@ -99,6 +100,7 @@ export function MomentsPanel({
   openFolder,
   handlePublishToInstagram,
   handlePublishToYouTube,
+  onPreviewClip,
   onJobComplete,
   onJobCancel,
 }: MomentsPanelProps) {
@@ -317,6 +319,7 @@ export function MomentsPanel({
                 onOpenFolder={openFolder}
                 onPublishToInstagram={handlePublishToInstagram}
                 onPublishToYouTube={handlePublishToYouTube || (() => {})}
+                onPreviewClip={onPreviewClip}
                 hasFfmpeg={hasFfmpeg}
                 isBusy={busy !== "idle"}
               />

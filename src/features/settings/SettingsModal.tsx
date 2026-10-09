@@ -1,21 +1,19 @@
-import { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   Settings,
   X,
-  Cpu,
-  HardDrive,
-  Sliders,
-  Activity,
+  AudioLines,
+  Loader2,
+  CheckCircle2,
+  AlertTriangle,
+  Folder,
+  ExternalLink,
+  RotateCcw,
   Download,
+  Trash2,
+  Zap,
   Instagram,
   Youtube,
-  Loader2,
-  BadgeCheck,
-  AlertTriangle,
-  FolderOpen,
-  Trash2,
-  ShieldAlert,
-  Zap,
 } from "lucide-react";
 import {
   EnvironmentStatus,
@@ -24,6 +22,9 @@ import {
   LlmEngine,
 } from "../../types";
 import { AccessibleModal } from "../../components/AccessibleModal";
+import { SettingsSidebar } from "./SettingsSidebar";
+import { SettingsFooter } from "./SettingsFooter";
+import { SettingsSecretField } from "./SettingsSecretField";
 
 export interface SettingsModalProps {
   isOpen: boolean;
@@ -166,1244 +167,1170 @@ export function SettingsModal({
   onDeleteCredential,
   onSaveAndClose,
 }: SettingsModalProps) {
-  const [settingsTab, setSettingsTab] = useState<SettingsTab>("ai");
-  const [credentialToDelete, setCredentialToDelete] = useState("openai");
+  const [activeTab, setActiveTab] = useState<SettingsTab>("ai");
+  const [credentialToDelete, setCredentialToDelete] = useState("gemini");
+  const [pullingModel, setPullingModel] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [tosAck, setTosAck] = useState(
     () => localStorage.getItem("clipon_youtube_tos_ack") === "true"
   );
-
-  if (!isOpen) return null;
 
   const handleTosToggle = (val: boolean) => {
     setTosAck(val);
     localStorage.setItem("clipon_youtube_tos_ack", val ? "true" : "false");
   };
 
+  const handlePullModel = async (model: string) => {
+    setPullingModel(true);
+    try {
+      await pullModelDirectly(model);
+    } finally {
+      setPullingModel(false);
+    }
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await onSaveAndClose();
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const hasUnsavedChanges = useMemo(() => {
+    return Boolean(
+      deepgramKey.trim() ||
+      geminiKey.trim() ||
+      openaiKey.trim() ||
+      anthropicKey.trim() ||
+      deepseekKey.trim() ||
+      groqKey.trim() ||
+      nvidiaKey.trim() ||
+      (nvidiaFunctionId && nvidiaFunctionId.trim()) ||
+      instagramAccessToken.trim() ||
+      youtubeClientSecret.trim() ||
+      youtubeRefreshToken.trim()
+    );
+  }, [
+    deepgramKey,
+    geminiKey,
+    openaiKey,
+    anthropicKey,
+    deepseekKey,
+    groqKey,
+    nvidiaKey,
+    nvidiaFunctionId,
+    instagramAccessToken,
+    youtubeClientSecret,
+    youtubeRefreshToken,
+  ]);
+
+  if (!isOpen) return null;
+
   return (
     <AccessibleModal
       isOpen={isOpen}
       onClose={onClose}
-      title="Studio Configuration"
+      title="Studio Settings"
       titleId="settings-modal-title"
       dialogClassName="settings-modal"
     >
-      <div className="modal-header">
+      {/* Modal Top Header */}
+      <div className="modal-header settings-header">
         <div className="modal-header-left">
-          <div className="modal-icon-badge">
+          <div className="modal-icon-badge settings">
             <Settings size={18} />
           </div>
           <div>
-            <h3 id="settings-modal-title">Studio Configuration</h3>
+            <h3 id="settings-modal-title">Studio Settings</h3>
             <p>
-              Tune AI models, storage destinations, rendering parameters &amp;
-              accounts
+              Tune AI intelligence, speech transcription, 9:16 vertical reframe,
+              storage paths, and accounts.
             </p>
           </div>
         </div>
         <button
           className="modal-close-btn"
           onClick={onClose}
-          aria-label="Close dialog"
+          aria-label="Close studio settings dialog"
         >
           <X size={16} />
         </button>
       </div>
 
-      <div
-        className="settings-tab-nav"
-        role="tablist"
-        aria-label="Settings categories"
-      >
-        <button
-          type="button"
-          role="tab"
-          aria-selected={settingsTab === "ai"}
-          className={`settings-nav-btn ${settingsTab === "ai" ? "active" : ""}`}
-          onClick={() => setSettingsTab("ai")}
-        >
-          <Cpu size={14} />
-          <span>AI Engines</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={settingsTab === "storage"}
-          className={`settings-nav-btn ${settingsTab === "storage" ? "active" : ""}`}
-          onClick={() => setSettingsTab("storage")}
-        >
-          <HardDrive size={14} />
-          <span>Storage &amp; Folders</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={settingsTab === "export"}
-          className={`settings-nav-btn ${settingsTab === "export" ? "active" : ""}`}
-          onClick={() => setSettingsTab("export")}
-        >
-          <Sliders size={14} />
-          <span>Export &amp; Video</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={settingsTab === "system"}
-          className={`settings-nav-btn ${settingsTab === "system" ? "active" : ""}`}
-          onClick={() => setSettingsTab("system")}
-        >
-          <Activity size={14} />
-          <span>System &amp; Diagnostics</span>
-        </button>
-      </div>
+      {/* Two-Level Settings Layout */}
+      <div className="settings-layout">
+        {/* Left Navigation Sidebar */}
+        <SettingsSidebar
+          activeTab={activeTab}
+          onSelectTab={setActiveTab}
+          environment={environment}
+        />
 
-      <div className="settings-tab-content">
-        {settingsTab === "ai" && (
-          <div className="settings-form-stack">
-            <div className="settings-field-group">
-              <label>Transcription Provider</label>
-              <select
-                value={transcriptionEngine}
-                onChange={(e) =>
-                  setTranscriptionEngine(e.target.value as "deepgram" | "local")
-                }
-              >
-                <option value="local">
-                  Local Whisper (Offline &amp; Free)
-                </option>
-                <option value="deepgram">
-                  Deepgram (Cloud API - Super Fast)
-                </option>
-              </select>
-            </div>
+        {/* Right Active Content Pane */}
+        <main className="settings-content-pane" role="tabpanel">
+          {/* =================================================================
+             1. AI & Intelligence Tab
+             ================================================================= */}
+          {activeTab === "ai" && (
+            <div className="settings-tab-pane">
+              <div className="pane-header">
+                <div>
+                  <h4>AI & Hook Detection</h4>
+                  <p>
+                    Select which LLM model scans transcripts for high-retention
+                    hooks and viral moments.
+                  </p>
+                </div>
+              </div>
 
-            {transcriptionEngine === "deepgram" && (
-              <div className="settings-field-group">
-                <label
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <span>Deepgram API Key</span>
-                  {environment?.hasDeepgramKey && (
-                    <span
-                      style={{
-                        fontSize: "11px",
-                        color: "#10b981",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "4px",
-                        fontWeight: 500,
-                      }}
-                    >
-                      <BadgeCheck size={13} /> Active
+              {/* Active Engine Card */}
+              <div className="settings-card highlight">
+                <div className="settings-field-group">
+                  <label htmlFor="llm-engine-select" className="settings-field-label">
+                    <span>Active Detection Model</span>
+                    <span className="status-pill active">
+                      <Zap size={11} /> Primary Analyzer
                     </span>
-                  )}
-                </label>
-                <input
-                  type="password"
-                  value={deepgramKey}
-                  onChange={(e) => setDeepgramKey(e.target.value)}
-                  placeholder={
-                    environment?.hasDeepgramKey
-                      ? "•••••••• (Saved securely)"
-                      : "Enter Deepgram API Key"
-                  }
+                  </label>
+                  <p className="settings-field-desc">
+                    ClipOn sends dialogue segments to this provider to detect
+                    punchy soundbites and evaluate audience retention.
+                  </p>
+                  <select
+                    id="llm-engine-select"
+                    value={llmEngine}
+                    onChange={(e) => {
+                      const val = e.target.value as LlmEngine;
+                      setLlmEngine(val);
+                      localStorage.setItem("clipon_llm_engine", val);
+                    }}
+                    className="settings-select"
+                  >
+                    <option value="gemini">Google Gemini 2.5 (Fast &amp; Accurate - Recommended)</option>
+                    <option value="openai">OpenAI GPT-4o / GPT-4o-mini</option>
+                    <option value="anthropic">Anthropic Claude 3.5 Sonnet</option>
+                    <option value="deepseek">DeepSeek Chat / Reasoner</option>
+                    <option value="groq">Groq Cloud (Llama 3 70B - Ultra Fast)</option>
+                    <option value="ollama">Ollama Local (100% Private On-Device)</option>
+                    <option value="openrouter">OpenRouter Unified API</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Provider API Keys & Credentials */}
+              <div className="settings-section-divider">
+                <span>API Keys &amp; Models</span>
+              </div>
+
+              {/* Gemini */}
+              <div className={`settings-card ${llmEngine === "gemini" ? "selected" : ""}`}>
+                <SettingsSecretField
+                  id="gemini-key"
+                  label="Google Gemini API Key"
+                  description="Used by default for fast, multimodal hook detection (gemini-2.5-flash / gemini-2.5-pro)."
+                  value={geminiKey}
+                  onChange={setGeminiKey}
+                  isSavedInKeystore={Boolean(environment?.hasGeminiKey)}
+                  onDeleteCredential={() => onDeleteCredential("gemini")}
+                  placeholder="AIzaSy..."
                 />
               </div>
-            )}
 
-            <div className="settings-field-group">
-              <label>Viral Moment LLM Provider</label>
-              <select
-                value={llmEngine}
-                onChange={(e) => setLlmEngine(e.target.value as LlmEngine)}
-              >
-                <option value="local">Ollama (Offline Local)</option>
-                <option value="claude">Anthropic Claude</option>
-                <option value="deepseek">DeepSeek AI</option>
-                <option value="gemini">Google Gemini</option>
-                <option value="openai">OpenAI</option>
-                <option value="openrouter">OpenRouter</option>
-                <option value="groq">Groq (Ultra-Fast)</option>
-              </select>
-            </div>
+              {/* OpenAI */}
+              <div className={`settings-card ${llmEngine === "openai" ? "selected" : ""}`}>
+                <SettingsSecretField
+                  id="openai-key"
+                  label="OpenAI API Key"
+                  description="Used for GPT-4o and GPT-4o-mini viral segment scoring."
+                  value={openaiKey}
+                  onChange={setOpenaiKey}
+                  isSavedInKeystore={Boolean(environment?.hasOpenaiKey)}
+                  onDeleteCredential={() => onDeleteCredential("openai")}
+                  placeholder="sk-..."
+                />
+              </div>
 
-            {llmEngine === "local" && (
-              <div className="settings-field-group">
-                <label>Ollama Model</label>
-                <div className="input-with-button">
+              {/* Anthropic Claude */}
+              <div className={`settings-card ${llmEngine === "anthropic" ? "selected" : ""}`}>
+                <SettingsSecretField
+                  id="anthropic-key"
+                  label="Anthropic Claude API Key"
+                  description="Used for high-retention dialogue analysis with Claude 3.5 Sonnet."
+                  value={anthropicKey}
+                  onChange={setAnthropicKey}
+                  isSavedInKeystore={Boolean(environment?.hasAnthropicKey)}
+                  onDeleteCredential={() => onDeleteCredential("anthropic")}
+                  placeholder="sk-ant-..."
+                />
+              </div>
+
+              {/* DeepSeek */}
+              <div className={`settings-card ${llmEngine === "deepseek" ? "selected" : ""}`}>
+                <SettingsSecretField
+                  id="deepseek-key"
+                  label="DeepSeek API Key"
+                  description="Used for DeepSeek reasoning and candidate hook ranking."
+                  value={deepseekKey}
+                  onChange={setDeepseekKey}
+                  isSavedInKeystore={Boolean(environment?.hasDeepseekKey)}
+                  onDeleteCredential={() => onDeleteCredential("deepseek")}
+                  placeholder="sk-..."
+                />
+                <div className="settings-field-group sub-field">
+                  <label htmlFor="deepseek-model" className="settings-field-label">
+                    <span>DeepSeek Model Identifier</span>
+                  </label>
                   <input
+                    id="deepseek-model"
                     type="text"
-                    value={localLlmModel}
-                    onChange={(e) => setLocalLlmModel(e.target.value)}
-                    placeholder="e.g. llama3.2, qwen2.5:7b"
+                    value={deepseekModel}
+                    onChange={(e) => {
+                      setDeepseekModel(e.target.value);
+                      localStorage.setItem("clipon_deepseek_model", e.target.value);
+                    }}
+                    placeholder="deepseek-chat (default)"
+                    className="settings-input"
                   />
+                </div>
+              </div>
+
+              {/* Groq Cloud */}
+              <div className={`settings-card ${llmEngine === "groq" ? "selected" : ""}`}>
+                <SettingsSecretField
+                  id="groq-key"
+                  label="Groq Cloud API Key"
+                  description="Sub-second inference speed running Llama 3 70B."
+                  value={groqKey}
+                  onChange={setGroqKey}
+                  isSavedInKeystore={Boolean(environment?.hasGroqKey)}
+                  onDeleteCredential={() => onDeleteCredential("groq")}
+                  placeholder="gsk_..."
+                />
+              </div>
+
+              {/* Ollama Local */}
+              <div className={`settings-card ${llmEngine === "ollama" ? "selected" : ""}`}>
+                <div className="settings-field-group">
+                  <div className="settings-field-header">
+                    <label htmlFor="ollama-model" className="settings-field-label">
+                      <span>Ollama Local Model (On-Device)</span>
+                    </label>
+                    <span className={`status-pill ${environment?.hasOllama ? "active" : "missing"}`}>
+                      {environment?.hasOllama ? "Ollama Connected" : "Ollama Not Detected"}
+                    </span>
+                  </div>
+                  <p className="settings-field-desc">
+                    Runs 100% locally on your machine with zero cloud dependencies or API keys.
+                  </p>
+                  <div className="input-with-action-btn">
+                    <input
+                      id="ollama-model"
+                      type="text"
+                      value={localLlmModel}
+                      onChange={(e) => {
+                        setLocalLlmModel(e.target.value);
+                        localStorage.setItem("clipon_local_llm_model", e.target.value);
+                      }}
+                      placeholder="llama3.2"
+                      className="settings-input"
+                    />
+                    <button
+                      type="button"
+                      className="studio-btn secondary small"
+                      onClick={() => handlePullModel(localLlmModel.trim() || "llama3.2")}
+                      disabled={pullingModel || !environment?.hasOllama}
+                      title="Pull model weights using local Ollama daemon"
+                    >
+                      {pullingModel ? (
+                        <Loader2 className="spin" size={13} />
+                      ) : (
+                        <Download size={13} />
+                      )}
+                      <span>{pullingModel ? "Pulling..." : "Pull Model"}</span>
+                    </button>
+                  </div>
+                  <div className="model-preset-pills">
+                    <span className="preset-label">Recommended:</span>
+                    {["llama3.2", "mistral", "gemma2", "qwen2.5"].map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        className={`preset-pill ${localLlmModel === m ? "active" : ""}`}
+                        onClick={() => {
+                          setLocalLlmModel(m);
+                          localStorage.setItem("clipon_local_llm_model", m);
+                        }}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* =================================================================
+             2. Transcription Tab
+             ================================================================= */}
+          {activeTab === "transcription" && (
+            <div className="settings-tab-pane">
+              <div className="pane-header">
+                <div>
+                  <h4>Speech-to-Text Transcription</h4>
+                  <p>
+                    Configure how audio recordings are transcribed into
+                    word-level timestamped transcripts.
+                  </p>
+                </div>
+              </div>
+
+              {/* Transcription Engine Select */}
+              <div className="settings-grid-options">
+                <div
+                  className={`settings-option-card ${
+                    transcriptionEngine === "deepgram" ? "selected" : ""
+                  }`}
+                  onClick={() => {
+                    setTranscriptionEngine("deepgram");
+                    localStorage.setItem("clipon_transcription_engine", "deepgram");
+                  }}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <div className="option-header">
+                    <div className="option-icon-box">
+                      <Zap size={18} />
+                    </div>
+                    <span className="option-badge cloud">Cloud Fast</span>
+                  </div>
+                  <h5>Deepgram Nova-3 (Cloud)</h5>
+                  <p>
+                    Ultra-fast cloud transcription with speaker diarization and
+                    exact word timestamps. Recommended for fast turnaround.
+                  </p>
+                </div>
+
+                <div
+                  className={`settings-option-card ${
+                    transcriptionEngine === "local" ? "selected" : ""
+                  }`}
+                  onClick={() => {
+                    setTranscriptionEngine("local");
+                    localStorage.setItem("clipon_transcription_engine", "local");
+                  }}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <div className="option-header">
+                    <div className="option-icon-box">
+                      <AudioLines size={18} />
+                    </div>
+                    <span className="option-badge local">Private On-Device</span>
+                  </div>
+                  <h5>Whisper Offline (Local)</h5>
+                  <p>
+                    Transcribes audio locally using whisper.cpp. Completely
+                    private with zero API fees. Runs on CPU / Apple Silicon.
+                  </p>
+                </div>
+              </div>
+
+              {/* Deepgram Configuration */}
+              <div className="settings-card">
+                <SettingsSecretField
+                  id="deepgram-key"
+                  label="Deepgram API Key"
+                  description="Required when using Deepgram Cloud transcription mode."
+                  value={deepgramKey}
+                  onChange={setDeepgramKey}
+                  isSavedInKeystore={Boolean(environment?.hasDeepgramKey)}
+                  onDeleteCredential={() => onDeleteCredential("deepgram")}
+                  placeholder="token..."
+                />
+              </div>
+
+              {/* Whisper Offline Status */}
+              <div className="settings-card">
+                <div className="system-telemetry-row">
+                  <div className="telemetry-info">
+                    <AudioLines size={20} className="telemetry-icon" />
+                    <div>
+                      <strong>Offline Whisper Model</strong>
+                      <p>
+                        {environment?.hasLocalWhisperModel
+                          ? "Whisper base model is downloaded and ready for offline use."
+                          : "Whisper base model will be loaded locally on initial transcription."}
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    className={`status-pill ${
+                      environment?.hasLocalWhisperModel ? "active" : "neutral"
+                    }`}
+                  >
+                    {environment?.hasLocalWhisperModel ? "Model Ready" : "Auto-Download"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* =================================================================
+             3. Video & Processing Tab
+             ================================================================= */}
+          {activeTab === "video" && (
+            <div className="settings-tab-pane">
+              <div className="pane-header">
+                <div>
+                  <h4>Video &amp; Smart Reframe</h4>
+                  <p>
+                    Configure aspect ratio cropping, active speaker detection,
+                    and dynamic editing modifiers.
+                  </p>
+                </div>
+              </div>
+
+              {/* 9:16 Reframe Mode */}
+              <div className="settings-field-group">
+                <label className="settings-field-label">
+                  <span>Default 9:16 Reframe Framing</span>
+                </label>
+                <div className="settings-grid-options three-col">
+                  <div
+                    className={`settings-option-card ${
+                      reframeMode === "vertical_crop" ? "selected" : ""
+                    }`}
+                    onClick={() => {
+                      setReframeMode("vertical_crop");
+                      localStorage.setItem("clipon_reframe_mode", "vertical_crop");
+                    }}
+                    role="button"
+                    tabIndex={0}
+                  >
+                    <div className="option-header">
+                      <h5>Vertical Crop</h5>
+                      <span className="format-pill">Center</span>
+                    </div>
+                    <p>Clean 9:16 center crop. Best for talking head interviews and podcasts.</p>
+                  </div>
+
+                  <div
+                    className={`settings-option-card ${
+                      reframeMode === "smart_face_track" ? "selected" : ""
+                    }`}
+                    onClick={() => {
+                      setReframeMode("smart_face_track");
+                      localStorage.setItem("clipon_reframe_mode", "smart_face_track");
+                    }}
+                    role="button"
+                    tabIndex={0}
+                  >
+                    <div className="option-header">
+                      <h5>Smart Face Track</h5>
+                      <span className="format-pill">AI Vision</span>
+                    </div>
+                    <p>Dynamically pans the 9:16 window to follow moving subjects.</p>
+                  </div>
+
+                  <div
+                    className={`settings-option-card ${
+                      reframeMode === "original" ? "selected" : ""
+                    }`}
+                    onClick={() => {
+                      setReframeMode("original");
+                      localStorage.setItem("clipon_reframe_mode", "original");
+                    }}
+                    role="button"
+                    tabIndex={0}
+                  >
+                    <div className="option-header">
+                      <h5>Original Aspect</h5>
+                      <span className="format-pill">16:9</span>
+                    </div>
+                    <p>Preserves full widescreen frame with letterboxing.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Dynamic Editing Modifiers */}
+              <div className="settings-section-divider">
+                <span>Dynamic Modifiers</span>
+              </div>
+
+              <div className="settings-card">
+                <div className="settings-toggle-row">
+                  <div className="toggle-info">
+                    <strong>Dynamic Punch-Zoom</strong>
+                    <p>Applies a subtle 1.12x scale punch-in on key statements to boost visual retention.</p>
+                  </div>
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={punchZoom}
+                      onChange={(e) => {
+                        setPunchZoom(e.target.checked);
+                        localStorage.setItem("clipon_punch_zoom", String(e.target.checked));
+                      }}
+                    />
+                    <span className="slider round" />
+                  </label>
+                </div>
+
+                <div className="toggle-separator" />
+
+                <div className="settings-toggle-row">
+                  <div className="toggle-info">
+                    <strong>Silence Removal &amp; Jumpcuts</strong>
+                    <p>Trims speech pauses longer than 400ms to eliminate dead air.</p>
+                  </div>
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={removeSilence}
+                      onChange={(e) => {
+                        setRemoveSilence(e.target.checked);
+                        localStorage.setItem("clipon_remove_silence", String(e.target.checked));
+                      }}
+                    />
+                    <span className="slider round" />
+                  </label>
+                </div>
+
+                <div className="toggle-separator" />
+
+                <div className="settings-toggle-row">
+                  <div className="toggle-info">
+                    <strong>Studio Audio Compression</strong>
+                    <p>Two-pass dynamic normalization with broadcast compression for crisp mobile loudness.</p>
+                  </div>
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={studioAudio}
+                      onChange={(e) => {
+                        setStudioAudio(e.target.checked);
+                        localStorage.setItem("clipon_studio_audio", String(e.target.checked));
+                      }}
+                    />
+                    <span className="slider round" />
+                  </label>
+                </div>
+              </div>
+
+              {/* Active Speaker Detection (ASD) */}
+              <div className="settings-section-divider">
+                <span>Active Speaker Detection (ASD)</span>
+              </div>
+
+              <div className="settings-card">
+                <div className="settings-field-group">
+                  <div className="settings-field-header">
+                    <label className="settings-field-label">
+                      <span>NVIDIA Maxine Cloud ASD API</span>
+                    </label>
+                    <span
+                      className={`status-pill ${
+                        environment?.hasNvidiaKey ? "active" : "neutral"
+                      }`}
+                    >
+                      {environment?.hasNvidiaKey ? "Maxine Cloud Active" : "Local Energy Fallback"}
+                    </span>
+                  </div>
+                  <p className="settings-field-desc">
+                    Connect NVIDIA Maxine cloud endpoints for multi-speaker visual lip-sync
+                    detection. If left blank, ClipOn uses fast local energy fallback.
+                  </p>
+                  <SettingsSecretField
+                    id="nvidia-key"
+                    label="NVIDIA API Key"
+                    value={nvidiaKey}
+                    onChange={setNvidiaKey}
+                    isSavedInKeystore={Boolean(environment?.hasNvidiaKey)}
+                    onDeleteCredential={() => onDeleteCredential("nvidia")}
+                    placeholder="nvapi-..."
+                  />
+
+                  {setNvidiaFunctionId && (
+                    <div className="settings-field-group sub-field">
+                      <label htmlFor="nvidia-function-id" className="settings-field-label">
+                        <span>NVIDIA Function ID (Optional)</span>
+                      </label>
+                      <input
+                        id="nvidia-function-id"
+                        type="text"
+                        value={nvidiaFunctionId}
+                        onChange={(e) => setNvidiaFunctionId(e.target.value)}
+                        placeholder="e.g. 5f48b894-..."
+                        className="settings-input"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* =================================================================
+             4. Social & Publishing Tab
+             ================================================================= */}
+          {activeTab === "social" && (
+            <div className="settings-tab-pane">
+              <div className="pane-header">
+                <div>
+                  <h4>Social &amp; Publishing Accounts</h4>
+                  <p>
+                    Connect Instagram Reels and YouTube Shorts to export and
+                    schedule clips with one click.
+                  </p>
+                </div>
+              </div>
+
+              {/* Instagram Reels Integration */}
+              <div className="settings-card">
+                <div className="social-provider-header">
+                  <div className="social-brand-title">
+                    <div className="social-icon-box instagram">
+                      <Instagram size={18} />
+                    </div>
+                    <div>
+                      <strong>Instagram Reels Publishing</strong>
+                      <p>Publish rendered 9:16 vertical clips directly to Instagram Reels or an automation webhook.</p>
+                    </div>
+                  </div>
+                  <span
+                    className={`status-pill ${
+                      instagramProvider === "graph_api"
+                        ? environment?.hasInstagramToken
+                          ? "active"
+                          : "missing"
+                        : instagramWebhookUrl.trim()
+                          ? "active"
+                          : "missing"
+                    }`}
+                  >
+                    {instagramProvider === "graph_api"
+                      ? environment?.hasInstagramToken
+                        ? "Connected"
+                        : "Not Linked"
+                      : instagramWebhookUrl.trim()
+                        ? "Webhook Configured"
+                        : "Not Configured"}
+                  </span>
+                </div>
+
+                <div className="settings-field-group">
+                  <label className="settings-field-label">
+                    <span>Publishing Method</span>
+                  </label>
+                  <div className="settings-option-grid col-2">
+                    <button
+                      type="button"
+                      className={`settings-option-card compact ${instagramProvider === "graph_api" ? "selected" : ""}`}
+                      onClick={() => {
+                        setInstagramProvider("graph_api");
+                        localStorage.setItem("clipon_instagram_provider", "graph_api");
+                      }}
+                    >
+                      <div className="option-title">Meta Graph API (Direct)</div>
+                      <div className="option-desc">Official Meta Graph API publishing to Business / Creator account.</div>
+                    </button>
+                    <button
+                      type="button"
+                      className={`settings-option-card compact ${instagramProvider === "webhook" ? "selected" : ""}`}
+                      onClick={() => {
+                        setInstagramProvider("webhook");
+                        localStorage.setItem("clipon_instagram_provider", "webhook");
+                      }}
+                    >
+                      <div className="option-title">Automation Webhook</div>
+                      <div className="option-desc">Dispatch video payload to Zapier, Make, n8n, or custom server.</div>
+                    </button>
+                  </div>
+                </div>
+
+                {instagramProvider === "graph_api" ? (
+                  <>
+                    <div className="settings-field-group">
+                      <label htmlFor="ig-account-id" className="settings-field-label">
+                        <span>Instagram Business Account ID</span>
+                      </label>
+                      <input
+                        id="ig-account-id"
+                        type="text"
+                        value={instagramAccountId}
+                        onChange={(e) => {
+                          setInstagramAccountId(e.target.value);
+                          localStorage.setItem("clipon_instagram_account_id", e.target.value);
+                        }}
+                        placeholder="17841400000000000"
+                        className="settings-input"
+                      />
+                    </div>
+
+                    <SettingsSecretField
+                      id="ig-token"
+                      label="Meta Graph API Access Token"
+                      description="User access token with instagram_basic and instagram_content_publish permissions."
+                      value={instagramAccessToken}
+                      onChange={setInstagramAccessToken}
+                      isSavedInKeystore={Boolean(environment?.hasInstagramToken)}
+                      onDeleteCredential={() => onDeleteCredential("instagram")}
+                      placeholder="EAAG..."
+                    />
+
+                    <div className="social-action-row">
+                      <button
+                        type="button"
+                        className="studio-btn secondary small"
+                        onClick={testInstagramConnection}
+                        disabled={instagramTesting}
+                      >
+                        {instagramTesting ? (
+                          <Loader2 className="spin" size={13} />
+                        ) : (
+                          <CheckCircle2 size={13} />
+                        )}
+                        <span>{instagramTesting ? "Testing..." : "Test Connection"}</span>
+                      </button>
+                      {instagramTestResult && (
+                        <span
+                          className={`test-result-pill ${
+                            instagramTestResult.success ? "success" : "error"
+                          }`}
+                        >
+                          {instagramTestResult.message}
+                        </span>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="settings-field-group">
+                    <label htmlFor="ig-webhook-url" className="settings-field-label">
+                      <span>Automation Webhook URL</span>
+                    </label>
+                    <input
+                      id="ig-webhook-url"
+                      type="url"
+                      value={instagramWebhookUrl}
+                      onChange={(e) => {
+                        setInstagramWebhookUrl(e.target.value);
+                        localStorage.setItem("clipon_instagram_webhook_url", e.target.value);
+                      }}
+                      placeholder="https://hooks.zapier.com/hooks/catch/..."
+                      className="settings-input"
+                    />
+                    <p className="settings-field-desc">
+                      When publishing, ClipOn dispatches a POST request with video metadata and clip file location to your automated workflow.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* YouTube Shorts Integration */}
+              <div className="settings-card">
+                <div className="social-provider-header">
+                  <div className="social-brand-title">
+                    <div className="social-icon-box youtube">
+                      <Youtube size={18} />
+                    </div>
+                    <div>
+                      <strong>YouTube Shorts (OAuth2 Data API v3)</strong>
+                      <p>Upload 9:16 clips directly to your channel as YouTube Shorts.</p>
+                    </div>
+                  </div>
+                  <span
+                    className={`status-pill ${
+                      environment?.hasYoutubeConfig ? "active" : "missing"
+                    }`}
+                  >
+                    {environment?.hasYoutubeConfig ? "Connected" : "Not Linked"}
+                  </span>
+                </div>
+
+                <div className="settings-field-group">
+                  <label htmlFor="yt-client-id" className="settings-field-label">
+                    <span>Google OAuth2 Client ID</span>
+                  </label>
+                  <input
+                    id="yt-client-id"
+                    type="text"
+                    value={youtubeClientId}
+                    onChange={(e) => {
+                      setYoutubeClientId(e.target.value);
+                      localStorage.setItem("clipon_youtube_client_id", e.target.value);
+                    }}
+                    placeholder="123456789-xxx.apps.googleusercontent.com"
+                    className="settings-input"
+                  />
+                </div>
+
+                <SettingsSecretField
+                  id="yt-client-secret"
+                  label="OAuth2 Client Secret"
+                  value={youtubeClientSecret}
+                  onChange={setYoutubeClientSecret}
+                  isSavedInKeystore={Boolean(environment?.hasYoutubeConfig)}
+                  onDeleteCredential={() => onDeleteCredential("youtube_client_secret")}
+                  placeholder="GOCSPX-..."
+                />
+
+                <SettingsSecretField
+                  id="yt-refresh-token"
+                  label="OAuth2 Refresh Token"
+                  value={youtubeRefreshToken}
+                  onChange={setYoutubeRefreshToken}
+                  isSavedInKeystore={Boolean(environment?.hasYoutubeConfig)}
+                  onDeleteCredential={() => onDeleteCredential("youtube_refresh_token")}
+                  placeholder="1//04..."
+                />
+
+                <div className="tos-acknowledgment-box">
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={tosAck}
+                      onChange={(e) => handleTosToggle(e.target.checked)}
+                    />
+                    <span>I acknowledge adherence to YouTube API Services Terms of Service</span>
+                  </label>
+                </div>
+
+                <div className="social-action-row">
                   <button
                     type="button"
-                    className="studio-btn secondary"
-                    onClick={() => pullModelDirectly(localLlmModel)}
+                    className="studio-btn secondary small"
+                    onClick={testYoutubeConnection}
+                    disabled={youtubeTesting}
                   >
-                    <Download size={13} />
-                    Pull Model
+                    {youtubeTesting ? (
+                      <Loader2 className="spin" size={13} />
+                    ) : (
+                      <CheckCircle2 size={13} />
+                    )}
+                    <span>{youtubeTesting ? "Testing..." : "Test Connection"}</span>
+                  </button>
+                  {youtubeTestResult && (
+                    <span
+                      className={`test-result-pill ${
+                        youtubeTestResult.success ? "success" : "error"
+                      }`}
+                    >
+                      {youtubeTestResult.message}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* =================================================================
+             5. Storage & Paths Tab
+             ================================================================= */}
+          {activeTab === "storage" && (
+            <div className="settings-tab-pane">
+              <div className="pane-header">
+                <div>
+                  <h4>Storage &amp; Destinations</h4>
+                  <p>
+                    Set local directories for downloaded YouTube recordings,
+                    cut video clips, and database cache.
+                  </p>
+                </div>
+              </div>
+
+              {/* YouTube Downloads Directory */}
+              <div className="settings-card">
+                <div className="settings-field-group">
+                  <label className="settings-field-label">
+                    <span>YouTube Download Staging Directory</span>
+                  </label>
+                  <p className="settings-field-desc">
+                    Where raw videos downloaded via yt-dlp are saved before clipping.
+                  </p>
+                  <div className="path-display-box">
+                    <span className="path-text truncate">
+                      {youtubeSaveDir || defaultFolders?.youtubeSaveDir || "Default Downloads"}
+                    </span>
+                  </div>
+                  <div className="path-actions-row">
+                    <button
+                      type="button"
+                      className="studio-btn secondary small"
+                      onClick={() =>
+                        browseFolder(
+                          youtubeSaveDir || defaultFolders?.youtubeSaveDir || "",
+                          setYoutubeSaveDir,
+                          "clipon_youtube_dir"
+                        )
+                      }
+                    >
+                      <Folder size={13} />
+                      <span>Browse Folder</span>
+                    </button>
+                    {youtubeSaveDir && (
+                      <>
+                        <button
+                          type="button"
+                          className="studio-btn secondary small"
+                          onClick={() => openFolder(youtubeSaveDir)}
+                          title="Reveal folder in Finder"
+                        >
+                          <ExternalLink size={13} />
+                          <span>Reveal</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="studio-btn secondary small"
+                          onClick={() => {
+                            setYoutubeSaveDir("");
+                            localStorage.removeItem("clipon_youtube_dir");
+                          }}
+                          title="Reset to default directory"
+                        >
+                          <RotateCcw size={13} />
+                          <span>Reset</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Rendered Clips Directory */}
+              <div className="settings-card">
+                <div className="settings-field-group">
+                  <label className="settings-field-label">
+                    <span>Rendered Clips Output Directory</span>
+                  </label>
+                  <p className="settings-field-desc">
+                    Where cut 9:16 vertical video clips and subtitle files are rendered.
+                  </p>
+                  <div className="path-display-box">
+                    <span className="path-text truncate">
+                      {clipsSaveDir || defaultFolders?.clipsOutputDir || "Default Output"}
+                    </span>
+                  </div>
+                  <div className="path-actions-row">
+                    <button
+                      type="button"
+                      className="studio-btn secondary small"
+                      onClick={() =>
+                        browseFolder(
+                          clipsSaveDir || defaultFolders?.clipsOutputDir || "",
+                          setClipsSaveDir,
+                          "clipon_clips_dir"
+                        )
+                      }
+                    >
+                      <Folder size={13} />
+                      <span>Browse Folder</span>
+                    </button>
+                    {clipsSaveDir && (
+                      <>
+                        <button
+                          type="button"
+                          className="studio-btn secondary small"
+                          onClick={() => openFolder(clipsSaveDir)}
+                          title="Reveal folder in Finder"
+                        >
+                          <ExternalLink size={13} />
+                          <span>Reveal</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="studio-btn secondary small"
+                          onClick={() => {
+                            setClipsSaveDir("");
+                            localStorage.removeItem("clipon_clips_dir");
+                          }}
+                          title="Reset to default directory"
+                        >
+                          <RotateCcw size={13} />
+                          <span>Reset</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Application Data Directory */}
+              <div className="settings-card">
+                <div className="settings-field-group">
+                  <label className="settings-field-label">
+                    <span>Application SQLite Database &amp; Data Directory</span>
+                  </label>
+                  <p className="settings-field-desc">
+                    Stores projects, dialogue segments, candidates, and secure keystore.
+                  </p>
+                  <div className="path-display-box">
+                    <span className="path-text truncate">
+                      {environment?.dataDir || "~/.clipon"}
+                    </span>
+                  </div>
+                  {environment?.dataDir && (
+                    <div className="path-actions-row">
+                      <button
+                        type="button"
+                        className="studio-btn secondary small"
+                        onClick={() => openFolder(environment.dataDir)}
+                      >
+                        <ExternalLink size={13} />
+                        <span>Open Data Folder</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* =================================================================
+             6. System Diagnostics Tab
+             ================================================================= */}
+          {activeTab === "system" && (
+            <div className="settings-tab-pane">
+              <div className="pane-header">
+                <div>
+                  <h4>System &amp; Diagnostics</h4>
+                  <p>
+                    Verify local hardware acceleration, binary tool status,
+                    and manage encrypted credentials.
+                  </p>
+                </div>
+              </div>
+
+              {/* Hardware Acceleration Status */}
+              <div className="settings-card highlight">
+                <div className="system-telemetry-row">
+                  <div className="telemetry-info">
+                    <Zap size={22} className="telemetry-icon-emerald" />
+                    <div>
+                      <strong>Apple Silicon VideoToolbox GPU Acceleration</strong>
+                      <p>
+                        {environment?.hasHardwareAccel
+                          ? "Hardware accelerated h264_videotoolbox encoder is active for fast rendering."
+                          : "Standard multi-threaded CPU encoding fallback is active."}
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    className={`status-pill ${
+                      environment?.hasHardwareAccel ? "active" : "neutral"
+                    }`}
+                  >
+                    {environment?.hasHardwareAccel ? "GPU Active" : "CPU Fallback"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Binary Tools Telemetry */}
+              <div className="settings-card">
+                <h5 className="settings-card-title">Installed Toolchain Diagnostic</h5>
+                <div className="binary-diagnostic-grid">
+                  <div className="diag-item">
+                    <span>FFmpeg Full</span>
+                    <span className={`diag-badge ${environment?.hasFfmpeg ? "ok" : "err"}`}>
+                      {environment?.hasFfmpeg ? "Detected" : "Missing"}
+                    </span>
+                  </div>
+                  <div className="diag-item">
+                    <span>FFprobe</span>
+                    <span className={`diag-badge ${environment?.hasFfprobe ? "ok" : "err"}`}>
+                      {environment?.hasFfprobe ? "Detected" : "Missing"}
+                    </span>
+                  </div>
+                  <div className="diag-item">
+                    <span>yt-dlp (YouTube)</span>
+                    <span className={`diag-badge ${environment?.hasYtdlp ? "ok" : "err"}`}>
+                      {environment?.hasYtdlp ? "Detected" : "Missing"}
+                    </span>
+                  </div>
+                  <div className="diag-item">
+                    <span>whisper.cpp</span>
+                    <span className={`diag-badge ${environment?.hasLocalWhisperModel ? "ok" : "warn"}`}>
+                      {environment?.hasLocalWhisperModel ? "Ready" : "Standby"}
+                    </span>
+                  </div>
+                  <div className="diag-item">
+                    <span>Ollama Daemon</span>
+                    <span className={`diag-badge ${environment?.hasOllama ? "ok" : "warn"}`}>
+                      {environment?.hasOllama ? "Running" : "Offline"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Keystore Management */}
+              <div className="settings-card">
+                <h5 className="settings-card-title">Delete Saved Credential</h5>
+                <p className="settings-field-desc">
+                  Select an individual API key or token to permanently remove from the secure keystore.
+                </p>
+                <div className="delete-credential-row">
+                  <select
+                    value={credentialToDelete}
+                    onChange={(e) => setCredentialToDelete(e.target.value)}
+                    className="settings-select"
+                  >
+                    <option value="gemini">Google Gemini Key</option>
+                    <option value="openai">OpenAI Key</option>
+                    <option value="anthropic">Anthropic Key</option>
+                    <option value="deepseek">DeepSeek Key</option>
+                    <option value="groq">Groq Key</option>
+                    <option value="deepgram">Deepgram Key</option>
+                    <option value="nvidia">NVIDIA Maxine Key</option>
+                    <option value="instagram">Instagram Access Token</option>
+                    <option value="youtube">YouTube OAuth Credentials</option>
+                  </select>
+
+                  <button
+                    type="button"
+                    className="studio-btn danger small"
+                    onClick={() => onDeleteCredential(credentialToDelete)}
+                  >
+                    <Trash2 size={13} />
+                    <span>Delete Credential</span>
                   </button>
                 </div>
               </div>
-            )}
 
-            {llmEngine === "claude" && (
-              <div className="settings-field-group">
-                <label
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <span>Anthropic API Key</span>
-                  {environment?.hasAnthropicKey && (
-                    <span
-                      style={{
-                        fontSize: "11px",
-                        color: "#10b981",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "4px",
-                        fontWeight: 500,
-                      }}
-                    >
-                      <BadgeCheck size={13} /> Active
-                    </span>
-                  )}
-                </label>
-                <input
-                  type="password"
-                  value={anthropicKey}
-                  onChange={(e) => setAnthropicKey(e.target.value)}
-                  placeholder={
-                    environment?.hasAnthropicKey
-                      ? "•••••••• (Saved securely)"
-                      : "Enter Anthropic API Key"
-                  }
-                />
-              </div>
-            )}
-
-            {llmEngine === "deepseek" && (
-              <>
-                <div className="settings-field-group">
-                  <label
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                    }}
-                  >
-                    <span>DeepSeek API Key</span>
-                    {environment?.hasDeepseekKey && (
-                      <span
-                        style={{
-                          fontSize: "11px",
-                          color: "#10b981",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "4px",
-                          fontWeight: 500,
-                        }}
-                      >
-                        <BadgeCheck size={13} /> Active
-                      </span>
-                    )}
-                  </label>
-                  <input
-                    type="password"
-                    value={deepseekKey}
-                    onChange={(e) => setDeepseekKey(e.target.value)}
-                    placeholder={
-                      environment?.hasDeepseekKey
-                        ? "•••••••• (Saved securely)"
-                        : "Enter DeepSeek API Key"
-                    }
-                  />
+              {/* Danger Zone */}
+              <div className="settings-card danger-zone">
+                <div className="danger-zone-header">
+                  <AlertTriangle size={18} className="danger-icon" />
+                  <div>
+                    <strong>Danger Zone: Reset App Storage</strong>
+                    <p>
+                      Permanently wipes all local project recordings, cut clips,
+                      transcripts, and database records.
+                    </p>
+                  </div>
                 </div>
-                <div className="settings-field-group">
-                  <label>DeepSeek Model Name (Optional)</label>
-                  <input
-                    type="text"
-                    value={deepseekModel}
-                    onChange={(e) => setDeepseekModel(e.target.value)}
-                    placeholder="e.g. deepseek-chat"
-                  />
-                </div>
-              </>
-            )}
-
-            {llmEngine === "gemini" && (
-              <div className="settings-field-group">
-                <label
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <span>Google Gemini API Key</span>
-                  {environment?.hasGeminiKey && (
-                    <span
-                      style={{
-                        fontSize: "11px",
-                        color: "#10b981",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "4px",
-                        fontWeight: 500,
-                      }}
-                    >
-                      <BadgeCheck size={13} /> Active
-                    </span>
-                  )}
-                </label>
-                <input
-                  type="password"
-                  value={geminiKey}
-                  onChange={(e) => setGeminiKey(e.target.value)}
-                  placeholder={
-                    environment?.hasGeminiKey
-                      ? "•••••••• (Saved securely)"
-                      : "Enter Gemini API Key"
-                  }
-                />
-              </div>
-            )}
-
-            {llmEngine === "openai" && (
-              <div className="settings-field-group">
-                <label
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <span>OpenAI API Key</span>
-                  {environment?.hasOpenaiKey && (
-                    <span
-                      style={{
-                        fontSize: "11px",
-                        color: "#10b981",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "4px",
-                        fontWeight: 500,
-                      }}
-                    >
-                      <BadgeCheck size={13} /> Active
-                    </span>
-                  )}
-                </label>
-                <input
-                  type="password"
-                  value={openaiKey}
-                  onChange={(e) => setOpenaiKey(e.target.value)}
-                  placeholder={
-                    environment?.hasOpenaiKey
-                      ? "•••••••• (Saved securely)"
-                      : "Enter OpenAI API Key"
-                  }
-                />
-              </div>
-            )}
-
-            {llmEngine === "groq" && (
-              <div className="settings-field-group">
-                <label
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <span>Groq API Key</span>
-                  {environment?.hasGroqKey && (
-                    <span
-                      style={{
-                        fontSize: "11px",
-                        color: "#10b981",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "4px",
-                        fontWeight: 500,
-                      }}
-                    >
-                      <BadgeCheck size={13} /> Active
-                    </span>
-                  )}
-                </label>
-                <input
-                  type="password"
-                  value={groqKey}
-                  onChange={(e) => setGroqKey(e.target.value)}
-                  placeholder={
-                    environment?.hasGroqKey
-                      ? "•••••••• (Saved securely)"
-                      : "Enter Groq API Key"
-                  }
-                />
-              </div>
-            )}
-
-            {/* Active Speaker Detection API */}
-            <div className="settings-section-divider">
-              <Zap size={15} className="section-icon-zap" />
-              <span>NVIDIA Active Speaker Detection API</span>
-            </div>
-
-            <div className="settings-field-group">
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                }}
-              >
-                <span>NVIDIA API Key</span>
-                {environment?.hasNvidiaKey && (
-                  <span
-                    style={{
-                      fontSize: "11px",
-                      color: "#10b981",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "4px",
-                      fontWeight: 500,
-                    }}
-                  >
-                    <BadgeCheck size={13} /> Active
-                  </span>
-                )}
-              </label>
-              <input
-                type="password"
-                value={nvidiaKey}
-                onChange={(e) => setNvidiaKey(e.target.value)}
-                placeholder={
-                  environment?.hasNvidiaKey
-                    ? "•••••••• (Saved securely)"
-                    : "Enter NVIDIA API Key (nvapi-...)"
-                }
-              />
-              <span className="folder-hint">
-                Primary engine for Active Speaker Detection &amp; speaker-person
-                fusion. Stored securely.
-              </span>
-            </div>
-
-            <div className="settings-field-group">
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                }}
-              >
-                <span>NVIDIA ASD Function ID (Optional Preview UUID)</span>
-                {environment?.hasNvidiaFunctionId && (
-                  <span
-                    style={{
-                      fontSize: "11px",
-                      color: "#10b981",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "4px",
-                      fontWeight: 500,
-                    }}
-                  >
-                    <BadgeCheck size={13} /> Configured
-                  </span>
-                )}
-              </label>
-              <input
-                type="text"
-                value={nvidiaFunctionId}
-                onChange={(e) => setNvidiaFunctionId?.(e.target.value)}
-                placeholder={
-                  environment?.hasNvidiaFunctionId
-                    ? "Configured securely"
-                    : "e.g. 12345678-abcd-ef01-2345-6789abcdef01"
-                }
-              />
-              <span className="folder-hint">
-                NVCF Function ID for NVIDIA Active Speaker Detection preview
-                endpoint. Defaults to multimodal local fusion if omitted.
-              </span>
-            </div>
-
-            {/* Active Speaker Provider Status Card */}
-            <div
-              className={`settings-provider-card ${
-                environment?.activeSpeakerProvider === "NVIDIA"
-                  ? "nvidia-active"
-                  : "fallback-active"
-              }`}
-            >
-              <div className="settings-provider-header">
-                <div className="settings-provider-title">
-                  <Zap
-                    size={14}
-                    className={
-                      environment?.activeSpeakerProvider === "NVIDIA"
-                        ? "provider-icon-green"
-                        : "provider-icon-amber"
-                    }
-                  />
-                  <span>Active Speaker Provider:</span>
-                  <strong>
-                    {environment?.activeSpeakerProvider || "Local fallback"}
-                  </strong>
-                </div>
-                <span
-                  className={`status-pill ${
-                    environment?.activeSpeakerProvider === "NVIDIA"
-                      ? "pill-green"
-                      : "pill-amber"
-                  }`}
-                >
-                  {environment?.activeSpeakerProvider === "NVIDIA"
-                    ? "⚡ NVIDIA NIM Active"
-                    : "⚠️ Local Fallback Active"}
-                </span>
-              </div>
-              <p className="settings-provider-desc">
-                {environment?.activeSpeakerStatus ||
-                  (environment?.hasNvidiaKey
-                    ? "NVIDIA NIM ASD is configured as the active speaker detection engine."
-                    : "NVIDIA API key not set. ClipOn uses Local Fallback (Apple Vision face tracking + diarization temporal fusion). Provide an NVIDIA API Key and NVCF Function ID above to enable neural active speaker inference.")}
-              </p>
-            </div>
-
-            {/* Instagram Reels API */}
-            <div className="settings-section-divider">
-              <Instagram size={15} className="section-icon-instagram" />
-              <span>Instagram Reels API</span>
-            </div>
-
-            <div className="settings-field-group">
-              <label>Instagram Publishing Method</label>
-              <select
-                value={instagramProvider}
-                onChange={(e) =>
-                  setInstagramProvider(
-                    e.target.value as "graph_api" | "webhook"
-                  )
-                }
-              >
-                <option value="graph_api">
-                  Official Meta Graph API (Direct Instagram Reels)
-                </option>
-                <option value="webhook">
-                  Webhook Automation (Make.com, Zapier, n8n)
-                </option>
-              </select>
-            </div>
-
-            {instagramProvider === "graph_api" && (
-              <>
-                <div className="settings-field-group">
-                  <label>Instagram Professional / Creator Account ID</label>
-                  <input
-                    type="text"
-                    value={instagramAccountId}
-                    onChange={(e) => setInstagramAccountId(e.target.value)}
-                    placeholder="e.g. 17841400000000000"
-                  />
-                  <span className="folder-hint">
-                    Found in Meta Business Suite or via Graph API Explorer
-                  </span>
-                </div>
-
-                <div className="settings-field-group">
-                  <label
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                    }}
-                  >
-                    <span>Meta Long-Lived Access Token</span>
-                    {environment?.hasInstagramToken && (
-                      <span
-                        style={{
-                          fontSize: "11px",
-                          color: "#10b981",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "4px",
-                          fontWeight: 500,
-                        }}
-                      >
-                        <BadgeCheck size={13} /> Active
-                      </span>
-                    )}
-                  </label>
-                  <input
-                    type="password"
-                    value={instagramAccessToken}
-                    onChange={(e) => setInstagramAccessToken(e.target.value)}
-                    placeholder={
-                      environment?.hasInstagramToken
-                        ? "•••••••• (Saved securely)"
-                        : "EAA... (Token with instagram_content_publish permission)"
-                    }
-                  />
-                  <span className="folder-hint">
-                    Stored securely. Requires 'instagram_basic' and
-                    'instagram_content_publish' scopes
-                  </span>
-                </div>
-              </>
-            )}
-
-            {instagramProvider === "webhook" && (
-              <div className="settings-field-group">
-                <label>Webhook URL (Make.com / Zapier / n8n)</label>
-                <input
-                  type="text"
-                  value={instagramWebhookUrl}
-                  onChange={(e) => setInstagramWebhookUrl(e.target.value)}
-                  placeholder="https://hook.eu1.make.com/... or https://hooks.zapier.com/..."
-                />
-                <span className="folder-hint">
-                  Payload includes candidateId, videoPath, viralScore, hook, and
-                  formatted caption
-                </span>
-              </div>
-            )}
-
-            <div
-              style={{
-                marginTop: "4px",
-                display: "flex",
-                alignItems: "center",
-                gap: "12px",
-              }}
-            >
-              <button
-                type="button"
-                className="studio-btn secondary"
-                onClick={testInstagramConnection}
-                disabled={
-                  instagramTesting ||
-                  (instagramProvider === "graph_api"
-                    ? !instagramAccountId.trim() ||
-                      (!instagramAccessToken.trim() &&
-                        !environment?.hasInstagramToken)
-                    : !instagramWebhookUrl.trim())
-                }
-              >
-                {instagramTesting ? (
-                  <Loader2 className="spin" size={14} />
-                ) : (
-                  <Instagram size={14} />
-                )}
-                <span>
-                  {instagramTesting ? "Verifying..." : "Test Connection"}
-                </span>
-              </button>
-            </div>
-
-            {instagramTestResult && (
-              <div
-                className={`connection-status-banner ${instagramTestResult.success ? "success" : "error"}`}
-              >
-                {instagramTestResult.success ? (
-                  <BadgeCheck size={16} />
-                ) : (
-                  <AlertTriangle size={16} />
-                )}
-                <span>{instagramTestResult.message}</span>
-              </div>
-            )}
-
-            {/* YouTube Shorts API */}
-            <div className="settings-section-divider">
-              <Youtube size={15} className="section-icon-youtube" />
-              <span>YouTube Shorts API (OAuth2 Data API v3)</span>
-            </div>
-
-            <div className="settings-field-group">
-              <label>Google Cloud OAuth2 Client ID</label>
-              <input
-                type="text"
-                value={youtubeClientId}
-                onChange={(e) => setYoutubeClientId(e.target.value)}
-                placeholder="e.g. 1234567890-xxx.apps.googleusercontent.com"
-              />
-              <span className="folder-hint">
-                Found in Google Cloud Console &gt; APIs &amp; Services &gt;
-                Credentials
-              </span>
-            </div>
-
-            <div className="settings-field-group">
-              <label>OAuth2 Client Secret</label>
-              <input
-                type="password"
-                value={youtubeClientSecret}
-                onChange={(e) => setYoutubeClientSecret(e.target.value)}
-                placeholder={
-                  environment?.hasYoutubeConfig
-                    ? "Stored securely in local keystore"
-                    : "GOCSPX-..."
-                }
-              />
-              <span className="folder-hint">
-                Associated with your OAuth 2.0 Client
-              </span>
-            </div>
-
-            <div className="settings-field-group">
-              <label>OAuth2 Refresh Token</label>
-              <input
-                type="password"
-                value={youtubeRefreshToken}
-                onChange={(e) => setYoutubeRefreshToken(e.target.value)}
-                placeholder={
-                  environment?.hasYoutubeConfig
-                    ? "Stored securely in local keystore"
-                    : "1//04..."
-                }
-              />
-              <span className="folder-hint">
-                Stored securely in keystore. Scope:
-                https://www.googleapis.com/auth/youtube.upload
-              </span>
-            </div>
-
-            <div
-              style={{
-                marginTop: "4px",
-                display: "flex",
-                alignItems: "center",
-                gap: "12px",
-              }}
-            >
-              <button
-                type="button"
-                className="studio-btn secondary"
-                onClick={testYoutubeConnection}
-                disabled={
-                  youtubeTesting ||
-                  (!youtubeClientId.trim() && !environment?.hasYoutubeConfig) ||
-                  (!youtubeClientSecret.trim() &&
-                    !environment?.hasYoutubeConfig) ||
-                  (!youtubeRefreshToken.trim() &&
-                    !environment?.hasYoutubeConfig)
-                }
-              >
-                {youtubeTesting ? (
-                  <Loader2 className="spin" size={14} />
-                ) : (
-                  <Youtube size={14} />
-                )}
-                <span>
-                  {youtubeTesting ? "Verifying..." : "Test Connection"}
-                </span>
-              </button>
-            </div>
-
-            {youtubeTestResult && (
-              <div
-                className={`connection-status-banner ${youtubeTestResult.success ? "success" : "error"}`}
-              >
-                {youtubeTestResult.success ? (
-                  <BadgeCheck size={16} />
-                ) : (
-                  <AlertTriangle size={16} />
-                )}
-                <span>{youtubeTestResult.message}</span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {settingsTab === "storage" && (
-          <div className="settings-form-stack">
-            {/* YouTube Downloads Folder */}
-            <div className="settings-folder-group">
-              <div className="folder-group-header">
-                <label>📥 YouTube Downloads Destination</label>
-                <span className="folder-hint">
-                  Where downloaded YouTube videos will be stored
-                </span>
-              </div>
-              <div className="folder-input-row">
-                <input
-                  type="text"
-                  value={youtubeSaveDir}
-                  onChange={(e) => setYoutubeSaveDir(e.target.value)}
-                  placeholder={
-                    defaultFolders?.youtubeSaveDir || "~/Downloads/ClipOn"
-                  }
-                />
-                <button
-                  className="studio-btn secondary"
-                  onClick={() =>
-                    browseFolder(
-                      youtubeSaveDir || defaultFolders?.youtubeSaveDir || "",
-                      setYoutubeSaveDir,
-                      "clipon_youtube_dir"
-                    )
-                  }
-                  title="Pick folder visually"
-                >
-                  Browse...
-                </button>
-                <button
-                  className="studio-btn secondary icon-only"
-                  onClick={() =>
-                    openFolder(
-                      youtubeSaveDir || defaultFolders?.youtubeSaveDir || ""
-                    )
-                  }
-                  title="Open folder in Finder"
-                >
-                  <FolderOpen size={15} />
-                </button>
-              </div>
-            </div>
-
-            {/* YouTube Terms of Service Compliance Policy */}
-            <div
-              className="settings-folder-group"
-              style={{
-                borderColor: "rgba(59, 130, 246, 0.3)",
-                background: "rgba(59, 130, 246, 0.04)",
-              }}
-            >
-              <div className="folder-group-header">
-                <label
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    color: "#93c5fd",
-                  }}
-                >
-                  <ShieldAlert size={14} color="#60a5fa" />
-                  YouTube Terms &amp; Compliance Policy
-                </label>
-                <span className="folder-hint">
-                  Required acknowledgment before utilizing the automated YouTube
-                  media downloader
-                </span>
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  marginTop: 6,
-                }}
-              >
-                <input
-                  type="checkbox"
-                  id="tos_settings_ack"
-                  checked={tosAck}
-                  onChange={(e) => handleTosToggle(e.target.checked)}
-                  style={{ cursor: "pointer" }}
-                />
-                <label
-                  htmlFor="tos_settings_ack"
-                  style={{
-                    fontSize: 12,
-                    color: "#e2e8f0",
-                    cursor: "pointer",
-                    userSelect: "none",
-                  }}
-                >
-                  I acknowledge YouTube Terms of Service and accept
-                  responsibility for copyright verification.
-                </label>
-              </div>
-            </div>
-
-            {/* Clips Output Folder */}
-            <div className="settings-folder-group">
-              <div className="folder-group-header">
-                <label>Rendered Clips Output Destination</label>
-                <span className="folder-hint">
-                  Where final vertical video clips and captions will be saved
-                </span>
-              </div>
-              <div className="folder-input-row">
-                <input
-                  type="text"
-                  value={clipsSaveDir}
-                  onChange={(e) => setClipsSaveDir(e.target.value)}
-                  placeholder={
-                    defaultFolders?.clipsOutputDir || "~/Documents/ClipOn"
-                  }
-                />
-                <button
-                  className="studio-btn secondary"
-                  onClick={() =>
-                    browseFolder(
-                      clipsSaveDir || defaultFolders?.clipsOutputDir || "",
-                      setClipsSaveDir,
-                      "clipon_clips_dir"
-                    )
-                  }
-                  title="Pick folder visually"
-                >
-                  Browse...
-                </button>
-                <button
-                  className="studio-btn secondary icon-only"
-                  onClick={() =>
-                    openFolder(
-                      clipsSaveDir || defaultFolders?.clipsOutputDir || ""
-                    )
-                  }
-                  title="Open folder in Finder"
-                >
-                  <FolderOpen size={15} />
-                </button>
-              </div>
-            </div>
-
-            {/* Storage Cleanup */}
-            <div
-              className="settings-folder-group"
-              style={{
-                borderColor: "rgba(239, 68, 68, 0.25)",
-                background: "rgba(239, 68, 68, 0.03)",
-              }}
-            >
-              <div className="folder-group-header">
-                <label style={{ color: "#f87171" }}>
-                  🗑️ Project Storage Cleanup
-                </label>
-                <span className="folder-hint">
-                  Delete all rendered vertical clips, downloaded source videos,
-                  and clear database history
-                </span>
-              </div>
-              <div style={{ marginTop: "4px" }}>
-                <button
-                  type="button"
-                  className="studio-btn secondary"
-                  style={{
-                    color: "#f87171",
-                    borderColor: "rgba(239, 68, 68, 0.4)",
-                  }}
-                  onClick={onClearStorage}
-                >
-                  <Trash2 size={14} /> Clear Full Storage
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {settingsTab === "export" && (
-          <div className="settings-form-stack">
-            <div className="settings-field-group">
-              <label>Default Video Framing</label>
-              <select
-                value={reframeMode}
-                onChange={(e) => setReframeMode(e.target.value as ReframeMode)}
-              >
-                <option value="vertical_crop">
-                  1. Center Crop (Standard 9:16)
-                </option>
-                <option
-                  value="smart_face_track"
-                  disabled={environment?.faceTrackingSupported === false}
-                >
-                  2. Smart Face Tracking (AI Center 9:16)
-                  {environment?.faceTrackingSupported === false
-                    ? " — macOS only"
-                    : ""}
-                </option>
-                <option value="original">3. Original Aspect Ratio</option>
-              </select>
-            </div>
-
-            <div className="settings-field-group">
-              <label>Retention Punch Zoom</label>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  marginTop: 4,
-                }}
-              >
-                <input
-                  type="checkbox"
-                  id="setting_punch_zoom"
-                  checked={punchZoom}
-                  onChange={(e) => {
-                    setPunchZoom(e.target.checked);
-                    localStorage.setItem(
-                      "clipon_punch_zoom",
-                      String(e.target.checked)
-                    );
-                  }}
-                  style={{
-                    width: 16,
-                    height: 16,
-                    accentColor: "#a855f7",
-                    cursor: "pointer",
-                  }}
-                />
-                <label
-                  htmlFor="setting_punch_zoom"
-                  style={{
-                    margin: 0,
-                    cursor: "pointer",
-                    fontSize: 13,
-                    color: "var(--text-secondary)",
-                  }}
-                >
-                  Retention Punch Zoom Cuts (Punches 1.14x visual zoom every
-                  5.5s to maintain viewer attention)
-                </label>
-              </div>
-            </div>
-
-            <div className="settings-field-group">
-              <label>Dead-Air Silence Jump Cutter</label>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  marginTop: 4,
-                }}
-              >
-                <input
-                  type="checkbox"
-                  id="setting_remove_silence"
-                  checked={removeSilence}
-                  onChange={(e) => {
-                    setRemoveSilence(e.target.checked);
-                    localStorage.setItem(
-                      "clipon_remove_silence",
-                      String(e.target.checked)
-                    );
-                  }}
-                  style={{
-                    width: 16,
-                    height: 16,
-                    accentColor: "#10b981",
-                    cursor: "pointer",
-                  }}
-                />
-                <label
-                  htmlFor="setting_remove_silence"
-                  style={{
-                    margin: 0,
-                    cursor: "pointer",
-                    fontSize: 13,
-                    color: "var(--text-secondary)",
-                  }}
-                >
-                  Automatically skip pauses &amp; dead air &gt;0.45s (Boosts
-                  video retention by 20%)
-                </label>
-              </div>
-            </div>
-
-            <div className="settings-field-group">
-              <label>Studio Sound Mastering</label>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  marginTop: 4,
-                }}
-              >
-                <input
-                  type="checkbox"
-                  id="setting_studio_audio"
-                  checked={studioAudio}
-                  onChange={(e) => {
-                    setStudioAudio(e.target.checked);
-                    localStorage.setItem(
-                      "clipon_studio_audio",
-                      String(e.target.checked)
-                    );
-                  }}
-                  style={{
-                    width: 16,
-                    height: 16,
-                    accentColor: "#facc15",
-                    cursor: "pointer",
-                  }}
-                />
-                <label
-                  htmlFor="setting_studio_audio"
-                  style={{
-                    margin: 0,
-                    cursor: "pointer",
-                    fontSize: 13,
-                    color: "var(--text-secondary)",
-                  }}
-                >
-                  Auto-Master Audio to -14 LUFS Broadcast Standard with AI
-                  Spectral Noise Suppression
-                </label>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {settingsTab === "system" && (
-          <div className="settings-form-stack">
-            <div className="diagnostics-list">
-              <div className="diag-item">
-                <span className="diag-name">
-                  Apple Silicon VideoToolbox Hardware Accel
-                </span>
-                <span
-                  className={`diag-badge ${environment?.hasHardwareAccel ? "ok" : "muted"}`}
-                >
-                  {environment?.hasHardwareAccel
-                    ? "Active (Hardware Accelerated)"
-                    : "Inactive (CPU)"}
-                </span>
-              </div>
-              <div className="diag-item">
-                <span className="diag-name">FFmpeg</span>
-                <span
-                  className={`diag-badge ${environment?.hasFfmpeg ? "ok" : "err"}`}
-                >
-                  {environment?.hasFfmpeg ? "Installed" : "Missing"}
-                </span>
-              </div>
-              <div className="diag-item">
-                <span className="diag-name">FFprobe</span>
-                <span
-                  className={`diag-badge ${environment?.hasFfprobe ? "ok" : "err"}`}
-                >
-                  {environment?.hasFfprobe ? "Installed" : "Missing"}
-                </span>
-              </div>
-              <div className="diag-item">
-                <span className="diag-name">yt-dlp (YouTube downloader)</span>
-                <span
-                  className={`diag-badge ${environment?.hasYtdlp ? "ok" : "err"}`}
-                >
-                  {environment?.hasYtdlp ? "Installed" : "Missing"}
-                </span>
-              </div>
-              <div className="diag-item">
-                <span className="diag-name">
-                  Local Whisper (openai-whisper)
-                </span>
-                <span
-                  className={`diag-badge ${environment?.hasLocalWhisperModel ? "ok" : "err"}`}
-                >
-                  {environment?.hasLocalWhisperModel ? "Installed" : "Missing"}
-                </span>
-              </div>
-              <div className="diag-item">
-                <span className="diag-name">Ollama Local Daemon</span>
-                <span
-                  className={`diag-badge ${environment?.hasOllama ? "ok" : "err"}`}
-                >
-                  {environment?.hasOllama
-                    ? "Running (127.0.0.1:11434)"
-                    : "Not detected"}
-                </span>
-              </div>
-              <div className="diag-item">
-                <span className="diag-name">
-                  Active Speaker Detection Provider
-                </span>
-                <span
-                  className={`diag-badge ${
-                    environment?.activeSpeakerProvider === "NVIDIA"
-                      ? "ok"
-                      : "warn"
-                  }`}
-                >
-                  {environment?.activeSpeakerProvider === "NVIDIA"
-                    ? "NVIDIA NIM ASD (Neural)"
-                    : "Local Fallback (Apple Vision)"}
-                </span>
-              </div>
-            </div>
-
-            <div className="settings-field-group" style={{ marginTop: "16px" }}>
-              <label>Delete Saved Credential</label>
-              <div className="input-with-button">
-                <select
-                  aria-label="Credential to delete"
-                  value={credentialToDelete}
-                  onChange={(event) =>
-                    setCredentialToDelete(event.target.value)
-                  }
-                >
-                  <option value="deepgram">Deepgram API Key</option>
-                  <option value="gemini">Google Gemini API Key</option>
-                  <option value="openai">OpenAI API Key</option>
-                  <option value="anthropic">Anthropic API Key</option>
-                  <option value="deepseek">DeepSeek API Key</option>
-                  <option value="groq">Groq API Key</option>
-                  <option value="openrouter">OpenRouter API Key</option>
-                  <option value="nvidia">NVIDIA API Key</option>
-                  <option value="nvidia_function_id">
-                    NVIDIA ASD Function ID
-                  </option>
-                  <option value="instagram">Instagram Access Token</option>
-                </select>
                 <button
                   type="button"
                   className="studio-btn danger"
-                  onClick={() => void onDeleteCredential(credentialToDelete)}
+                  onClick={onClearStorage}
                 >
-                  <Trash2 size={13} />
-                  Delete Credential
+                  <Trash2 size={14} />
+                  <span>Wipe All Project Storage</span>
                 </button>
               </div>
-              <span className="folder-hint">
-                Permanently removes the selected API key from the local
-                keystore.
-              </span>
             </div>
-
-            <div className="danger-zone">
-              <label>Danger Zone</label>
-              <p>
-                Reset all configuration and restart onboarding from scratch.
-              </p>
-              <button
-                className="studio-btn danger"
-                onClick={() => {
-                  if (
-                    window.confirm("Reset all settings and restart onboarding?")
-                  ) {
-                    localStorage.clear();
-                    window.location.reload();
-                  }
-                }}
-              >
-                Reset Configuration &amp; Onboarding
-              </button>
-            </div>
-          </div>
-        )}
+          )}
+        </main>
       </div>
 
-      <div className="modal-footer">
-        <button className="studio-btn primary" onClick={onSaveAndClose}>
-          Done
-        </button>
-      </div>
+      {/* Sticky Bottom Action Bar */}
+      <SettingsFooter
+        hasUnsavedChanges={hasUnsavedChanges}
+        isSaving={isSaving}
+        onCancel={onClose}
+        onSave={handleSave}
+      />
     </AccessibleModal>
   );
 }

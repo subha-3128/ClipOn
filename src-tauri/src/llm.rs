@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::models::{CandidateDraft, NormalizedTranscript, SocialKit, TranscriptSegment};
+use crate::models::{CandidateDraft, CaptionOption, NormalizedTranscript, SocialKit, TranscriptSegment};
 
 #[allow(async_fn_in_trait)]
 pub trait LlmProvider: Send + Sync {
@@ -957,76 +957,187 @@ pub fn parse_candidate_json(
 }
 
 #[derive(Debug, Deserialize)]
+struct CaptionOptionJson {
+    style: Option<String>,
+    title: Option<String>,
+    hook: Option<String>,
+    text: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct SocialKitJson {
     titles: Option<Vec<String>>,
     description: Option<String>,
     hashtags: Option<Vec<String>>,
     call_to_action: Option<String>,
+    caption_options: Option<Vec<CaptionOptionJson>>,
 }
 
+/// Smart heuristic fallback when LLM is unavailable or unconfigured.
+/// Generates 3 authentic, grounded caption options and topic-specific hashtags from actual transcript words.
 pub fn generate_heuristic_social_kit(
     candidate_id: &str,
     hook: &str,
     transcript_text: &str,
 ) -> SocialKit {
     let clean_hook = hook.trim().trim_end_matches('.').trim_end_matches('!');
+
+    // Extract key content sentences from transcript
+    let sentences: Vec<&str> = transcript_text
+        .split(['.', '!', '?'])
+        .map(|s| s.trim())
+        .filter(|s| s.len() > 10)
+        .collect();
+
+    let context_excerpt = if !sentences.is_empty() {
+        sentences.first().copied().unwrap_or(clean_hook)
+    } else {
+        clean_hook
+    };
+
+    // Extract dynamic topic tags from significant words in the transcript
+    let stop_words: std::collections::HashSet<&str> = [
+        "the", "and", "that", "this", "with", "from", "have", "what", "know", "just",
+        "like", "they", "will", "your", "about", "there", "then", "some", "when",
+        "make", "people", "think", "really", "going", "would", "could", "should",
+        "their", "which", "more", "other", "into", "over", "these", "after", "also",
+    ]
+    .into_iter()
+    .collect();
+
+    let mut topic_tags = Vec::new();
+    for word in transcript_text.split_whitespace() {
+        let clean: String = word
+            .chars()
+            .filter(|c| c.is_alphanumeric())
+            .collect::<String>()
+            .to_lowercase();
+        if clean.len() >= 5 && !stop_words.contains(clean.as_str()) && !topic_tags.contains(&clean) {
+            topic_tags.push(clean);
+            if topic_tags.len() >= 4 {
+                break;
+            }
+        }
+    }
+
+    let hashtags: Vec<String> = if !topic_tags.is_empty() {
+        topic_tags
+            .into_iter()
+            .map(|t| format!("#{}", capitalize_first(&t)))
+            .collect()
+    } else {
+        vec![
+            "#ReelsOriginal".to_string(),
+            "#Insights".to_string(),
+            "#Perspective".to_string(),
+        ]
+    };
+
+    // 1. Hook-focused caption
+    let opt_hook = CaptionOption {
+        style: "hook_focused".to_string(),
+        title: "Hook-Focused".to_string(),
+        hook: clean_hook.to_string(),
+        text: format!(
+            "{clean_hook}\n\n{}\n\nWhat's your honest take on this?",
+            if transcript_text.trim().is_empty() {
+                "Here is why this moment mattered."
+            } else {
+                context_excerpt
+            }
+        ),
+    };
+
+    // 2. Conversational creator caption
+    let opt_conversational = CaptionOption {
+        style: "conversational".to_string(),
+        title: "Natural & Conversational".to_string(),
+        hook: format!("This part hit home: \"{clean_hook}\""),
+        text: format!(
+            "This part hit home: \"{clean_hook}\"\n\n{}\n\nHow do you handle this in your own experience?",
+            if sentences.len() >= 2 {
+                sentences[1]
+            } else {
+                context_excerpt
+            }
+        ),
+    };
+
+    // 3. Insight-focused caption
+    let opt_insight = CaptionOption {
+        style: "insight_focused".to_string(),
+        title: "Key Takeaway".to_string(),
+        hook: format!("Key insight: {clean_hook}"),
+        text: format!(
+            "Key insight from this discussion:\n\n• {clean_hook}\n• {}\n\nSave this reminder for later.",
+            if !transcript_text.trim().is_empty() {
+                context_excerpt
+            } else {
+                "A perspective worth returning to."
+            }
+        ),
+    };
+
     let titles = vec![
-        format!("🔥 {clean_hook}"),
-        format!("The Truth About: {clean_hook} 🤯"),
-        format!("Watch This Before It's Too Late: {clean_hook}"),
-    ];
-
-    let snippet = if transcript_text.chars().count() > 140 {
-        let truncated: String = transcript_text.chars().take(140).collect();
-        format!("{}...", truncated.trim())
-    } else {
-        transcript_text.trim().to_string()
-    };
-
-    let description = if snippet.is_empty() {
-        format!("{clean_hook}. What do you think about this? Let me know below! 👇")
-    } else {
+        clean_hook.to_string(),
+        format!("The reality of {clean_hook}"),
         format!(
-            "{clean_hook} — {snippet}
-
-Save this for later! 📌"
-        )
-    };
-
-    let hashtags = vec![
-        "#shorts".to_string(),
-        "#viral".to_string(),
-        "#trending".to_string(),
-        "#reels".to_string(),
-        "#tiktok".to_string(),
-        "#growth".to_string(),
-        "#mindset".to_string(),
+            "Why {} matters",
+            if !hashtags.is_empty() {
+                hashtags[0].trim_start_matches('#')
+            } else {
+                "this"
+            }
+        ),
     ];
 
     SocialKit {
         candidate_id: candidate_id.to_string(),
         titles,
-        description,
+        description: opt_hook.text.clone(),
         hashtags,
-        call_to_action: "Drop a 🔥 in the comments if you agree! 👇".to_string(),
+        call_to_action: "What's your honest take on this?".to_string(),
+        caption_options: vec![opt_hook, opt_conversational, opt_insight],
+    }
+}
+
+fn capitalize_first(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        None => String::new(),
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
     }
 }
 
 pub fn build_social_kit_prompt(hook: &str, transcript_text: &str) -> String {
     format!(
-        "You are an elite viral social media strategist for YouTube Shorts, TikTok, and Instagram Reels. \
-Given this clip's hook and spoken transcript, generate a complete high-converting social media posting kit. \
-Include: \
-1. Exactly 3 compelling, viral titles (high CTR, curiosity-gap, or emotional payoff). \
-2. A concise 1-2 sentence caption/description suitable for Reels and Shorts. \
-3. 5-8 relevant trending hashtags. \
-4. A punchy Call to Action (CTA) question to drive comments. \
-\
-Hook: {hook} \
-Transcript: {transcript_text} \
-\
-Return JSON matching exactly: \
-{{\"titles\": [\"title 1\", \"title 2\", \"title 3\"], \"description\": \"...\", \"hashtags\": [\"#tag1\", \"#tag2\"], \"call_to_action\": \"...\"}}"
+        "You are an elite short-form video copywriter and social media strategist specializing in high-performing Instagram Reels and YouTube Shorts.\n\
+        Analyze the exact spoken transcript of this video clip and create an authentic, highly engaging publishing package.\n\n\
+        CLIP HOOK: \"{hook}\"\n\
+        SPOKEN TRANSCRIPT: \"{transcript_text}\"\n\n\
+        CRITICAL RULES:\n\
+        1. Ground everything strictly in the spoken content of this clip. Do not invent names, facts, or claims not present in the transcript.\n\
+        2. Strictly avoid generic AI clichés: NEVER use phrases like 'You won't believe this', 'Watch till the end', 'This changes everything', or engagement-bait like 'Drop a 🔥 in the comments'.\n\
+        3. Captions must read like they were written by a thoughtful, articulate human creator.\n\
+        4. Generate exactly THREE distinct caption options:\n\
+           - Option 1 (style: \"hook_focused\", title: \"Hook-Focused\"): Starts with the strongest quote or observation directly from the clip, delivers 2-3 lines of sharp context, and ends smoothly.\n\
+           - Option 2 (style: \"conversational\", title: \"Natural & Conversational\"): Casual, relatable first-person voice sharing a perspective or reaction to the moment.\n\
+           - Option 3 (style: \"insight_focused\", title: \"Key Takeaway\"): Highlights the central lesson, opinion, or core takeaway with concise, structured clarity.\n\
+        5. Provide 3-5 hyper-relevant topic hashtags based on the actual subject matter (no generic spam tags like #viral #trending #reels).\n\
+        6. Provide a natural, context-specific question or call to action that invites genuine viewer responses.\n\
+        7. Provide 3 high-CTR, punchy video titles.\n\n\
+        Output MUST be valid JSON with this exact schema:\n\
+        {{\n\
+          \"titles\": [\"Title 1\", \"Title 2\", \"Title 3\"],\n\
+          \"description\": \"Comprehensive description...\",\n\
+          \"hashtags\": [\"#Topic1\", \"#Topic2\", \"#Topic3\"],\n\
+          \"call_to_action\": \"Natural closing question...\",\n\
+          \"caption_options\": [\n\
+            {{\"style\": \"hook_focused\", \"title\": \"Hook-Focused\", \"hook\": \"...\", \"text\": \"...\"}},\n\
+            {{\"style\": \"conversational\", \"title\": \"Natural & Conversational\", \"hook\": \"...\", \"text\": \"...\"}},\n\
+            {{\"style\": \"insight_focused\", \"title\": \"Key Takeaway\", \"hook\": \"...\", \"text\": \"...\"}}\n\
+          ]\n\
+        }}"
     )
 }
 
@@ -1039,22 +1150,91 @@ fn kit_from_json_text(text: &str, candidate_id: &str, hook: &str) -> Result<Soci
         .trim();
 
     let parsed: SocialKitJson = serde_json::from_str(clean)?;
+    let clean_hook = hook.trim().trim_end_matches('.').trim_end_matches('!');
+
+    let hashtags: Vec<String> = parsed
+        .hashtags
+        .unwrap_or_else(|| {
+            vec![
+                "#ReelsOriginal".to_string(),
+                "#Insights".to_string(),
+                "#Shorts".to_string(),
+            ]
+        })
+        .into_iter()
+        .map(|tag| {
+            let t = tag.trim().replace(' ', "");
+            if t.starts_with('#') {
+                t
+            } else {
+                format!("#{t}")
+            }
+        })
+        .filter(|t| t.len() > 1)
+        .take(6)
+        .collect();
+
+    let desc = parsed
+        .description
+        .filter(|d| !d.trim().is_empty())
+        .unwrap_or_else(|| format!("{clean_hook}\n\nShared from ClipOn."));
+
+    let cta = parsed
+        .call_to_action
+        .filter(|c| !c.trim().is_empty())
+        .unwrap_or_else(|| "What's your take on this?".to_string());
+
+    let mut caption_options = Vec::new();
+    if let Some(opts) = parsed.caption_options {
+        for opt in opts {
+            if let Some(txt) = opt.text.filter(|t| !t.trim().is_empty()) {
+                let style = opt.style.unwrap_or_else(|| "custom".to_string());
+                let title = opt.title.unwrap_or_else(|| match style.as_str() {
+                    "hook_focused" => "Hook-Focused".to_string(),
+                    "conversational" => "Natural & Conversational".to_string(),
+                    "insight_focused" => "Key Takeaway".to_string(),
+                    _ => "Caption Option".to_string(),
+                });
+                let h = opt.hook.unwrap_or_else(|| clean_hook.to_string());
+                caption_options.push(CaptionOption {
+                    style,
+                    title,
+                    hook: h,
+                    text: txt,
+                });
+            }
+        }
+    }
+
+    // Ensure we always have the 3 canonical options
+    if caption_options.is_empty() {
+        caption_options.push(CaptionOption {
+            style: "hook_focused".to_string(),
+            title: "Hook-Focused".to_string(),
+            hook: clean_hook.to_string(),
+            text: format!("{clean_hook}\n\n{desc}\n\n{cta}"),
+        });
+        caption_options.push(CaptionOption {
+            style: "conversational".to_string(),
+            title: "Natural & Conversational".to_string(),
+            hook: format!("A moment that stood out: \"{clean_hook}\""),
+            text: format!("A moment that stood out: \"{clean_hook}\"\n\n{desc}"),
+        });
+        caption_options.push(CaptionOption {
+            style: "insight_focused".to_string(),
+            title: "Key Takeaway".to_string(),
+            hook: format!("Key insight: {clean_hook}"),
+            text: format!("Key takeaway from this clip:\n\n• {clean_hook}\n\n{cta}"),
+        });
+    }
+
     Ok(SocialKit {
         candidate_id: candidate_id.to_string(),
-        titles: parsed.titles.unwrap_or_else(|| vec![hook.to_string()]),
-        description: parsed
-            .description
-            .unwrap_or_else(|| format!("{hook} - Watch till the end!")),
-        hashtags: parsed.hashtags.unwrap_or_else(|| {
-            vec![
-                "#shorts".to_string(),
-                "#viral".to_string(),
-                "#reels".to_string(),
-            ]
-        }),
-        call_to_action: parsed
-            .call_to_action
-            .unwrap_or_else(|| "What are your thoughts? Drop a comment! 👇".to_string()),
+        titles: parsed.titles.unwrap_or_else(|| vec![clean_hook.to_string()]),
+        description: desc,
+        hashtags,
+        call_to_action: cta,
+        caption_options,
     })
 }
 
@@ -1508,4 +1688,73 @@ mod tests {
         assert_eq!(drafts[0].hook, "Unbelievable secret!");
         assert_eq!(drafts[0].score, 0.88);
     }
+
+    #[test]
+    fn test_generate_heuristic_social_kit_quality_and_options() {
+        let hook = "The biggest mistake engineers make in early startups";
+        let transcript = "The biggest mistake engineers make in early startups is over-engineering before talking to customers. You build complex architectures and abstractions instead of shipping simple features directly.";
+
+        let kit = generate_heuristic_social_kit("cand_1", hook, transcript);
+
+        // Verify 3 distinct caption options exist
+        assert_eq!(kit.caption_options.len(), 3);
+        assert_eq!(kit.caption_options[0].style, "hook_focused");
+        assert_eq!(kit.caption_options[1].style, "conversational");
+        assert_eq!(kit.caption_options[2].style, "insight_focused");
+
+        // Verify content is grounded and relevant
+        assert!(kit.caption_options[0].text.contains(hook));
+        assert!(kit.caption_options[1].text.contains("hit home"));
+        assert!(kit.caption_options[2].text.contains("Key insight"));
+
+        // Verify topic-derived hashtags
+        assert!(!kit.hashtags.is_empty());
+        for tag in &kit.hashtags {
+            assert!(tag.starts_with('#'));
+        }
+
+        // Verify generic spam phrases are absent
+        assert!(!kit.call_to_action.contains("Drop a 🔥"));
+        for opt in &kit.caption_options {
+            assert!(!opt.text.contains("Watch till the end"));
+            assert!(!opt.text.contains("Drop a 🔥"));
+        }
+    }
+
+    #[test]
+    fn test_kit_from_json_text_structured_options() {
+        let json_data = r##"{
+            "titles": ["Startup Engineering Mistakes", "Why Simple Beats Complex"],
+            "description": "Talking about early startup engineering traps.",
+            "hashtags": ["#Startups", "#Engineering", "#SaaS"],
+            "call_to_action": "Have you seen this happen on your team?",
+            "caption_options": [
+                {
+                    "style": "hook_focused",
+                    "title": "Hook-Focused",
+                    "hook": "Engineers overcomplicate too early",
+                    "text": "Engineers overcomplicate too early. Ship the simple version first."
+                },
+                {
+                    "style": "conversational",
+                    "title": "Natural & Conversational",
+                    "hook": "Real talk on engineering",
+                    "text": "Honestly, the best teams keep it simple. What's your experience?"
+                },
+                {
+                    "style": "insight_focused",
+                    "title": "Key Takeaway",
+                    "hook": "Core lesson",
+                    "text": "Key takeaway: Validate before architecting."
+                }
+            ]
+        }"##;
+
+        let kit = kit_from_json_text(json_data, "cand_2", "Default Hook").unwrap();
+        assert_eq!(kit.caption_options.len(), 3);
+        assert_eq!(kit.caption_options[0].title, "Hook-Focused");
+        assert_eq!(kit.caption_options[1].style, "conversational");
+        assert_eq!(kit.hashtags, vec!["#Startups", "#Engineering", "#SaaS"]);
+    }
 }
+
