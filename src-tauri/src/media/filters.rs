@@ -59,7 +59,7 @@ pub fn build_dynamic_crop_expr(
                                max_vel_px: f64|
      -> Vec<(f64, i64)> {
         let raw: Vec<(f64, i64)> = points.iter().map(|p| (p.0, extract_val(p))).collect();
-        if raw.len() <= 2 {
+        if raw.len() <= 1 {
             return raw;
         }
 
@@ -105,7 +105,25 @@ pub fn build_dynamic_crop_expr(
 
             simplified.push((curr.0, clamped_val));
         }
-        simplified.push(*steady.last().unwrap());
+        // Clamp the final point too. Previously the last keyframe bypassed velocity
+        // damping, and sequences containing only two keyframes bypassed all damping.
+        let last = *steady.last().unwrap();
+        let prev = *simplified.last().unwrap();
+        let dt = (last.0 - prev.0).max(0.04);
+        let dv = (last.1 - prev.1) as f64;
+        let vel = dv.abs() / dt;
+        let is_scene_cut = dv.abs() > (iw * 0.22);
+        let last_value = if !is_scene_cut && vel > max_vel_px {
+            let max_delta = (max_vel_px * dt).round() as i64;
+            if dv > 0.0 {
+                prev.1 + max_delta
+            } else {
+                prev.1 - max_delta
+            }
+        } else {
+            last.1
+        };
+        simplified.push((last.0, last_value));
         simplified
     };
 
@@ -364,6 +382,27 @@ pub fn build_multi_speaker_layout_filter_graph(
 mod tests {
     use super::*;
     use crate::media::face_tracker::VisionKeyframe;
+
+    #[test]
+    fn test_dynamic_crop_velocity_clamps_two_keyframe_jumps() {
+        // A two-point track used to return early and bypass the velocity limit.
+        let keyframes = vec![
+            TrackingKeyframe { t: 0.0, x: 0.20, y: 0.38 },
+            TrackingKeyframe { t: 1.0, x: 0.80, y: 0.38 },
+        ];
+        let (x_expr, _) = build_dynamic_crop_expr(
+            Some(&keyframes),
+            1920.0,
+            1080.0,
+            600.0,
+            1080.0,
+            0.50,
+            0.38,
+        );
+        // Raw end position is 936px; 550px/s damping should cap it at 634px.
+        assert!(x_expr.contains("634"), "unexpected x expression: {x_expr}");
+        assert!(!x_expr.contains("936"), "raw endpoint escaped damping: {x_expr}");
+    }
 
     #[test]
     fn test_multi_speaker_layout_filter_graphs() {
